@@ -1211,3 +1211,6 @@ pre.formula {
   .race-row { grid-template-columns: minmax(64px, 92px) 1fr 58px; gap: 6px; font-size: 12px; }
   .race-year { right: 66px; }
 }
+@media (min-width: 760px) {
+  .svc-wide { grid-column: 1 / -1; }
+}

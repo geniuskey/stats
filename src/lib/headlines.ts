@@ -7,7 +7,9 @@ import housing from "../data/housing.json";
 import industry from "../data/industry.json";
 import commerce from "../data/commerce.json";
 import retire from "../data/retire.json";
-import { compact, pct, won } from "./format";
+import me from "../data/me.json";
+import { compact, int, pct, won } from "./format";
+import { quantile } from "./me";
 
 const k = (korea as any).headline;
 const sNat = (school as any).regions.find((r: any) => r.key === "00").summary;
@@ -19,7 +21,10 @@ const ind = (industry as any).summary;
 const cm = (commerce as any).meta.classCounts;
 const rt = (retire as any).headline;
 
+const sal = (me as any).salary;
+
 export const HEADLINES: Record<string, { num: string; label: string }> = {
+  me: { num: `${int(quantile(sal, 0.5))}만원`, label: `근로소득자 ${compact(sal.n)}명 연봉의 한가운데 (${sal.year}년)` },
   korea: { num: `${k.workPerOld2025} → ${k.workPerOld2050}명`, label: "고령자 1명을 받치는 20~64세 (2025→2050)" },
   dongne: { num: `${shrinkCount}/${dn.length}곳`, label: `2045년 인구가 줄어드는 시군구` },
   school: { num: pct(sNat.change2035, 0, true), label: `초등학생 ${(school as any).meta.lastActual}→2035 (${compact(sNat.current)}→${compact(sNat.y2035)})` },

@@ -84,6 +84,12 @@ def dongne():
     write("dongne", build_dongne.build(population()))
 
 
+@module
+def me():
+    import build_me
+    write("me", build_me.build())
+
+
 def main():
     names = [a for a in sys.argv[1:] if not a.startswith("--")] or list(MODULES)
     for n in names:

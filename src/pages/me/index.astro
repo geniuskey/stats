@@ -1,0 +1,469 @@
+---
+import Base from "../../layouts/Base.astro";
+import me from "../../data/me.json";
+import korea from "../../data/korea.json";
+import dongne from "../../data/dongne.json";
+import housing from "../../data/housing.json";
+import { int, compact } from "../../lib/format";
+import { quantile } from "../../lib/me";
+
+const M = me as any;
+const K = korea as any;
+const D = dongne as any;
+const H = housing as any;
+const base = import.meta.env.BASE_URL;
+
+// 인구: 전국 2025 1세별, 2050 5세별(중위), 시군구 2025·2045 5세별
+const popBase = K.sim.baseYear as number;
+const nat1 = (K.sim.male as number[]).map((v, i) => v + K.sim.female[i]);
+const nat2050 = (K.pyramid.male2050 as number[]).map((v, i) => v + K.pyramid.female2050[i]);
+const bin5 = (a: number[]) => {
+  const out: number[] = [];
+  a.forEach((v, i) => (out[Math.min(Math.floor(i / 5), 20)] = (out[Math.min(Math.floor(i / 5), 20)] || 0) + v));
+  return out;
+};
+const regions = (D.regions as any[])
+  .map((r) => ({
+    id: r.id, name: r.name, sido: r.sido,
+    a25: bin5(r.ages2025), a45: bin5(r.ages2045),
+    pop25: r.m.pop2025, pop45: r.m.pop2045, ch: r.m.ch2045, idx: r.m.index, rank: r.m.rank, risk: r.m.risk, outlook: r.m.outlook,
+  }))
+  .sort((a, b) => (a.sido + a.name).localeCompare(b.sido + b.name, "ko"));
+const sidos = [...new Set(regions.map((r) => r.sido))].sort((a, b) => a.localeCompare(b, "ko"));
+const house: Record<string, any> = {};
+for (const r of H.regions as any[]) if (r.level !== "zone" && r.current) house[r.name] = { price84: r.current.price84, pir: r.current.pir, income: r.current.income };
+
+const cfg = {
+  me: M, nat1, nat2050, popBase, end: D.meta.end, regions, house,
+  natPop: nat1.reduce((a, b) => a + b, 0),
+  base,
+};
+const cfgJson = JSON.stringify(cfg).replace(/</g, "\\u003c");
+
+const S = M.salary, HH = M.household, J = M.job;
+const salaryMedian = quantile(S, 0.5);
+const nowYear = 2026;
+---
+<Base title="나는 어디쯤?" active="me" description={`나이·연봉·가구소득·순자산을 넣으면 대한민국 통계 분포에서 내 위치를 알려 줍니다. 근로소득자 ${compact(S.n)}명의 연봉 중앙값은 약 ${int(salaryMedian)}만원. 입력값은 브라우저 밖으로 나가지 않습니다.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">나는 어디쯤? · 연령 × 소득 × 자산 × 지역</div>
+      <h1>통계 속에서 나를 찾아봅니다</h1>
+      <p class="lede">
+        국세청 연말정산, 임금근로일자리 통계, 가계금융복지조사, 생명표, 주민등록 인구를 한데 모았습니다. 내 숫자를 넣으면 같은 나라, 같은 나이, 같은 동네 사람들 사이에서 내가 어디쯤인지 계산합니다.
+      </p>
+      <p class="privacy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+        입력값은 이 브라우저 안에서만 계산합니다. 서버로 보내지도, 저장하지도 않습니다. 새로고침하면 지워집니다.</p>
+    </section>
+
+    <section class="card" id="me-form" aria-label="내 정보 입력">
+      <div class="form-grid">
+        <label class="field">출생연도
+          <input id="f-birth" type="number" inputmode="numeric" min="1920" max={String(nowYear)} step="1" placeholder="예: 1990" />
+        </label>
+        <div class="field">성별
+          <div class="seg" id="f-sex" role="group" aria-label="성별">
+            <button type="button" data-v="male" aria-pressed="false">남자</button>
+            <button type="button" data-v="female" aria-pressed="false">여자</button>
+          </div>
+        </div>
+        <label class="field">사는 곳
+          <select id="f-region">
+            <option value="">선택 안 함</option>
+            {sidos.map((s) => (
+              <optgroup label={s}>
+                {regions.filter((r) => r.sido === s).map((r) => <option value={r.id}>{r.sido} {r.name}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <label class="field">내 연봉 (세전, 만원)
+          <input id="f-salary" type="number" inputmode="numeric" min="0" step="100" placeholder="예: 4000" />
+        </label>
+        <label class="field">우리 집 연소득 (만원)
+          <input id="f-hinc" type="number" inputmode="numeric" min="0" step="100" placeholder="가구원 소득 합계" />
+        </label>
+        <label class="field">우리 집 순자산 (만원)
+          <input id="f-net" type="number" inputmode="numeric" step="500" placeholder="자산 − 부채" />
+        </label>
+        <label class="field">가구원 수
+          <select id="f-size">
+            <option value="">선택 안 함</option>
+            <option value="1">1인</option><option value="2">2인</option><option value="3">3인</option><option value="4">4인</option><option value="5">5인 이상</option>
+          </select>
+        </label>
+      </div>
+      <p class="small muted" style="margin:14px 0 0">비워 둔 칸은 건너뜁니다. 연봉은 비과세 수당을 뺀 총급여, 가구소득은 근로·사업·재산·이전소득을 더한 연간 경상소득, 순자산은 집·예금·주식 등 자산에서 대출 등 부채를 뺀 값입니다.</p>
+    </section>
+
+    <section class="section" id="me-out" aria-live="polite">
+      <div class="card empty" id="me-empty">
+        <p style="margin:0">위 칸을 하나라도 채우면 여기에 결과가 나타납니다. 출생연도만 넣어도 됩니다.</p>
+      </div>
+
+      <figure class="card profile" id="me-profile" hidden style="margin:0">
+        <h2 class="card-title">한눈에 보는 나의 위치</h2>
+        <p class="card-sub">각 줄에서 오른쪽일수록 상위입니다. 가운데 점선이 딱 중간(50%)입니다.</p>
+        <div id="profile-rows" class="profile-rows" role="list"></div>
+      </figure>
+
+      <div class="grid grid-2" id="me-cards" style="margin-top:16px"></div>
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>어떻게 계산하나</h2>
+      <p>각 통계표는 '구간별 인원 비율'이나 '분위 경계값'으로만 공개됩니다. 이를 누적 비율 곡선으로 바꾸고, 구간 안에서는 고르게 퍼져 있다고 보고 직선으로 잇습니다. 가장 높은 구간 위는 소득 분포의 꼬리에 흔히 쓰는 파레토 분포로 이었습니다.</p>
+      <table>
+        <thead><tr><th>항목</th><th>비교 대상</th><th>자료</th></tr></thead>
+        <tbody>
+          <tr><td>나이</td><td>전국 주민등록 인구 {compact(cfg.natPop)}명({popBase}), 2050년 중위 추계, 시군구 {popBase}·{D.meta.end}</td><td>주민등록 1세별 인구, 이 사이트의 인구 추계</td></tr>
+          <tr><td>기대여명</td><td>같은 성별·나이</td><td>완전생명표 {M.life.year}</td></tr>
+          <tr><td>연봉</td><td>연말정산한 근로소득자 {compact(S.n)}명 ({S.year}년 귀속)</td><td>국세청 과세대상근로소득(총급여) 규모별 인원</td></tr>
+          <tr><td>같은 나이대·성별 연봉</td><td>임금근로 일자리 ({J.year}년) — 연봉 ÷ 12를 월평균 보수와 비교</td><td>임금근로일자리 소득 구간별 분포</td></tr>
+          <tr><td>가구 연소득·순자산</td><td>전국 가구 ({HH.year}년 3월 조사, 소득은 {HH.incomeYear}년)</td><td>가계금융복지조사 10분위 경계값, 가구특성별 소득구간 분포</td></tr>
+          <tr><td>같은 나이대 순자산</td><td>가구주 연령대 평균·중앙값으로 맞춘 로그정규분포 <strong>(추정)</strong></td><td>가계금융복지조사 가구주 연령계층별</td></tr>
+          <tr><td>집값</td><td>내 가구소득으로 사는 시도의 전용 84㎡ 평균 아파트를 사려면 몇 년치 소득이 드는가</td><td>「집값을 감당할 수 있을까?」 데이터</td></tr>
+        </tbody>
+      </table>
+      <h3>한계</h3>
+      <ul>
+        <li>표본조사(가계금융복지조사)와 행정자료(국세청·일자리)는 대상과 소득 정의가 다릅니다. 같은 사람이라도 표마다 위치가 조금씩 다르게 나옵니다.</li>
+        <li>연말정산 인원에는 연중 입·퇴사자도 들어 있어 낮은 구간이 두껍습니다. 종합소득세 신고자(자영업 등)의 사업소득은 들어 있지 않습니다.</li>
+        <li>분위 경계값 자료는 하위 10% 아래를 더 나누지 않습니다. 그 아래는 '하위 10% 이내'로만 표시합니다. 순자산이 0 이하인 가구도 여기에 함께 들어갑니다.</li>
+        <li>가구 비교는 내가 가구주라고 가정합니다. 자료 연도가 1~2년 전이라, 그사이 오른 임금과 물가는 반영되지 않습니다.</li>
+      </ul>
+      <h3>자료</h3>
+      <ul class="small">{M.meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+    <script type="application/json" id="me-data" set:html={cfgJson} />
+  </div>
+</Base>
+
+<style>
+  .privacy {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 14px;
+    color: var(--text-secondary);
+    background: var(--surface-2);
+    border-radius: 10px;
+    padding: 10px 14px;
+    max-width: 760px;
+    margin: 14px 0 0;
+  }
+  .privacy svg { flex: none; margin-top: 2px; color: var(--good); }
+  .form-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  }
+  .form-grid .field { display: grid; gap: 4px; font-size: 13px; color: var(--text-secondary); align-content: start; }
+  .form-grid input, .form-grid select { width: 100%; }
+  .form-grid .seg { display: flex; }
+  .form-grid .seg button { flex: 1; padding: 8px 12px; }
+  .empty { color: var(--text-secondary); }
+
+  .profile-rows { display: grid; gap: 14px; margin-top: 6px; }
+  :global(.pr) { display: grid; grid-template-columns: minmax(110px, 200px) minmax(0, 1fr) 96px; gap: 12px; align-items: center; }
+  :global(.pr-name) { font-size: 14px; color: var(--text-secondary); line-height: 1.3; }
+  :global(.pr-name b) { display: block; color: var(--text-primary); font-weight: 650; }
+  :global(.pr-track) { position: relative; height: 22px; }
+  :global(.pr-track::before) { content: ""; position: absolute; left: 0; right: 0; top: 10px; height: 2px; border-radius: 1px; background: var(--grid); }
+  :global(.pr-track .mid) { position: absolute; left: 50%; top: 2px; bottom: 2px; border-left: 1.5px dashed var(--axis); }
+  :global(.pr-track .fill) { position: absolute; left: 0; top: 9px; height: 4px; border-radius: 2px; background: var(--seq-200); transition: width 0.6s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  :global(.pr-track .dot) { position: absolute; top: 3px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--series-1); box-shadow: 0 0 0 2px var(--surface-1); transition: left 0.6s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  :global(.pr-val) { font-size: 15px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  :global(.pr-ends) { display: grid; grid-template-columns: minmax(110px, 200px) minmax(0, 1fr) 96px; gap: 12px; font-size: 12px; color: var(--text-muted); }
+  :global(.pr-ends > span:nth-child(2)) { display: flex; justify-content: space-between; }
+  @media (max-width: 560px) {
+    :global(.pr), :global(.pr-ends) { grid-template-columns: minmax(0, 1fr) 84px; }
+    :global(.pr-name) { grid-column: 1 / -1; }
+    :global(.pr-track) { grid-column: 1; }
+    :global(.pr-ends > span:first-child) { display: none; }
+  }
+
+  :global(.mc .big) { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  :global(.mc .big small) { font-size: 16px; font-weight: 600; color: var(--text-secondary); margin-left: 6px; letter-spacing: 0; }
+  :global(.mc .lead) { color: var(--text-secondary); font-size: 14px; margin: 4px 0 10px; }
+  :global(.mc .sub) { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 14px; }
+  :global(.mc .sub div) { display: flex; justify-content: space-between; gap: 10px; }
+  :global(.mc .sub span) { color: var(--text-secondary); }
+  :global(.mc .sub b) { font-variant-numeric: tabular-nums; text-align: right; }
+  :global(.mc .foot) { font-size: 12px; color: var(--text-muted); margin: 10px 0 0; }
+  :global(.mc .foot a) { color: var(--accent-ink); }
+  :global(.dist) { position: relative; height: 130px; margin: 6px 0 2px; }
+  :global(.dist svg) { display: block; width: 100%; height: 100%; overflow: visible; }
+  :global(.dist .bin) { fill: var(--seq-200); }
+  :global(.dist .bin.on) { fill: var(--seq-400); }
+  :global(.dist .me-line) { stroke: var(--text-primary); stroke-width: 2; }
+  :global(.dist .med-line) { stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  :global(.dist text) { font-size: 11px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+  :global(.dist text.me-t) { fill: var(--text-primary); font-weight: 700; font-size: 12px; }
+  :global(.life-bar) { display: flex; height: 26px; border-radius: 8px; overflow: hidden; gap: 2px; margin: 8px 0 4px; }
+  :global(.life-bar span) { display: grid; place-items: center; font-size: 12px; font-weight: 650; min-width: 0; white-space: nowrap; overflow: hidden; }
+  :global(.life-bar .past) { background: var(--seq-400); color: #fff; }
+  :global(.life-bar .left) { background: var(--seq-100); color: var(--seq-700); }
+</style>
+
+<script>
+  import { cdf, quantile, floorShare, lognormalCdf, olderShare, topLabel, lineLabel, manwon, type Dist } from "../../lib/me";
+
+  const cfg = JSON.parse(document.getElementById("me-data")!.textContent || "{}");
+  const M = cfg.me;
+  const $ = <T extends HTMLElement = HTMLInputElement>(id: string) => document.getElementById(id) as T;
+  const birth = $("f-birth"), salary = $("f-salary"), hinc = $("f-hinc"), net = $("f-net");
+  const region = $<HTMLSelectElement>("f-region"), size = $<HTMLSelectElement>("f-size");
+  const sexSeg = $<HTMLDivElement>("f-sex");
+  let sex = "";
+  const thisYear = new Date().getFullYear();
+
+  sexSeg.querySelectorAll<HTMLButtonElement>("button").forEach((b) =>
+    b.addEventListener("click", () => {
+      sex = sex === b.dataset.v ? "" : b.dataset.v!;
+      sexSeg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String((x as HTMLElement).dataset.v === sex)));
+      run();
+    }),
+  );
+  [birth, salary, hinc, net].forEach((el) => el.addEventListener("input", run));
+  [region, size].forEach((el) => el.addEventListener("change", run));
+
+  const numOf = (el: HTMLInputElement) => (el.value.trim() === "" ? null : Number(el.value));
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  const inBand = (arr: any[], age: number) => arr.find((g) => age >= g.lo && age <= g.hi);
+  const pctTxt = (p: number) => `${Math.round(p * 100)}%`;
+
+  // ---------------------------------------------------------------- 분포 그림 (구간 밀도 + 내 위치)
+  function distSvg(d: Dist, x: number, fmt: (v: number) => string, opts: { hi?: number } = {}) {
+    const W = 560, Hh = 112, top = 20, bottom = 20;
+    const P = d.pts[0][1] > 0 ? [[0, 0], ...d.pts] : d.pts;
+    const xMax = Math.max(opts.hi ?? quantile(d, 0.97), Math.min(x * 1.08, quantile(d, 0.995)));
+    // 꼬리 구간을 몇 칸 더 만든다
+    const edges: [number, number][] = P.map(([a, b]) => [a, b] as [number, number]);
+    let last = edges[edges.length - 1][0];
+    while (last < xMax) {
+      last = last * 1.25;
+      edges.push([last, cdf(d, last)]);
+    }
+    const bins = [];
+    for (let i = 1; i < edges.length; i++) {
+      const [x0, c0] = edges[i - 1], [x1, c1] = edges[i];
+      if (x0 >= xMax) break;
+      bins.push({ x0, x1: Math.min(x1, xMax), dens: (c1 - c0) / (x1 - x0), share: c1 - c0, full: x1 });
+    }
+    const yMax = Math.max(...bins.map((b) => b.dens));
+    const sx = (v: number) => (Math.min(v, xMax) / xMax) * W;
+    const sy = (v: number) => top + (Hh - top - bottom) * (1 - v / yMax);
+    const mx = sx(Math.max(x, 0));
+    const med = quantile(d, 0.5);
+    const rects = bins
+      .map((b) => {
+        const on = x >= b.x0 && x < b.full;
+        const w = Math.max(sx(b.x1) - sx(b.x0) - 2, 1);
+        return `<rect class="bin${on ? " on" : ""}" x="${sx(b.x0) + 1}" y="${sy(b.dens)}" width="${w}" height="${Hh - bottom - sy(b.dens)}" rx="2"><title>${fmt(b.x0)} ~ ${fmt(b.full)}: ${(b.share * 100).toFixed(1)}%</title></rect>`;
+      })
+      .join("");
+    const anchor = mx > W * 0.85 ? "end" : mx < W * 0.15 ? "start" : "middle";
+    return `<svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" role="img" aria-label="분포와 내 위치">
+      ${rects}
+      <line class="med-line" x1="${sx(med)}" x2="${sx(med)}" y1="${top - 4}" y2="${Hh - bottom}" vector-effect="non-scaling-stroke"/>
+      <line class="me-line" x1="${mx}" x2="${mx}" y1="${top - 6}" y2="${Hh - bottom}" vector-effect="non-scaling-stroke"/>
+    </svg>
+    <div class="dist-labels" style="position:absolute;inset:0;pointer-events:none;font-size:11px;color:var(--text-muted)">
+      <span style="position:absolute;left:${(mx / W) * 100}%;top:0;transform:translateX(${anchor === "end" ? "-100%" : anchor === "start" ? "0" : "-50%"});font-weight:700;color:var(--text-primary);font-size:12px;white-space:nowrap">나 ${fmt(x)}</span>
+      <span style="position:absolute;left:${(sx(med) / W) * 100}%;bottom:0;transform:translateX(-50%);white-space:nowrap">중간 ${fmt(med)}</span>
+      <span style="position:absolute;left:0;bottom:0">0</span>
+      <span style="position:absolute;right:0;bottom:0">${fmt(xMax)}${x > xMax ? "+" : ""}</span>
+    </div>`;
+  }
+
+  // ---------------------------------------------------------------- 렌더링
+  type Row = { name: string; sub: string; p: number; val?: string; floor?: number };
+  const card = (title: string, sub: string, body: string) =>
+    `<article class="card mc reveal in"><h3 class="card-title">${title}</h3><p class="card-sub">${sub}</p>${body}</article>`;
+  const subRows = (rows: [string, string][]) => (rows.length ? `<div class="sub">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>` : "");
+
+  function run() {
+    const by = numOf(birth);
+    const age = by != null && by >= 1900 && by <= thisYear ? thisYear - by : null;
+    const sal = numOf(salary), hi = numOf(hinc), nw = numOf(net);
+    const reg = cfg.regions.find((r: any) => r.id === region.value);
+    const sz = size.value ? Number(size.value) : null;
+
+    const rows: Row[] = [];
+    const cards: string[] = [];
+
+    // 1) 나이
+    if (age != null) {
+      const age25 = cfg.popBase - by!;
+      const pNat = olderShare(cfg.nat1, 1, age25);
+      rows.push({ name: "나이", sub: "전국 인구에서 나이 순으로", p: pNat, val: `젊은 쪽 ${Math.max(1, Math.round((1 - pNat) * 100))}%` });
+      const sub: [string, string][] = [];
+      const p50 = olderShare(cfg.nat2050, 5, 2050 - by!);
+      sub.push([`2050년 (${2050 - by!}세)`, `나보다 나이 많은 사람 ${pctTxt(p50)}`]);
+      if (reg) {
+        const pr = olderShare(reg.a25, 5, age25);
+        const pr45 = olderShare(reg.a45, 5, cfg.end - by!);
+        sub.push([`${reg.sido} ${reg.name} (${cfg.popBase})`, `나보다 나이 많은 사람 ${pctTxt(pr)}`]);
+        sub.push([`${reg.sido} ${reg.name} (${cfg.end})`, `나보다 나이 많은 사람 ${pctTxt(pr45)}`]);
+      }
+      cards.push(card(
+        "나이", `전국 주민등록 인구 ${Math.round(cfg.natPop / 1e4).toLocaleString("ko-KR")}만 명 (${cfg.popBase}년 말) 기준`,
+        `<div class="big">${pctTxt(pNat)}<small>가 나보다 나이가 많아요</small></div>
+         <p class="lead">${by}년생은 ${cfg.popBase}년 말 기준 ${age25}세입니다. ${pNat > 0.5 ? "아직 젊은 쪽 절반에 있습니다." : "나이 많은 쪽 절반에 들어섰습니다."}</p>
+         ${subRows(sub)}
+         <p class="foot">2050·${cfg.end}년은 중위 추계입니다. <a href="${cfg.base}korea/">대한민국의 미래</a>${reg ? ` · <a href="${cfg.base}dongne/${reg.id}/">${esc(reg.name)}의 미래</a>` : ""}</p>`,
+      ));
+
+      // 기대여명
+      const L = M.life;
+      const arr = (L[sex || "all"] as number[]);
+      const a = Math.min(age, 100);
+      const ex = arr[a];
+      if (ex != null) {
+        const life = age + ex;
+        const lived = age / life;
+        cards.push(card(
+          "남은 시간", `${M.life.year}년 생명표, ${sex === "male" ? "남자" : sex === "female" ? "여자" : "남녀 전체"} ${a}세 기준${sex ? "" : " · 성별을 고르면 더 정확해집니다"}`,
+          `<div class="big">${ex.toFixed(1)}년<small>평균적으로 남은 시간</small></div>
+           <p class="lead">지금 ${age}세라면 평균 <b>${life.toFixed(0)}세</b>까지 삽니다. 일생의 ${Math.round(lived * 100)}%를 지나왔습니다.</p>
+           <div class="life-bar" aria-hidden="true"><span class="past" style="flex:${lived}">${lived > 0.15 ? `${age}년` : ""}</span><span class="left" style="flex:${1 - lived}">${1 - lived > 0.15 ? `${ex.toFixed(0)}년 남음` : ""}</span></div>
+           <p class="foot">생명표의 기대여명은 올해 사망률이 앞으로도 그대로라고 가정한 값이라, 실제로는 이보다 길어질 가능성이 큽니다. <a href="${cfg.base}retire/">은퇴 후 대한민국</a></p>`,
+        ));
+      }
+    }
+
+    // 2) 연봉
+    if (sal != null && sal > 0) {
+      const S = M.salary;
+      const p = cdf(S, sal);
+      rows.push({ name: "연봉", sub: `근로소득자 ${Math.round(S.n / 1e4).toLocaleString("ko-KR")}만 명 중`, p });
+      const sub: [string, string][] = [];
+      const monthly = sal / 12;
+      if (age != null) {
+        const g = inBand(M.job.ages, age);
+        if (g) {
+          const pg = cdf(g, monthly);
+          rows.push({ name: `연봉 · ${g.lo}~${g.hi > 100 ? "" : g.hi}세`, sub: "같은 나이대 일자리 중", p: pg });
+          sub.push([`같은 나이대 (${g.lo}~${g.hi > 100 ? "" : g.hi}세) 일자리 중`, `${topLabel(pg)} · 중간 월 ${Math.round(g.median)}만원`]);
+        }
+      }
+      if (sex) {
+        const g = M.job.sex[sex];
+        const pg = cdf(g, monthly);
+        sub.push([`같은 성별 일자리 중`, `${topLabel(pg)} · 중간 월 ${Math.round(g.median)}만원`]);
+      }
+      sub.push(["월로 나누면", `${Math.round(monthly).toLocaleString("ko-KR")}만원 (전체 일자리 중간 ${Math.round(M.job.sex.all.median)}만원)`]);
+      cards.push(card(
+        "연봉", `${S.year}년 귀속 연말정산 근로소득자 ${Math.round(S.n / 1e4).toLocaleString("ko-KR")}만 명 · 총급여 기준`,
+        `<div class="big">${topLabel(p)}<small>${lineLabel(p)}</small></div>
+         <div class="dist">${distSvg(S, sal, manwon)}</div>
+         ${subRows(sub)}
+         <p class="foot">나이대·성별 비교는 ${M.job.year}년 임금근로 일자리의 월평균 보수 분포입니다. <a href="${cfg.base}wage/">내 월급의 실질 가치</a></p>`,
+      ));
+    }
+
+    // 3) 가구 소득
+    const HH = M.household;
+    if (hi != null && hi > 0) {
+      const p = cdf(HH.income, hi);
+      const fl = floorShare(HH.income);
+      rows.push({ name: "우리 집 소득", sub: "전국 가구 중", p, floor: fl });
+      const sub: [string, string][] = [];
+      if (age != null) {
+        const g = inBand(HH.incomeByAge, age);
+        if (g) {
+          const pg = cdf(g, hi);
+          rows.push({ name: "우리 집 소득 · 나이대", sub: "가구주 나이가 같은 가구 중", p: pg });
+          sub.push([`가구주 ${g.lo ? `${g.lo}${g.hi > 100 ? "세 이상" : `~${g.hi}세`}` : `${g.hi}세 이하`} 가구 중`, topLabel(pg)]);
+        }
+      }
+      if (sz) {
+        const g = HH.incomeBySize.find((x: any) => sz >= x.lo && sz <= x.hi);
+        if (g) {
+          const pg = cdf(g, hi);
+          sub.push([`${sz >= 5 ? "5인 이상" : `${sz}인`} 가구 중`, topLabel(pg)]);
+          // 균등화: 가구원 수의 제곱근으로 나눈 1인 환산 소득
+          sub.push(["1인 환산 소득 (÷√가구원)", manwon(hi / Math.sqrt(sz))]);
+        }
+      }
+      cards.push(card(
+        "우리 집 연소득", `가계금융복지조사 ${HH.year} · ${HH.incomeYear}년 가구 경상소득`,
+        `<div class="big">${topLabel(p, fl)}<small>${p >= fl ? lineLabel(p) : ""}</small></div>
+         <div class="dist">${distSvg(HH.income, hi, manwon)}</div>
+         ${subRows(sub)}
+         <p class="foot">전국 가구 소득의 중간은 ${manwon(quantile(HH.income, 0.5))}, 평균은 ${manwon(HH.income.mean)}입니다. 소수의 고소득 가구가 평균을 끌어올립니다.</p>`,
+      ));
+
+      // 집값
+      if (reg && cfg.house[reg.sido]) {
+        const hs = cfg.house[reg.sido];
+        const yrs = hs.price84 / hi;
+        const nat = cfg.house["전국"];
+        cards.push(card(
+          "집 한 채까지", `${reg.sido} 전용 84㎡ 아파트 평균 실거래가 ${manwon(hs.price84)} 기준`,
+          `<div class="big">${yrs.toFixed(1)}년<small>한 푼도 안 쓰고 모으면</small></div>
+           <p class="lead">${reg.sido}의 평균 가구가 같은 집을 사려면 ${hs.pir.toFixed(1)}년치 소득이 듭니다. 우리 집은 ${yrs < hs.pir ? `그보다 <b>${(hs.pir - yrs).toFixed(1)}년 빠릅니다</b>` : `그보다 <b>${(yrs - hs.pir).toFixed(1)}년 더 걸립니다</b>`}.</p>
+           ${subRows([["전국 평균 가구", `${nat.pir.toFixed(1)}년 (84㎡ ${manwon(nat.price84)})`]])}
+           <p class="foot">소득 대비 집값 배수(PIR)입니다. 대출 상환 부담은 <a href="${cfg.base}housing/">집값을 감당할 수 있을까?</a>에서 계산해 보세요.</p>`,
+        ));
+      }
+    }
+
+    // 4) 순자산
+    if (nw != null) {
+      const p = cdf(HH.net, nw);
+      const fl = floorShare(HH.net);
+      rows.push({ name: "우리 집 순자산", sub: "전국 가구 중", p, floor: fl });
+      const sub: [string, string][] = [];
+      if (age != null) {
+        const g = inBand(HH.byAge, age);
+        if (g) {
+          const pg = lognormalCdf(nw, g.net.median, g.net.mean);
+          rows.push({ name: "순자산 · 나이대", sub: "가구주 나이가 같은 가구 중 (추정)", p: pg });
+          const band = g.lo ? `${g.lo}${g.hi > 100 ? "세 이상" : `~${g.hi}세`}` : `${g.hi}세 이하`;
+          sub.push([`가구주 ${band} 가구 중간값`, `${manwon(g.net.median)} (내 순자산은 ${(nw / g.net.median).toFixed(1)}배)`]);
+          sub.push([`가구주 ${band} 가구 중 (추정)`, topLabel(pg)]);
+        }
+      }
+      sub.push(["전국 상위 20% 가구 평균", manwon(HH.net.quintileMeans[4])]);
+      cards.push(card(
+        "우리 집 순자산", `가계금융복지조사 ${HH.year}년 3월 말 · 자산 − 부채`,
+        `<div class="big">${topLabel(p, fl)}<small>${p >= fl ? lineLabel(p) : ""}</small></div>
+         <div class="dist">${distSvg(HH.net, Math.max(nw, 0), manwon, { hi: quantile(HH.net, 0.93) })}</div>
+         ${subRows(sub)}
+         <p class="foot">자산 불평등은 소득보다 큽니다. 전국 중간 가구 ${manwon(quantile(HH.net, 0.5))}, 평균 ${manwon(HH.net.mean)}.</p>`,
+      ));
+    }
+
+    // 5) 동네
+    if (reg) {
+      const n = cfg.regions.length;
+      rows.push({ name: "우리 동네 지속가능성", sub: `시군구 ${n}곳 중 ${reg.rank}위`, p: 1 - (reg.rank - 0.5) / n });
+      cards.push(card(
+        `${esc(reg.sido)} ${esc(reg.name)}`, `${cfg.popBase} → ${cfg.end} 인구 추계 (중위)`,
+        `<div class="big">${reg.ch > 0 ? "+" : ""}${Math.round(reg.ch * 100)}%<small>${cfg.end}년까지 인구 변화</small></div>
+         <p class="lead">${reg.pop25.toLocaleString("ko-KR")}명 → ${reg.pop45.toLocaleString("ko-KR")}명. 지속가능성 지수 ${reg.idx}로 전국 ${n}곳 중 <b>${reg.rank}위</b>입니다.</p>
+         ${subRows([["전망", reg.outlook], ["소멸위험 단계", reg.risk]])}
+         <p class="foot"><a href="${cfg.base}dongne/${reg.id}/">${esc(reg.name)}의 미래 자세히 보기 →</a></p>`,
+      ));
+    }
+
+    // 요약
+    const has = rows.length > 0;
+    $("me-empty").hidden = has;
+    $("me-profile").hidden = !has;
+    const host = $("profile-rows");
+    host.innerHTML =
+      rows
+        .map((r) => {
+          const pc = Math.min(Math.max(r.p, 0), 1) * 100;
+          return `<div class="pr" role="listitem"><div class="pr-name"><b>${esc(r.name)}</b>${esc(r.sub)}</div>
+            <div class="pr-track" aria-hidden="true"><span class="mid"></span><span class="fill" style="width:${pc}%"></span><span class="dot" style="left:${pc}%"></span></div>
+            <div class="pr-val">${r.val ?? topLabel(r.p, r.floor)}</div></div>`;
+        })
+        .join("") + `<div class="pr-ends" aria-hidden="true"><span></span><span><span>하위</span><span>상위</span></span><span></span></div>`;
+    $("me-cards").innerHTML = cards.join("");
+  }
+  run();
+</script>

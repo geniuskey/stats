@@ -60,6 +60,7 @@ const cards = HEADLINES;
         <p class="lede" style="font-size:16px">오른쪽 지도는 전국 229개 시군구의 인구가 {by}년부터 2045년까지 어떻게 바뀌는지 재생합니다. <strong data-count>{shrink}곳</strong>이 줄어듭니다.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
           <a class="btn btn-primary" href={`${base}dongne/`}>우리 동네 찾기</a>
+          <a class="btn" href={`${base}me/`}>나는 어디쯤?</a>
           <a class="btn" href={`${base}korea/#sim`}>출산율 시뮬레이터</a>
         </div>
       </div>
@@ -72,7 +73,7 @@ const cards = HEADLINES;
       {SERVICES.map((s) => {
         const sp = sparks[s.slug];
         return (
-          <a class="card svc reveal" href={`${base}${s.slug}/`}>
+          <a class={`card svc reveal${s.slug === "me" ? " svc-wide" : ""}`} href={`${base}${s.slug}/`}>
             <div class="combo">{s.combo.map((c) => <span class="badge">{c}</span>)}</div>
             <h3>{s.title}</h3>
             <p>{s.desc}</p>
