@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import { SERVICES } from "../lib/nav";
+import { ogKey } from "../lib/og";
 interface Props {
   title: string;
   description?: string;
@@ -10,6 +11,20 @@ const { title, description = "공공 통계를 결합해 기존에 없던 지표
 const base = import.meta.env.BASE_URL;
 const fullTitle = title === "홈" ? "숫자 너머 — 공공 통계로 보는 대한민국의 미래" : `${title} | 숫자 너머`;
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const ogImage = new URL(`${base}og/${ogKey(Astro.url.pathname, base)}.png`, Astro.site).href;
+const home = new URL(base, Astro.site).href;
+const svc = SERVICES.find((s) => s.slug === active);
+// 검색 결과용 구조화 데이터: 홈은 WebSite, 나머지는 이동 경로(BreadcrumbList)
+const crumbs = [{ name: "숫자 너머", url: home }];
+if (active === "methodology") crumbs.push({ name: "방법론과 한계", url: canonical });
+else if (svc) {
+  const svcUrl = new URL(`${base}${svc.slug}/`, Astro.site).href;
+  crumbs.push({ name: svc.title, url: svcUrl });
+  if (svcUrl !== canonical) crumbs.push({ name: title, url: canonical });
+}
+const ld = title === "홈"
+  ? { "@context": "https://schema.org", "@type": "WebSite", name: "숫자 너머", alternateName: "stats.euiyun.com", url: home, inLanguage: "ko", description }
+  : { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: crumbs.map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c.name, item: c.url })) };
 ---
 <!doctype html>
 <html lang="ko">
@@ -24,6 +39,18 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonical} />
     <meta property="og:locale" content="ko_KR" />
+    <meta property="og:site_name" content="숫자 너머" />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={description} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <link rel="sitemap" href={`${base}sitemap-index.xml`} />
+    <script type="application/ld+json" set:html={JSON.stringify(ld)} />
     <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />

@@ -37,6 +37,7 @@ docs/modules/   서비스별 방법론
 | 재생기 | `lib/player.ts` | ▶/슬라이더/연도 표시. 피라미드·지도·와플·레이스 공용 |
 | 색 척도 | `lib/scale.ts` | 계급 구분: 순차(파랑)·발산(빨강↔회색↔파랑). CSS 변수 + `color-mix`라 다크 모드 자동 |
 | 모션 | `lib/anim.ts` | 화면 진입 시 선 그리기·막대 성장·숫자 카운트업·스크롤 등장. `prefers-reduced-motion` 존중 |
+| 공유 카드 | `lib/og.ts`, `pages/og/[...key].png.ts` | 페이지마다 1200×630 OG 이미지를 빌드 때 생성 (satori + Pretendard → sharp PNG). 대표 숫자는 `lib/headlines.ts`를 홈과 공유 |
 | 시뮬레이터 | `lib/popsim.ts` | 출산율·이민·사망률 개선을 바꿔 2050년 인구를 브라우저에서 재계산 (ETL과 같은 코호트 모형) |
 
 지도 경계는 [vuski/admdongkor](https://github.com/vuski/admdongkor) 행정동 경계(2025-12-31, 통계청 SGIS 기반)를 시군구로 합쳐 만듭니다: `etl/geo/build.sh` (node·python3 필요).
