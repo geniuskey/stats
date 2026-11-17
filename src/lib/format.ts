@@ -1,6 +1,6 @@
 // 숫자 표기 (서버·클라이언트 공용)
 
-export type Fmt = "int" | "man" | "pct" | "pct1" | "won" | "manwon" | "eok" | "dec1" | "dec2" | "x";
+export type Fmt = "int" | "man" | "pct" | "pct1" | "pctS" | "pct1S" | "pp" | "won" | "manwon" | "eok" | "dec1" | "dec2" | "x" | "year" | "age";
 
 const nf0 = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
@@ -55,6 +55,16 @@ export function fmt(v: number | null | undefined, f: Fmt = "int"): string {
       return pct(v, 0);
     case "pct1":
       return pct(v, 1);
+    case "pctS":
+      return pct(v, 0, true);
+    case "pct1S":
+      return pct(v, 1, true);
+    case "pp":
+      return v == null ? "–" : (v > 0 ? "+" : "") + nf1.format(v) + "%p";
+    case "year":
+      return v == null ? "–" : String(Math.round(v)) + "년";
+    case "age":
+      return v == null ? "–" : nf1.format(v) + "세";
     case "won":
       return won(v);
     case "manwon":
@@ -74,7 +84,10 @@ export function fmt(v: number | null | undefined, f: Fmt = "int"): string {
 
 /** 축 눈금용: 짧게 */
 export function tick(v: number, f: Fmt = "int"): string {
-  if (f === "pct" || f === "pct1") return Math.round(v * 100) + "%";
+  if (f === "pct" || f === "pct1" || f === "pctS" || f === "pct1S") return (f.endsWith("S") && v > 0 ? "+" : "") + Math.round(v * 100) + "%";
+  if (f === "pp") return (v > 0 ? "+" : "") + v + "%p";
+  if (f === "year") return String(v);
+  if (f === "age") return v + "세";
   if (f === "won") return compact(v, 0);
   if (f === "dec1" || f === "dec2" || f === "x") return String(Math.round(v * 100) / 100);
   if (f === "eok") return v + "억";

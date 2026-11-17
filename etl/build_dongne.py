@@ -108,6 +108,7 @@ def build(popr):
             "official": {y: round(v) for y, v in sorted(o.items())},
             "ages2025": [round(x) for x in base],
             "ages2045": [round(x) for x in proj[k]["mid"][END]],
+            "pyramid": P.pyramid_frames(total, female, proj[k]["mid"], k, list(range(2015, END + 1))),
             "commerce": {
                 "establishments": dn.get("establishments"),
                 "employees": dn.get("employees"),

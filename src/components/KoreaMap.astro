@@ -1,0 +1,125 @@
+---
+// 대한민국 단계구분도(choropleth). 시군구(229) 또는 시도(17) 단위.
+// - 지표가 여러 개면 토글, frames 가 있으면 연도 재생기, sgg 지도는 시도 클릭 → 확대(viewBox 애니메이션)
+// - 옆에 순위 목록(지도와 호버 연동)
+import geo from "../data/geo.json";
+import { makeBins, colorOf, type ScaleKind } from "../lib/scale";
+import type { Fmt } from "../lib/format";
+
+export interface MapMetric {
+  key: string;
+  label: string;
+  format: Fmt;
+  kind: ScaleKind;
+  breaks: number[];
+  mid?: number;
+  desc?: string;
+  /** 높을수록 좋은 지표인지 (순위 목록 제목에 사용). 기본 true */
+  higherIsBetter?: boolean;
+  values?: Record<string, number | null>;
+  frames?: { labels: (string | number)[]; values: Record<string, number | null>[]; start?: number; projFrom?: number };
+}
+interface Props {
+  level?: "sgg" | "sido";
+  metrics: MapMetric[];
+  names: Record<string, string>;
+  links?: Record<string, string>;
+  /** 툴팁 둘째 줄 (예: 분류) */
+  notes?: Record<string, string>;
+  highlight?: string;
+  only?: string; // 이 시도의 시군구만
+  zoom?: boolean;
+  rank?: number | false; // 순위 목록 개수 (sgg: 상·하위 각각 N, sido: 전체)
+  title?: string;
+  sub?: string;
+  autoplay?: boolean;
+  speed?: number;
+  id?: string;
+  compact?: boolean;
+}
+const { level = "sgg", metrics, names, links = {}, notes = {}, highlight, only, zoom = level === "sgg" && !only, rank = level === "sido" ? 17 : 8, title, sub, autoplay = false, speed, id, compact = false } = Astro.props;
+const G = geo as any;
+const shapes: Record<string, any> = level === "sgg" ? G.sgg : G.sido;
+const ids = Object.keys(shapes).filter((k) => (only ? shapes[k].sido === only : true));
+const m0 = metrics[0];
+const startIdx = m0.frames ? (m0.frames.start ?? m0.frames.labels.length - 1) : 0;
+const v0 = m0.frames ? m0.frames.values[startIdx] : m0.values ?? {};
+const bins0 = makeBins(m0.breaks, m0.kind, m0.format, m0.mid);
+// 확대 맞춤 상자: 멀리 떨어진 섬 지역(울릉군·옹진군)은 제외해 본토가 크게 보이게
+const OUTLIERS = new Set(["47940", "28720"]);
+const fitBox = (sd: string, keep?: string) => {
+  const bs = Object.entries(G.sgg as Record<string, any>).filter(([k, v]) => v.sido === sd && (!OUTLIERS.has(k) || k === keep)).map(([, v]) => v.b);
+  if (!bs.length) return G.sido[sd].b;
+  return [Math.min(...bs.map((b) => b[0])), Math.min(...bs.map((b) => b[1])), Math.max(...bs.map((b) => b[2])), Math.max(...bs.map((b) => b[3]))];
+};
+// viewBox
+let vb = [0, 0, G.w, G.h];
+if (only) {
+  const b = fitBox(only, highlight);
+  const pad = Math.max(b[2] - b[0], b[3] - b[1]) * 0.06;
+  vb = [b[0] - pad, b[1] - pad, b[2] - b[0] + pad * 2, b[3] - b[1] + pad * 2];
+}
+const sidoBoxes = Object.fromEntries(Object.keys(G.sido).map((k) => [k, fitBox(k)]));
+const sidoOf = level === "sgg" ? Object.fromEntries(ids.map((k) => [k, shapes[k].sido])) : {};
+const cfg = {
+  level, metrics, names, links, notes, highlight, zoom, rank, autoplay, speed, only,
+  vb, sidoBoxes, sidoOf,
+  centroids: Object.fromEntries(ids.map((k) => [k, shapes[k].c])),
+  sizes: Object.fromEntries(ids.map((k) => [k, [+(shapes[k].b[2] - shapes[k].b[0]).toFixed(1), +(shapes[k].b[3] - shapes[k].b[1]).toFixed(1)]])),
+};
+const json = JSON.stringify(cfg).replace(/</g, "\\u003c");
+const SIDO_NAMES: Record<string, string> = { "11": "서울", "26": "부산", "27": "대구", "28": "인천", "29": "광주", "30": "대전", "31": "울산", "36": "세종", "41": "경기", "51": "강원", "43": "충북", "44": "충남", "52": "전북", "46": "전남", "47": "경북", "48": "경남", "50": "제주" };
+const hasRank = rank !== false && !only;
+---
+<figure class={`card kmap ${compact ? "kmap-compact" : ""}`} style="margin:0" id={id} data-kmap>
+  {title && <h3 class="card-title">{title}</h3>}
+  {sub && <p class="card-sub">{sub}</p>}
+  {(metrics.length > 1 || zoom) && (
+    <div class="kmap-controls">
+      {metrics.length > 1 && (
+        <div class="seg" role="group" aria-label="지표 선택">
+          {metrics.map((m, i) => <button type="button" data-metric={i} aria-pressed={i === 0 ? "true" : "false"}>{m.label}</button>)}
+        </div>
+      )}
+      {zoom && (
+        <select class="kmap-zoom" aria-label="시도 확대">
+          <option value="">전국</option>
+          {Object.entries(SIDO_NAMES).map(([k, v]) => <option value={k}>{v}</option>)}
+        </select>
+      )}
+    </div>
+  )}
+  <p class="kmap-desc small muted" hidden={!m0.desc || !!only}>{m0.desc}</p>
+  <div class={`kmap-layout ${hasRank ? "has-rank" : ""}`}>
+    <div class="kmap-stage">
+      <svg class="kmap-svg" viewBox={vb.join(" ")} role="img" aria-label={title ?? "지도"} preserveAspectRatio="xMidYMid meet">
+        <g class="kmap-regions">
+          {ids.map((k) => (
+            <path d={shapes[k].d} data-id={k} style={`fill:${colorOf(bins0, v0[k])}`} class={k === highlight ? "is-hl" : undefined} tabindex={links[k] ? 0 : undefined} aria-label={names[k] ?? k} />
+          ))}
+        </g>
+        {level === "sgg" && !only && (
+          <g class="kmap-sido" aria-hidden="true">
+            {Object.values(G.sido).map((s: any) => <path d={s.d} />)}
+          </g>
+        )}
+        <g class="kmap-hl" aria-hidden="true">{highlight && shapes[highlight] && <path d={shapes[highlight].d} />}</g>
+        <g class="kmap-labels" aria-hidden="true"></g>
+      </svg>
+      <button type="button" class="kmap-back btn" hidden>← 전국</button>
+      <div class="tooltip kmap-tt" role="status"></div>
+    </div>
+    {hasRank && (
+      <div class="kmap-rank" aria-live="polite">
+        <div class="kmap-rank-head small muted"></div>
+        <ol class="kmap-rank-list"></ol>
+      </div>
+    )}
+  </div>
+  <div class="kmap-player"></div>
+  <div class="kmap-legend" aria-label="범례">
+    {bins0.map((b, i) => <span class="key" data-bin={i}><span class="swatch-rect" style={`background:${b.color}`}></span>{b.label}</span>)}
+    <span class="key"><span class="swatch-rect" style="background:var(--surface-2);outline:1px solid var(--border)"></span>자료 없음</span>
+  </div>
+  <script type="application/json" set:html={json} />
+</figure>

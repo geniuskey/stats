@@ -22,9 +22,24 @@ etl/            Python(표준 라이브러리만) — KOSIS OpenAPI 수집·결�
   pop.py        소지역 인구추계 엔진 (Hamilton-Perry + 출산율 시나리오)
   build_*.py    서비스별 데이터 생성 → src/data/*.json
   run_all.py    전체 실행
-src/            Astro 정적 사이트 (SVG 차트 자체 구현)
+  geo/          시군구·시도 경계 → src/data/geo.json (SVG 경로, 한 번만 실행)
+src/            Astro 정적 사이트 (SVG 차트·지도 자체 구현, 외부 차트 라이브러리 없음)
 docs/modules/   서비스별 방법론
 ```
+
+## 시각화 구성 요소
+
+| 구성 요소 | 파일 | 용도 |
+|---|---|---|
+| `KoreaMap` | `components/KoreaMap.astro`, `lib/map.ts` | 시군구(229)·시도(17) 단계구분도. 지표 토글, 연도 재생, 시도 클릭 확대, 순위 목록 연동, `only`(한 시도만)·`highlight` |
+| `ChartSwitch` | `components/ChartSwitch.astro` | 같은 데이터를 여러 차트 형태로 전환 (숨긴 차트는 처음 열 때 그림) |
+| 차트 | `lib/charts.ts`, `lib/charts-extra.ts` | line · column · pyramid(연도 프레임 재생) · area(누적/100%) · stack · scatter(버블) · race(막대 레이스) · waffle(100칸) |
+| 재생기 | `lib/player.ts` | ▶/슬라이더/연도 표시. 피라미드·지도·와플·레이스 공용 |
+| 색 척도 | `lib/scale.ts` | 계급 구분: 순차(파랑)·발산(빨강↔회색↔파랑). CSS 변수 + `color-mix`라 다크 모드 자동 |
+| 모션 | `lib/anim.ts` | 화면 진입 시 선 그리기·막대 성장·숫자 카운트업·스크롤 등장. `prefers-reduced-motion` 존중 |
+| 시뮬레이터 | `lib/popsim.ts` | 출산율·이민·사망률 개선을 바꿔 2050년 인구를 브라우저에서 재계산 (ETL과 같은 코호트 모형) |
+
+지도 경계는 [vuski/admdongkor](https://github.com/vuski/admdongkor) 행정동 경계(2025-12-31, 통계청 SGIS 기반)를 시군구로 합쳐 만듭니다: `etl/geo/build.sh` (node·python3 필요).
 
 ## 실행
 

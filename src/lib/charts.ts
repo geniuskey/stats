@@ -1,6 +1,9 @@
 // 경량 SVG 차트 (선·밴드·피라미드·세로막대). 데이터 시각화 원칙:
 // 얇은 선(2px), 추계 구간은 점선 + 회색 배경, 크로스헤어 툴팁, 범례 + 선택적 직접 라벨, 표 보기 별도 제공.
 import { fmt, tick, type Fmt } from "./format";
+import { onVisible, reduced, tween } from "./anim";
+import { makePlayer } from "./player";
+import { renderArea, renderScatter, renderStack, renderRace, renderWaffle, type AreaSpec, type ScatterSpec, type StackSpec, type RaceSpec, type WaffleSpec } from "./charts-extra";
 
 export type Pt = [number, number | null];
 export interface LineSeries {
@@ -10,6 +13,7 @@ export interface LineSeries {
   dash?: boolean;
   width?: number;
   label?: boolean; // 끝점 직접 라벨
+  fill?: boolean; // 선 아래 옅은 면
   hideInTooltip?: boolean;
   muted?: boolean;
 }
@@ -34,6 +38,7 @@ export interface LineSpec {
   hLines?: { y: number; label: string }[];
   legend?: boolean;
   xUnit?: string; // 툴팁 x 단위 (기본 "년")
+  animate?: boolean;
 }
 export interface PyramidSpec {
   type: "pyramid";
@@ -46,6 +51,12 @@ export interface PyramidSpec {
   rightName: string;
   outlineName?: string;
   height?: number;
+  /** 연도별 프레임: 재생 버튼으로 애니메이션 */
+  frames?: { years: number[]; m: number[][]; f: number[][]; proj?: number };
+  start?: number; // 시작 연도
+  refYear?: number; // 외곽선으로 고정해 둘 비교 연도
+  autoplay?: boolean;
+  speed?: number;
 }
 export interface ColumnSpec {
   type: "column";
@@ -55,25 +66,43 @@ export interface ColumnSpec {
   yFormat?: Fmt;
   height?: number;
   highlight?: number[];
+  animate?: boolean;
 }
-export type ChartSpec = LineSpec | PyramidSpec | ColumnSpec;
+export type ChartSpec = LineSpec | PyramidSpec | ColumnSpec | AreaSpec | ScatterSpec | StackSpec | RaceSpec | WaffleSpec;
+export type { AreaSpec, ScatterSpec, StackSpec, RaceSpec, WaffleSpec };
 
 const NS = "http://www.w3.org/2000/svg";
-function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, parent?: Element) {
+let clipSeq = 0;
+/** 첫 렌더일 때 왼쪽→오른쪽으로 드러나는 클립. 반환된 g 에 데이터 표시를 그린다 */
+export function revealGroup(svg: SVGSVGElement, x: number, y: number, w: number, h: number, animate: boolean) {
+  const id = `rv${++clipSeq}`;
+  const defs = el("defs", {}, svg);
+  const cp = el("clipPath", { id }, defs);
+  const r = el("rect", { x: x - 6, y: y - 20, width: animate ? 0 : w + 80, height: h + 40 }, cp);
+  const g = el("g", { "clip-path": `url(#${id})` }, svg);
+  if (animate) onVisible(svg, () => tween(1300, (k) => r.setAttribute("width", String((w + 80) * k))));
+  return g;
+}
+/** 첫 렌더 애니메이션 여부 (mount 가 설정) */
+export const firstRender = new WeakSet<HTMLElement>();
+export function shouldAnimate(host: HTMLElement, flag?: boolean) {
+  return flag !== false && !reduced() && firstRender.has(host);
+}
+export function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, parent?: Element) {
   const e = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
   if (parent) parent.appendChild(e);
   return e;
 }
 
-function niceStep(range: number, count: number) {
+export function niceStep(range: number, count: number) {
   const raw = range / Math.max(count, 1);
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const n = raw / mag;
   const s = n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10;
   return s * mag;
 }
-function niceTicks(min: number, max: number, count = 5) {
+export function niceTicks(min: number, max: number, count = 5) {
   if (min === max) {
     max = min + 1;
   }
@@ -85,14 +114,14 @@ function niceTicks(min: number, max: number, count = 5) {
   return out;
 }
 
-function makeTooltip(host: HTMLElement) {
+export function makeTooltip(host: HTMLElement) {
   const tt = document.createElement("div");
   tt.className = "tooltip";
   tt.setAttribute("role", "status");
   host.appendChild(tt);
   return tt;
 }
-function ttRow(tt: HTMLElement, color: string, name: string, value: string, dash = false) {
+export function ttRow(tt: HTMLElement, color: string, name: string, value: string, dash = false) {
   const row = document.createElement("div");
   row.className = "tt-row";
   const key = document.createElement("span");
@@ -108,7 +137,7 @@ function ttRow(tt: HTMLElement, color: string, name: string, value: string, dash
   row.append(key, val);
   tt.appendChild(row);
 }
-function placeTooltip(tt: HTMLElement, host: HTMLElement, x: number, y: number) {
+export function placeTooltip(tt: HTMLElement, host: HTMLElement, x: number, y: number) {
   const w = tt.offsetWidth;
   const hw = host.clientWidth;
   let left = x + 14;
@@ -119,7 +148,7 @@ function placeTooltip(tt: HTMLElement, host: HTMLElement, x: number, y: number) 
   tt.style.opacity = "1";
 }
 
-function legend(host: HTMLElement, items: { name: string; color: string; kind: "line" | "dash" | "rect" }[]) {
+export function legend(host: HTMLElement, items: { name: string; color: string; kind: "line" | "dash" | "rect" }[]) {
   const lg = document.createElement("div");
   lg.className = "chart-legend";
   for (const it of items) {
@@ -220,15 +249,25 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
     t.textContent = h.label;
   }
 
+  const anim = shouldAnimate(host, spec.animate);
+  const marks = revealGroup(svg, m.l, m.t, pw, ph, anim);
   for (const b of spec.bands ?? []) {
     const up = b.upper.filter((p) => p[1] != null) as [number, number][];
     const lo = (b.lower.filter((p) => p[1] != null) as [number, number][]).slice().reverse();
     if (!up.length) continue;
     const d = "M" + up.map(([x, y]) => `${X(x)},${Y(y)}`).join("L") + "L" + lo.map(([x, y]) => `${X(x)},${Y(y)}`).join("L") + "Z";
-    el("path", { d, fill: b.color, opacity: 0.12 }, svg);
+    el("path", { d, fill: b.color, opacity: 0.12 }, marks);
   }
   const labelSlots: { y: number; s: LineSeries; v: number }[] = [];
   for (const s of spec.series) {
+    if (s.fill) {
+      const ps = s.data.filter((p) => p[1] != null) as [number, number][];
+      if (ps.length > 1) {
+        const base = Y(Math.max(ylo, 0));
+        const d = `M${X(ps[0][0])},${base}` + ps.map(([x, y]) => `L${X(x)},${Y(y)}`).join("") + `L${X(ps[ps.length - 1][0])},${base}Z`;
+        el("path", { d, fill: s.color, opacity: 0.1 }, marks);
+      }
+    }
     let d = "";
     let pen = false;
     for (const [x, y] of s.data) {
@@ -251,11 +290,12 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
         "stroke-dasharray": s.dash ? "5 4" : "none",
         opacity: s.muted ? 0.55 : 1,
       },
-      svg,
+      marks,
     );
     const last = [...s.data].reverse().find((p) => p[1] != null);
     if (s.label && last) {
-      el("circle", { cx: X(last[0]), cy: Y(last[1]!), r: 4, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2 }, svg);
+      const dot = el("circle", { cx: X(last[0]), cy: Y(last[1]!), r: 4, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2, class: anim ? "pop-late" : "" }, svg);
+      void dot;
       labelSlots.push({ y: Y(last[1]!), s, v: last[1]! });
     }
   }
@@ -263,7 +303,7 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
     labelSlots.sort((a, b) => a.y - b.y);
     for (let i = 1; i < labelSlots.length; i++) if (labelSlots[i].y - labelSlots[i - 1].y < 15) labelSlots[i].y = labelSlots[i - 1].y + 15;
     for (const l of labelSlots) {
-      const t = el("text", { x: m.l + pw + 8, y: l.y + 4, class: "label-strong" }, svg);
+      const t = el("text", { x: m.l + pw + 8, y: l.y + 4, class: "label-strong" + (anim ? " pop-late" : "") }, svg);
       t.textContent = tick(l.v, yf);
     }
   }
@@ -333,52 +373,116 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
 export function renderPyramid(host: HTMLElement, spec: PyramidSpec) {
   host.innerHTML = "";
   const n = spec.groups.length;
-  const rowH = 14;
-  const H = spec.height ?? n * rowH + 40;
+  const fr = spec.frames;
   const W = Math.max(host.clientWidth, 280);
+  const H = spec.height ?? n * 14 + 40;
+  const refIdx = fr && spec.refYear != null ? fr.years.indexOf(spec.refYear) : -1;
   const items: { name: string; color: string; kind: "line" | "dash" | "rect" }[] = [
     { name: spec.leftName, color: "var(--series-1)", kind: "rect" },
     { name: spec.rightName, color: "var(--series-2)", kind: "rect" },
   ];
-  if (spec.outlineName) items.push({ name: spec.outlineName, color: "var(--text-primary)", kind: "line" });
+  const outlineName = fr ? (refIdx >= 0 ? `${spec.refYear}년` : undefined) : spec.outlineName;
+  if (outlineName) items.push({ name: outlineName, color: "var(--text-primary)", kind: "line" });
   legend(host, items);
   const box = document.createElement("div");
   box.style.position = "relative";
   host.appendChild(box);
   const mid = W / 2;
-  const gap = 26;
+  const gap = W < 420 ? 20 : 26;
   const m = { t: 4, b: 22 };
   const ph = H - m.t - m.b;
   const bh = ph / n;
-  const maxV = Math.max(...spec.left, ...spec.right, ...(spec.leftOutline ?? [0]), ...(spec.rightOutline ?? [0]));
+  const all = fr ? [...fr.m.flat(), ...fr.f.flat()] : [...spec.left, ...spec.right, ...(spec.leftOutline ?? [0]), ...(spec.rightOutline ?? [0])];
+  const maxV = Math.max(...all, 1);
   const half = mid - gap - 4;
   const S = (v: number) => (v / maxV) * half;
   const svg = el("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img" });
   box.appendChild(svg);
   const tt = makeTooltip(box);
+  // 큰 연도 표시 (모션 그래픽 워터마크)
+  const yearTxt = fr ? el("text", { x: W - 4, y: m.t + 34, "text-anchor": "end", class: "pyr-year" }, svg) : null;
+  const projTxt = fr ? el("text", { x: W - 6, y: m.t + 54, "text-anchor": "end", class: "label" }, svg) : null;
+  const L: SVGRectElement[] = [],
+    R: SVGRectElement[] = [];
   for (let i = 0; i < n; i++) {
     const gi = n - 1 - i; // 위가 고령
     const y = m.t + i * bh + 1;
     const h = Math.max(bh - 2, 1);
-    const lw = S(spec.left[gi]);
-    const rw = S(spec.right[gi]);
-    el("rect", { x: mid - gap - lw, y, width: lw, height: h, rx: 2, fill: "var(--series-1)" }, svg);
-    el("rect", { x: mid + gap, y, width: rw, height: h, rx: 2, fill: "var(--series-2)" }, svg);
+    L[gi] = el("rect", { x: mid - gap, y, width: 0, height: h, rx: 2, fill: "var(--series-1)" }, svg);
+    R[gi] = el("rect", { x: mid + gap, y, width: 0, height: h, rx: 2, fill: "var(--series-2)" }, svg);
     if (i % 2 === 0 || bh > 12) {
       const t = el("text", { x: mid, y: y + h / 2 + 4, "text-anchor": "middle" }, svg);
       t.textContent = spec.groups[gi].replace("세", "").replace(" 이상", "+");
     }
+  }
+  // 외곽선 (비교 연도)
+  const outline = (lo: number[] | undefined, ro: number[] | undefined) => {
+    if (!lo || !ro) return;
+    let dl = "",
+      dr = "";
+    for (let i = 0; i < n; i++) {
+      const gi = n - 1 - i;
+      const y0 = m.t + i * bh,
+        y1 = y0 + bh;
+      const lx = mid - gap - S(lo[gi]);
+      const rx = mid + gap + S(ro[gi]);
+      dl += (i ? "L" : "M") + `${lx},${y0}L${lx},${y1}`;
+      dr += (i ? "L" : "M") + `${rx},${y0}L${rx},${y1}`;
+    }
+    el("path", { d: dl, fill: "none", stroke: "var(--text-primary)", "stroke-width": 1.5, "stroke-linejoin": "round" }, svg);
+    el("path", { d: dr, fill: "none", stroke: "var(--text-primary)", "stroke-width": 1.5, "stroke-linejoin": "round" }, svg);
+  };
+  if (fr && refIdx >= 0) outline(fr.m[refIdx], fr.f[refIdx]);
+  else if (!fr) outline(spec.leftOutline, spec.rightOutline);
+  const t1 = el("text", { x: mid - gap, y: H - 6, "text-anchor": "end" }, svg);
+  t1.textContent = tick(maxV, "int") + " ←";
+  const t2 = el("text", { x: mid + gap, y: H - 6 }, svg);
+  t2.textContent = "→ " + tick(maxV, "int");
+
+  // 현재 값
+  let curL = new Array(n).fill(0),
+    curR = new Array(n).fill(0);
+  let dataL = fr ? fr.m[0] : spec.left,
+    dataR = fr ? fr.f[0] : spec.right;
+  let label = "";
+  const setW = (l: number[], r: number[]) => {
+    for (let gi = 0; gi < n; gi++) {
+      const lw = S(l[gi]),
+        rw = S(r[gi]);
+      L[gi].setAttribute("x", String(mid - gap - lw));
+      L[gi].setAttribute("width", String(Math.max(0, lw)));
+      R[gi].setAttribute("width", String(Math.max(0, rw)));
+    }
+  };
+  let cancel = () => {};
+  const go = (l: number[], r: number[], ms: number) => {
+    cancel();
+    const fl = curL.slice(),
+      frr = curR.slice();
+    dataL = l;
+    dataR = r;
+    cancel = tween(ms, (k) => {
+      curL = fl.map((v, i) => v + (l[i] - v) * k);
+      curR = frr.map((v, i) => v + (r[i] - v) * k);
+      setW(curL, curR);
+    });
+  };
+  // 툴팁
+  for (let i = 0; i < n; i++) {
+    const gi = n - 1 - i;
+    const y = m.t + i * bh + 1;
     const hit = el("rect", { x: 0, y: y - 1, width: W, height: bh, fill: "transparent" }, svg);
     hit.addEventListener("pointermove", (e) => {
       const r = svg.getBoundingClientRect();
       tt.innerHTML = "";
       const title = document.createElement("div");
       title.className = "tt-title";
-      title.textContent = spec.groups[gi];
+      title.textContent = spec.groups[gi] + (label ? ` · ${label}` : "");
       tt.appendChild(title);
-      ttRow(tt, "var(--series-1)", spec.leftName, fmt(spec.left[gi], "int"));
-      ttRow(tt, "var(--series-2)", spec.rightName, fmt(spec.right[gi], "int"));
-      if (spec.leftOutline && spec.rightOutline && spec.outlineName) {
+      ttRow(tt, "var(--series-1)", spec.leftName, fmt(dataL[gi], "int"));
+      ttRow(tt, "var(--series-2)", spec.rightName, fmt(dataR[gi], "int"));
+      if (fr && refIdx >= 0) ttRow(tt, "var(--text-primary)", `${spec.refYear}년 합계`, fmt(fr.m[refIdx][gi] + fr.f[refIdx][gi], "int"));
+      else if (spec.leftOutline && spec.rightOutline && spec.outlineName) {
         ttRow(tt, "var(--text-primary)", spec.outlineName + " " + spec.leftName, fmt(spec.leftOutline[gi], "int"));
         ttRow(tt, "var(--text-primary)", spec.outlineName + " " + spec.rightName, fmt(spec.rightOutline[gi], "int"));
       }
@@ -386,25 +490,67 @@ export function renderPyramid(host: HTMLElement, spec: PyramidSpec) {
     });
     hit.addEventListener("pointerleave", () => (tt.style.opacity = "0"));
   }
-  if (spec.leftOutline && spec.rightOutline) {
-    let dl = "",
-      dr = "";
-    for (let i = 0; i < n; i++) {
-      const gi = n - 1 - i;
-      const y0 = m.t + i * bh,
-        y1 = y0 + bh;
-      const lx = mid - gap - S(spec.leftOutline[gi]);
-      const rx = mid + gap + S(spec.rightOutline[gi]);
-      dl += (i ? "L" : "M") + `${lx},${y0}L${lx},${y1}`;
-      dr += (i ? "L" : "M") + `${rx},${y0}L${rx},${y1}`;
-    }
-    el("path", { d: dl, fill: "none", stroke: "var(--text-primary)", "stroke-width": 1.5 }, svg);
-    el("path", { d: dr, fill: "none", stroke: "var(--text-primary)", "stroke-width": 1.5 }, svg);
+  const anim = shouldAnimate(host, true);
+  if (!fr) {
+    if (anim) onVisible(svg, () => go(spec.left, spec.right, 900));
+    else go(spec.left, spec.right, 0);
+    return;
   }
-  const t1 = el("text", { x: mid - gap, y: H - 6, "text-anchor": "end" }, svg);
-  t1.textContent = tick(maxV, "int") + " ←";
-  const t2 = el("text", { x: mid + gap, y: H - 6 }, svg);
-  t2.textContent = "→ " + tick(maxV, "int");
+  // 프레임 + 재생기 + 요약 수치
+  const stats = document.createElement("div");
+  stats.className = "pyr-stats";
+  const ctl = document.createElement("div");
+  host.append(ctl, stats);
+  const oldFrom = spec.groups.findIndex((g) => g.startsWith("65"));
+  const kidTo = spec.groups.findIndex((g) => g.startsWith("15"));
+  const paintStats = (i: number) => {
+    const tot = fr.m[i].reduce((a, b) => a + b, 0) + fr.f[i].reduce((a, b) => a + b, 0);
+    const sum = (a: number, b: number) => {
+      let s = 0;
+      for (let g = a; g < b; g++) s += fr.m[i][g] + fr.f[i][g];
+      return s;
+    };
+    const old = sum(oldFrom, n),
+      kid = sum(0, kidTo);
+    const work = tot - old - kid;
+    stats.innerHTML = "";
+    for (const [k, v] of [
+      ["총인구", fmt(tot, "man")],
+      ["0~14세", fmt(kid / tot, "pct1")],
+      ["15~64세", fmt(work / tot, "pct1")],
+      ["65세 이상", fmt(old / tot, "pct1")],
+    ]) {
+      const d = document.createElement("div");
+      d.innerHTML = `<span class="k"></span><span class="v"></span>`;
+      d.querySelector(".k")!.textContent = k;
+      d.querySelector(".v")!.textContent = v;
+      stats.appendChild(d);
+    }
+  };
+  const frame = (i: number, animate: boolean) => {
+    host.dataset.frame = String(fr.years[i]);
+    label = `${fr.years[i]}년`;
+    yearTxt!.textContent = String(fr.years[i]);
+    projTxt!.textContent = fr.proj != null && fr.years[i] >= fr.proj ? "추계" : "실측";
+    go(fr.m[i], fr.f[i], animate ? 320 : 0);
+    paintStats(i);
+  };
+  const keep = host.dataset.frame ? fr.years.indexOf(Number(host.dataset.frame)) : -1;
+  const startIdx = keep >= 0 ? keep : spec.start != null ? Math.max(0, fr.years.indexOf(spec.start)) : fr.years.length - 1;
+  const projIdx = fr.proj != null ? fr.years.findIndex((y) => y >= fr.proj!) : undefined;
+  makePlayer(ctl, fr.years, frame, { start: startIdx, speed: spec.speed ?? 260, autoplay: spec.autoplay && keep < 0, projFrom: projIdx, label: (i) => `${fr.years[i]}년` });
+  if (anim && !spec.autoplay) {
+    // 첫 등장: 0에서 시작 프레임까지 자라기
+    const i = startIdx;
+    host.dataset.frame = String(fr.years[i]);
+    label = `${fr.years[i]}년`;
+    yearTxt!.textContent = String(fr.years[i]);
+    projTxt!.textContent = fr.proj != null && fr.years[i] >= fr.proj ? "추계" : "실측";
+    paintStats(i);
+    dataL = fr.m[i];
+    dataR = fr.f[i];
+    onVisible(svg, () => go(fr.m[i], fr.f[i], 900));
+  } else frame(startIdx, false);
 }
 
 export function renderColumn(host: HTMLElement, spec: ColumnSpec) {
@@ -427,6 +573,11 @@ export function renderColumn(host: HTMLElement, spec: ColumnSpec) {
   const Y = (v: number) => m.t + ph - ((v - lo) / (hi - lo || 1)) * ph;
   const svg = el("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img" });
   box.appendChild(svg);
+  const anim = shouldAnimate(host, spec.animate);
+  if (anim) {
+    svg.classList.add("will-grow");
+    onVisible(svg, () => svg.classList.add("grown"));
+  }
   for (const t of ticks) {
     el("line", { x1: m.l, x2: m.l + pw, y1: Y(t), y2: Y(t), class: t === 0 ? "axis-line" : "grid-line" }, svg);
     const tx = el("text", { x: m.l - 8, y: Y(t) + 4, "text-anchor": "end" }, svg);
@@ -452,7 +603,8 @@ export function renderColumn(host: HTMLElement, spec: ColumnSpec) {
         v >= 0
           ? `M${x},${top + h}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${top + h}Z`
           : `M${x},${top}V${top + h - r}Q${x},${top + h} ${x + r},${top + h}H${x + bw - r}Q${x + bw},${top + h} ${x + bw},${top + h - r}V${top}Z`;
-      el("path", { d, fill: color }, svg);
+      const bar = el("path", { d, fill: color, class: v >= 0 ? "grow-up" : "grow-down" }, svg);
+      bar.style.transitionDelay = `${Math.min(i * (600 / n), 600)}ms`;
     }
     if (i % every === 0) {
       const tx = el("text", { x: cx, y: H - 10, "text-anchor": "middle" }, svg);
@@ -476,14 +628,24 @@ export function renderColumn(host: HTMLElement, spec: ColumnSpec) {
 export function render(host: HTMLElement, spec: ChartSpec) {
   if (spec.type === "line") renderLine(host, spec);
   else if (spec.type === "pyramid") renderPyramid(host, spec);
+  else if (spec.type === "area") renderArea(host, spec);
+  else if (spec.type === "scatter") renderScatter(host, spec);
+  else if (spec.type === "stack") renderStack(host, spec);
+  else if (spec.type === "race") renderRace(host, spec);
+  else if (spec.type === "waffle") renderWaffle(host, spec);
   else renderColumn(host, spec);
 }
 
 const registry = new Map<HTMLElement, ChartSpec>();
 export function mount(host: HTMLElement, spec: ChartSpec) {
+  const fresh = !registry.has(host);
   registry.set(host, spec);
+  if (fresh) firstRender.add(host);
   render(host, spec);
+  firstRender.delete(host);
 }
+/** 프레임 재생형 차트는 리사이즈 때 다시 그리지 않는다(재생 상태 보존) */
+const NO_RERENDER = new Set(["race", "waffle"]);
 let raf = 0;
 let lastW = 0;
 if (typeof window !== "undefined") {
@@ -491,14 +653,15 @@ if (typeof window !== "undefined") {
     if (window.innerWidth === lastW) return;
     lastW = window.innerWidth;
     cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => registry.forEach((s, h) => (h.isConnected ? render(h, s) : registry.delete(h))));
+    raf = requestAnimationFrame(() => registry.forEach((s, h) => (!h.isConnected ? registry.delete(h) : NO_RERENDER.has(s.type) ? null : render(h, s))));
   });
 }
 
 /** 페이지의 [data-chart] 요소를 자동으로 그린다 */
 export function autoMount(root: ParentNode = document) {
   root.querySelectorAll<HTMLElement>("[data-chart]").forEach((host) => {
-    if (registry.has(host)) return;
+    if (host.dataset.mounted || host.closest("[hidden]")) return;
+    host.dataset.mounted = "1";
     const src = host.querySelector<HTMLScriptElement>("script[type='application/json']");
     if (!src) return;
     const spec = JSON.parse(src.textContent || "{}") as ChartSpec;

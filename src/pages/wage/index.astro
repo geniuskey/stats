@@ -3,6 +3,8 @@ import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
+import ChartSwitch from "../../components/ChartSwitch.astro";
+import KoreaMap from "../../components/KoreaMap.astro";
 import data from "../../data/wage.json";
 import { pts } from "../../lib/series";
 import { int, compact, pct, won } from "../../lib/format";
@@ -110,6 +112,88 @@ const scenNetGap = S.target.path[2030].net - S.recent5.path[2030].net;
 
 const calcJson = JSON.stringify({ c: d.calculator, last: LAST, base: BASE }).replace(/</g, "\\u003c");
 const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는 구매력은 ${pct(H.netRealChange2015, 0)} 늘었습니다`;
+// ---- 시각화 확장
+// 지수: 실질 월급 전년 대비 증감 (막대)
+const yoy = nat.slice(1).map((r, i) => ({ y: r.year, v: r.real / nat[i].real - 1, est: r.estimate }));
+const yoySpec = {
+  type: "column" as const, yFormat: "pct1" as const, height: 340,
+  categories: yoy.map((r) => `${r.y}${r.est ? "*" : ""}`),
+  values: yoy.map((r) => Math.round(r.v * 10000) / 10000),
+  colors: yoy.map((r) => (r.v < 0 ? "var(--div-neg)" : "var(--div-pos)")),
+};
+const yoyNomSpec = {
+  type: "column" as const, yFormat: "pct1" as const, height: 340,
+  categories: yoy.map((r) => `${r.y}${r.est ? "*" : ""}`),
+  values: nat.slice(1).map((r, i) => Math.round((r.nominal / nat[i].nominal - 1) * 10000) / 10000),
+};
+// 월급 구성 (명목): 세후 실수령 + 세금 + 4대보험
+const compSpec = {
+  type: "stack" as const, yFormat: "won" as const, height: 280,
+  categories: nat.map((r) => `${r.year}${r.estimate ? "*" : ""}`),
+  projFrom: nat.findIndex((r) => r.estimate),
+  series: [
+    { name: "실수령 (세후)", color: "var(--series-1)", values: nat.map((r) => r.net) },
+    { name: "4대보험", color: "var(--series-4)", values: nat.map((r) => r.insurance) },
+    { name: "소득세·지방세", color: "var(--series-2)", values: nat.map((r) => r.tax) },
+  ],
+};
+const burdenRateSpec = {
+  type: "line" as const, yFormat: "pct1" as const, height: 280, projStart: BASE, zeroBased: true,
+  series: [{ name: "세금+4대보험 ÷ 월급", color: "var(--series-2)", data: nat.map((r) => [r.year, r.burdenRate] as [number, number]), label: true, fill: true }],
+};
+// 품목 구매력 레이스 (REF=100)
+const raceItems = (d.items as any[]).filter((i) => !EXCLUDE[i.code] && i.power);
+const raceYears = Object.keys(raceItems[0].power).map(Number).filter((y) => y >= REF);
+const raceSpec = {
+  type: "race" as const, top: raceItems.length, speed: 750, format: "int" as const,
+  start: raceYears.length - 1, projFrom: raceYears.indexOf(LAST),
+  names: raceItems.map((i) => (i.code === "0" ? "물가 전체 (기준)" : i.name)),
+  colors: raceItems.map((i) => (i.code === "0" ? "var(--neutral-series)" : i.powerChange < 0 ? "var(--div-neg)" : "var(--div-pos)")),
+  frames: raceYears.map((y) => ({ label: y, values: raceItems.map((i) => i.power[y] ?? null) })),
+};
+const pickItems = ["김밥", "커피(외식)", "휴대전화료", "전세", "휘발유", "총지수"];
+const pickColors = ["var(--series-2)", "var(--series-4)", "var(--series-3)", "var(--series-1)", "var(--series-5)", "var(--neutral-series)"];
+const itemLineSpec = {
+  type: "line" as const, yFormat: "int" as const, height: 360, projStart: BASE,
+  hLines: [{ y: 100, label: `${REF}=100` }],
+  series: pickItems.map((n, k) => {
+    const it = (d.items as any[]).find((i) => i.name === n)!;
+    return { name: n === "총지수" ? "물가 전체" : n, color: pickColors[k], data: Object.entries(it.power).filter(([y]) => +y >= 2011).map(([y, v]: any) => [+y, v] as [number, number]), label: true, width: n === "총지수" ? 1.5 : 2 };
+  }),
+};
+// 산업: 2015 실질 수준 × 변화율
+const indScatter = {
+  type: "scatter" as const, height: 380,
+  xLabel: `${REF}년 실질 상용임금`, yLabel: `${REF}→${BASE} 실질 변화`, xFormat: "won" as const, yFormat: "pctS" as const,
+  yRef: H.realChange2015,
+  labels: (() => {
+    const byY = [...ind].sort((a, b) => b.realChange - a.realChange);
+    const byX = [...ind].sort((a, b) => b.real2015 - a.real2015);
+    return [...new Set([...byY.slice(0, 2), ...byY.slice(-2), ...byX.slice(0, 2)].map((r) => r.name))];
+  })(),
+  points: ind.map((r) => ({ x: r.real2015, y: r.realChange, label: r.name, color: r.realChange < H.realChange2015 ? "var(--series-2)" : "var(--series-1)", note: `${won(r.real2015)} → ${won(r.real2025)}` })),
+};
+// 시도 지도
+const regNames = Object.fromEntries(regs.map((r) => [r.code, r.name]));
+const regYears = Object.keys(regs[0].series).map(Number).filter((y) => y >= REF);
+const yrs5 = regYears.filter((y) => y >= BASE - 5);
+const wageMap = [
+  { key: "real10", label: `실질 변화 (${REF} 대비)`, format: "pctS" as const, kind: "div" as const, breaks: [-0.05, 0, 0.05, 0.1, 0.15, 0.2],
+    desc: `${REF}년 대비 실질 상용임금 변화 (각 시도 물가로 디플레이트). ▶ 로 해마다 벌어지는 차이를 재생합니다. 세종은 2020년부터 자료가 있습니다.`,
+    frames: { labels: regYears, values: regYears.map((y) => Object.fromEntries(regs.map((r) => [r.code, r.series[REF] && r.series[y] ? r.series[y] / r.series[REF] - 1 : null]))), start: regYears.length - 1 } },
+  { key: "real5", label: `최근 5년 (${BASE - 5} 대비)`, format: "pct1S" as const, kind: "div" as const, breaks: [-0.04, -0.02, 0, 0.02, 0.04, 0.06],
+    desc: `고물가 시기를 포함한 최근 5년. 실질임금이 줄어든 곳: ${neg5.join(", ") || "없음"}.`,
+    frames: { labels: yrs5, values: yrs5.map((y) => Object.fromEntries(regs.map((r) => [r.code, r.series[BASE - 5] && r.series[y] ? r.series[y] / r.series[BASE - 5] - 1 : null]))), start: yrs5.length - 1 } },
+  { key: "level", label: "실질 월급 수준", format: "won" as const, kind: "seq" as const, breaks: [3.0e6, 3.3e6, 3.6e6, 3.9e6, 4.2e6, 4.5e6],
+    desc: `상용근로자 월평균 임금, ${BASE}년 원화 가치.`,
+    frames: { labels: regYears, values: regYears.map((y) => Object.fromEntries(regs.map((r) => [r.code, r.series[y] ?? null]))), start: regYears.length - 1 } },
+];
+const simJson = JSON.stringify({
+  hist: nat.map((r) => [r.year, r.real]), last: LAST, lastReal: lastRow.real, base: BASE, bReal: b.real,
+  g: H.wageCagr5, pi: H.cpiCagr5, scen: Object.fromEntries(Object.keys(S).map((k) => [k, Object.entries(S[k].path).map(([y, v]: any) => [+y, v.real])])),
+  names: scenNames, colors: scenColors,
+}).replace(/</g, "\\u003c");
+
 ---
 <Base title="내 월급의 실질 가치" active="wage" description={`임금·물가·주거비·세금 통계를 결합한 실질 구매력 비교. ${REF}→${BASE}년 평균 월급은 명목 ${pct(H.nominalChange2015, 0, true)}, 세후 실질 ${pct(H.netRealChange2015, 0, true)}.`}>
   <div class="wrap">
@@ -135,11 +219,19 @@ const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는
         {REF}년을 100으로 둔 지수입니다. 명목 월급과 실질 월급 사이의 간격이 물가가 가져간 몫이고, 실질과 세후 실질 사이의 간격이 누진세와 보험료 인상이 가져간 몫입니다.
         오른쪽 음영 구간은 {estNote}입니다.
       </p>
-      <Chart spec={idxSpec} table={idxTable} title={`평균 월급 지수 (${REF}=100)`} sub="1인 이상 사업체 전체 근로자 월평균 임금총액" />
+      <ChartSwitch views={[
+        { label: "지수", spec: idxSpec },
+        { label: "실질 증감률", spec: yoySpec, note: "실질 월급(소비자물가 기준)의 전년 대비 변화. 빨간 막대는 월급이 물가를 따라가지 못한 해입니다. * 잠정" },
+        { label: "명목 증감률", spec: yoyNomSpec, note: "명목 월급의 전년 대비 변화. 실질 증감률과 비교하면 물가가 가져간 몫이 보입니다. * 잠정" },
+      ]} table={idxTable} title={`평균 월급 지수 (${REF}=100)`} sub="1인 이상 사업체 전체 근로자 월평균 임금총액 · 같은 데이터를 지수 선 / 연간 증감률 막대로 바꿔 볼 수 있습니다" />
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={lvlSpec} table={lvlTable} title={`실질 월급 (${BASE}년 원화 가치)`} sub="세전 / 세금·4대보험 차감 후" />
+      <ChartSwitch views={[
+        { label: "실질 월급", spec: lvlSpec },
+        { label: "월급 구성", spec: compSpec, note: "명목 월급이 실수령·4대보험·세금으로 나뉘는 모습 (그해 원화). * 잠정" },
+        { label: "공제율", spec: burdenRateSpec },
+      ]} table={lvlTable} title={`실질 월급 (${BASE}년 원화 가치)`} sub="세전 / 세금·4대보험 차감 후" />
       <div class="card insight">
         <h3 class="card-title">실질임금이 멈췄던 3년</h3>
         <p>
@@ -171,6 +263,18 @@ const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는
         <div class="stat"><div class="stat-label">평균 임금 대비 같은 위치</div><div class="stat-value" id="o-wage">–</div><div class="stat-note" id="n-wage"></div></div>
         <div class="stat"><div class="stat-label">세후 구매력 유지에 필요한 세전 연봉</div><div class="stat-value" id="o-net">–</div><div class="stat-note" id="n-net"></div></div>
       </div>
+      <div class="grid grid-2 calc-viz" style="margin-top:16px">
+        <div>
+          <h3 class="card-title">같은 구매력에 필요한 연봉</h3>
+          <p class="card-sub">그해 연봉과 지금 필요한 연봉 비교</p>
+          <div class="cmp-bars" id="c-bars" role="list"></div>
+        </div>
+        <div>
+          <h3 class="card-title">해마다 필요했던 연봉</h3>
+          <p class="card-sub" id="c-path-sub">그해 연봉을 물가·평균 임금만큼 올렸다면</p>
+          <div class="chart" id="c-path"></div>
+        </div>
+      </div>
       <p class="small muted" style="margin-top:12px" id="c-foot"></p>
       <script type="application/json" id="calc-data" set:html={calcJson} />
     </section>
@@ -182,7 +286,13 @@ const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는
         {worstItem.name}은 가격이 {pct(worstItem.priceChange, 0, true)} 올라 구매력이 {pct(worstItem.powerChange, 1, true)}, {bestItem.name}은(는) {pct(bestItem.powerChange, 0, true)}입니다.
         물가 전체(총지수)로는 {pct(cpiItem.powerChange, 1, true)}.
       </p>
-      <div class="card">
+      <ChartSwitch views={[
+        { label: "구매력 레이스", spec: raceSpec, note: `${REF}=100. ▶ 를 누르면 해마다 순위가 바뀌는 모습을 재생합니다. 파란 막대는 ${LAST}년까지 구매력이 늘어난 품목, 빨간 막대는 줄어든 품목, 회색은 물가 전체입니다.` },
+        { label: "추이", spec: itemLineSpec, note: "대표 품목의 구매력 지수 추이. 100 아래로 내려가면 같은 월급으로 그 품목을 덜 살 수 있다는 뜻입니다." },
+      ]} id="items" title="품목별 구매력 지수" sub={`평균 월급으로 살 수 있는 양, ${REF}=100`} />
+      <div class="card" style="margin-top:16px">
+        <h3 class="card-title">{REF}→{LAST} 구매력 변화</h3>
+        <p class="card-sub">(임금 상승률 ÷ 품목 가격 상승률) − 1</p>
         <BarList items={itemBars} format="pct1" diverging />
         <p class="small muted" style="margin-top:12px">
           제외: {excluded.map((i) => `${i.name}(가격지수 ${pct(i.priceChange, 0, true)}, 무상보육·유아교육 지원 확대에 따른 정책 효과)`).join(", ")}. 가격지수 기반의 상대 비교이며 절대 가격(원)이 아닙니다.
@@ -190,21 +300,21 @@ const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는
       </div>
     </section>
 
-    <section class="section grid grid-2">
-      <div class="card">
-        <h3 class="card-title">산업별 실질 상용임금 변화</h3>
-        <p class="card-sub">{REF} → {BASE}, 소비자물가 기준</p>
-        <BarList items={indBars} format="pct" diverging />
-      </div>
-      <div class="card">
-        <h3 class="card-title">시도별 실질 상용임금 변화</h3>
-        <p class="card-sub">각 시도 소비자물가로 디플레이트</p>
-        <div class="seg" role="group" aria-label="비교 기간">
-          <button type="button" data-p="10" aria-pressed="true">{REF}→{BASE}</button>
-          <button type="button" data-p="5" aria-pressed="false">{BASE - 5}→{BASE}</button>
+    <section class="section">
+      <h2>어디서, 어떤 일을 하느냐에 따라</h2>
+      <p class="section-desc">시도별 실질 상용임금은 각 시도의 소비자물가로 나눠 계산했습니다. 지표를 바꾸거나 ▶ 로 {REF}년부터의 변화를 재생해 보세요.</p>
+      <KoreaMap level="sido" metrics={wageMap} names={regNames} title="시도별 실질 상용임금" sub={`e-지방지표 시도별 상용근로자 월평균 임금 ÷ 시도 소비자물가 (${BASE}년 원화)`} />
+      <div class="grid grid-2" style="margin-top:16px">
+        <figure class="card" style="margin:0">
+          <h3 class="card-title">임금이 높던 산업이 더 올랐나?</h3>
+          <p class="card-sub">가로: {REF}년 실질 상용임금 · 세로: {REF}→{BASE} 실질 변화 · 점선: 전체 평균({pct(H.realChange2015, 1, true)})</p>
+          <div class="chart" data-chart><script type="application/json" set:html={JSON.stringify(indScatter).replace(/</g, "\\u003c")} /></div>
+        </figure>
+        <div class="card">
+          <h3 class="card-title">산업별 실질 상용임금 변화</h3>
+          <p class="card-sub">{REF} → {BASE}, 소비자물가 기준</p>
+          <BarList items={indBars} format="pct" diverging />
         </div>
-        <div data-panel="10" style="margin-top:12px"><BarList items={reg10} format="pct" diverging /><p class="small muted" style="margin-top:8px">세종은 시도 임금·물가 통계가 2020년부터라 이 기간에서는 빠집니다.</p></div>
-        <div data-panel="5" style="margin-top:12px" hidden><BarList items={reg5} format="pct1" diverging /><p class="small muted" style="margin-top:8px">최근 5년 실질임금이 줄어든 곳: {neg5.join(", ") || "없음"}</p></div>
       </div>
     </section>
 
@@ -216,17 +326,38 @@ const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는
         물가가 목표치 2%로 안정되면 {won(S.target.path[2030].net)}입니다. 물가 1%p 남짓의 차이가 세후 월 {won(scenNetGap)}의 차이를 만듭니다.
       </p>
       <Chart spec={scenSpec} table={scenTable} title={`실질 월급 시나리오 (${BASE}년 원화, 세전)`} sub="점선: 물가 가정별 경로" />
+      <div class="card" id="wsim" style="margin-top:16px">
+        <h3 class="card-title">직접 정해 보는 2030년</h3>
+        <p class="card-sub">명목 임금 상승률과 물가 상승률을 바꾸면 실질 월급 경로를 다시 계산합니다 (세전, {BASE}년 원화).</p>
+        <div class="sim">
+          <div class="sim-controls">
+            <div class="slider">
+              <div class="slider-top"><label for="w-g">명목 임금 상승률 (연)</label><output id="w-og"></output></div>
+              <input type="range" id="w-g" min="0" max="0.07" step="0.0025" value={H.wageCagr5.toFixed(4)} />
+              <div class="slider-hint"><span>0%</span><span>최근 5년 {pct(H.wageCagr5, 1)}</span><span>7%</span></div>
+            </div>
+            <div class="slider">
+              <div class="slider-top"><label for="w-pi">물가 상승률 (연)</label><output id="w-opi"></output></div>
+              <input type="range" id="w-pi" min="0" max="0.07" step="0.0025" value={H.cpiCagr5.toFixed(4)} />
+              <div class="slider-hint"><span>0%</span><span>목표 2%</span><span>7%</span></div>
+            </div>
+            <div class="sim-out" id="w-out"></div>
+          </div>
+          <div class="chart" id="w-chart"></div>
+        </div>
+        <script type="application/json" id="wsim-data" set:html={simJson} />
+      </div>
     </section>
 
     <section class="section card method" id="method">
       <h2>방법론</h2>
       <h3>1. 실질임금</h3>
       <p>고용노동부 사업체노동력조사의 1인 이상 사업체 전체 근로자 월평균 임금총액({M.firstYear}년~)을 물가지수로 나눠 {BASE}년 원화 가치로 환산했습니다. 물가 잣대는 소비자물가지수(CPI), 자주 사는 품목만 모은 생활물가지수, 자가 거주자의 주거비까지 넣은 자가주거비포함지수 세 가지입니다.</p>
-      <div class="formula">실질 월급(t) = 명목 월급(t) × 물가지수({BASE}) ÷ 물가지수(t)</div>
+      <pre class="formula">실질 월급(t) = 명목 월급(t) × 물가지수({BASE}) ÷ 물가지수(t)</pre>
       <h3>2. 세후 월급 (간이 계산)</h3>
       <p>연도별 소득세법(근로소득공제·세율 구간·근로소득세액공제·표준세액공제)과 국민연금·건강보험·장기요양·고용보험 근로자 부담 요율을 코드로 구현했습니다. {M.assumptions} 실제 원천징수액은 부양가족, 비과세 수당, 각종 공제에 따라 달라집니다.</p>
       <h3>3. 품목별 구매력</h3>
-      <div class="formula">구매력 지수(t) = [임금(t) ÷ 임금({REF})] ÷ [품목 가격지수(t) ÷ 품목 가격지수({REF})] × 100</div>
+      <pre class="formula">구매력 지수(t) = [임금(t) ÷ 임금({REF})] ÷ [품목 가격지수(t) ÷ 품목 가격지수({REF})] × 100</pre>
       <p>산업별은 상용근로자 임금총액을 전국 소비자물가로, 시도별은 e-지방지표 시도별 상용 월평균 임금을 각 시도 소비자물가로 나눴습니다.</p>
       <h3>4. 2030 시나리오와 {LAST}년 잠정치</h3>
       <p>명목 임금은 {BASE - 5}~{BASE}년 연평균 증가율을 유지한다고 두고, 물가는 한국은행 목표 2%, 최근 10년 평균({pct(H.cpiCagr10, 1)}), 최근 5년 평균({pct(H.cpiCagr5, 1)}) 세 가지로 가정했습니다. 세후는 {LAST}년 세법·요율을 고정해 명목소득이 오를수록 세 부담이 커지는 효과가 반영됩니다. {estNote}이며, 전년 같은 달 대비 증가율을 {BASE}년 연간값에 적용했습니다.</p>
@@ -243,6 +374,7 @@ const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는
 </Base>
 
 <script>
+  import { mount } from "../../lib/charts";
   type Calc = {
     c: { cpi: Record<string, number>; living: Record<string, number>; wage: Record<string, number>; taxTable: Record<string, Record<string, number>> };
     last: number;
@@ -324,17 +456,159 @@ const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는
       set("n-net", "세후 계산은 2011년부터");
     }
     set("c-foot", `${y}년 연봉 ${man(pay)} 기준. ${LAST}년 값은 잠정치. 세후는 부양가족 없는 1인 근로자 간이 계산.`);
+    const ntn = netMonthly(pay / 12, y);
+    (window as any).__wageViz?.(
+      {
+        then: pay,
+        cpi,
+        life: C.living[y] ? (pay * C.living[LAST]) / C.living[y] : null,
+        wage: C.wage[y] ? (pay * C.wage[LAST]) / C.wage[y] : null,
+        net: ntn != null ? grossForNet((ntn * C.cpi[LAST]) / C.cpi[y], LAST) * 12 : null,
+      },
+      y,
+      pay,
+    );
   }
   yearSel.addEventListener("change", update);
   payIn.addEventListener("input", update);
+
+  // ---------- 계산기 시각화
+  const barsEl = document.getElementById("c-bars")!;
+  const pathEl = document.getElementById("c-path")!;
+  const BAR_DEFS = [
+    { k: "then", name: "그해 연봉 (명목)", color: "var(--neutral-series)" },
+    { k: "cpi", name: "소비자물가만큼", color: "var(--series-2)" },
+    { k: "life", name: "생활물가만큼", color: "var(--series-3)" },
+    { k: "wage", name: "평균 임금만큼", color: "var(--series-1)" },
+    { k: "net", name: "세후 구매력 유지", color: "var(--series-7)" },
+  ];
+  const barRows = BAR_DEFS.map((b) => {
+    const r = document.createElement("div");
+    r.className = "cmp-row";
+    r.setAttribute("role", "listitem");
+    r.innerHTML = `<span class="cmp-name"></span><span class="cmp-track"><span class="cmp-fill"></span></span><span class="cmp-val"></span>`;
+    r.querySelector(".cmp-name")!.textContent = b.name;
+    (r.querySelector(".cmp-fill") as HTMLElement).style.background = b.color;
+    barsEl.appendChild(r);
+    return r;
+  });
+  (window as any).__wageViz = (vals: Record<string, number | null>, y: string, pay: number) => {
+    const max = Math.max(...Object.values(vals).map((v) => v ?? 0), 1);
+    BAR_DEFS.forEach((b, i) => {
+      const v = vals[b.k];
+      const r = barRows[i];
+      r.hidden = v == null;
+      (r.querySelector(".cmp-fill") as HTMLElement).style.width = v == null ? "0" : `${(v / max) * 100}%`;
+      r.querySelector(".cmp-val")!.textContent = v == null ? "–" : man(v);
+    });
+    const ys = Object.keys(C.cpi).map(Number).filter((t) => t >= Number(y) && t <= D.last);
+    const series: any[] = [
+      { name: "소비자물가만큼", color: "var(--series-2)", data: ys.map((t) => [t, (pay * C.cpi[t]) / C.cpi[y]]), label: true },
+    ];
+    if (C.wage[y]) series.push({ name: "평균 임금만큼", color: "var(--series-1)", data: ys.filter((t) => C.wage[t]).map((t) => [t, (pay * C.wage[t]) / C.wage[y]]), label: true });
+    if (ys.length > 1) mount(pathEl, { type: "line", yFormat: "won", height: 220, zeroBased: false, animate: false, series } as any);
+    else pathEl.textContent = "";
+  };
   update();
 
-  // 시도 기간 토글
-  const seg = document.querySelectorAll<HTMLButtonElement>(".seg button[data-p]");
-  seg.forEach((btn) =>
-    btn.addEventListener("click", () => {
-      seg.forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
-      document.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== btn.dataset.p));
-    }),
-  );
+  // ---------- 2030 시뮬레이터
+  const W = JSON.parse(document.getElementById("wsim-data")!.textContent || "{}");
+  const gIn = document.getElementById("w-g") as HTMLInputElement;
+  const piIn = document.getElementById("w-pi") as HTMLInputElement;
+  const wOut = document.getElementById("w-out")!;
+  const wChart = document.getElementById("w-chart")!;
+  const pctTxt = (v: number, d = 1) => `${v > 0 ? "+" : ""}${(v * 100).toFixed(d)}%`;
+  function wsim() {
+    const g = +gIn.value, pi = +piIn.value;
+    (document.getElementById("w-og") as HTMLElement).textContent = (g * 100).toFixed(2).replace(/0$/, "") + "%";
+    (document.getElementById("w-opi") as HTMLElement).textContent = (pi * 100).toFixed(2).replace(/0$/, "") + "%";
+    const path: [number, number][] = [[W.last, W.lastReal]];
+    for (let t = W.last + 1; t <= 2030; t++) path.push([t, W.lastReal * Math.pow((1 + g) / (1 + pi), t - W.last)]);
+    const v30 = path[path.length - 1][1];
+    wOut.innerHTML = "";
+    for (const [k, v, n] of [
+      ["2030 실질 월급", man(v30), `${W.base}년 대비 ${pctTxt(v30 / W.bReal - 1)}`],
+      ["실질 증가율 (연)", pctTxt((1 + g) / (1 + pi) - 1, 2), g < pi ? "월급이 물가를 못 따라감" : "월급이 물가보다 빠름"],
+    ]) {
+      const el = document.createElement("div");
+      el.className = "stat";
+      el.innerHTML = `<div class="stat-label"></div><div class="stat-value"></div><div class="stat-note"></div>`;
+      el.querySelector(".stat-label")!.textContent = k;
+      el.querySelector(".stat-value")!.textContent = v;
+      el.querySelector(".stat-note")!.textContent = n;
+      if (k.startsWith("실질 증가율")) (el.querySelector(".stat-value") as HTMLElement).className = `stat-value ${g < pi ? "delta-down" : "delta-up"}`;
+      wOut.appendChild(el);
+    }
+    mount(wChart, {
+      type: "line", yFormat: "won", height: 300, zeroBased: false, projStart: W.last, animate: false,
+      series: [
+        { name: "실측·잠정", color: "var(--text-secondary)", data: W.hist.filter((p: any) => p[0] >= 2015) },
+        ...Object.keys(W.scen).map((k) => ({ name: W.names[k], color: W.colors[k], dash: true, width: 1.5, muted: true, data: [[W.last, W.lastReal], ...W.scen[k]] })),
+        { name: "내 가정", color: "var(--text-primary)", data: path, label: true, width: 2.5 },
+      ],
+    } as any);
+  }
+  gIn.addEventListener("input", wsim);
+  piIn.addEventListener("input", wsim);
+  wsim();
 </script>
+
+<style is:global>
+  #items .race-year {
+    right: 96px;
+  }
+  @media (max-width: 520px) {
+    #items .race-row {
+      grid-template-columns: 84px 1fr 34px;
+      gap: 8px;
+    }
+    #items .race-year {
+      right: 44px;
+    }
+    .cmp-row {
+      grid-template-columns: 92px 1fr 74px;
+    }
+  }
+  .cmp-bars {
+    display: grid;
+    gap: 8px;
+  }
+  .cmp-row {
+    display: grid;
+    grid-template-columns: minmax(96px, 128px) 1fr 84px;
+    gap: 10px;
+    align-items: center;
+    font-size: 13px;
+  }
+  .cmp-name {
+    color: var(--text-secondary);
+  }
+  .cmp-track {
+    position: relative;
+    height: 18px;
+    background: var(--surface-2);
+    border-radius: 4px;
+  }
+  .cmp-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-radius: 4px;
+    transition: width 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .cmp-val {
+    text-align: right;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  #wsim .sim-out {
+    margin-top: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cmp-fill {
+      transition: none;
+    }
+  }
+</style>

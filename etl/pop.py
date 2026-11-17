@@ -223,3 +223,70 @@ if __name__ == "__main__":
     for s in ("low", "mid", "high"):
         p = r["proj"]["00"][s]
         print(s, {y: round(sum(p[y])) for y in (2025, 2030, 2040, 2050)}, "0세", {y: round(p[y][0]) for y in (2026, 2030, 2040)})
+
+
+# ---------------------------------------------------------------- 시각화용 프레임
+
+GROUPS5 = [(a, a + 4) for a in range(0, 100, 5)] + [(100, 100)]
+
+
+def pyramid_frames(total, female, proj_series, k, years, base_year=BASE_YEAR):
+    """연도별 5세 단위 남/여 인구 프레임 (애니메이션 피라미드용).
+
+    실측 연도는 주민등록 남녀, 추계 연도는 기준연도의 같은 출생 코호트 여성 비율을 적용한다.
+    반환: {"years": [...], "m": [[21]...], "f": [[21]...], "proj": 첫 추계 연도}
+    """
+    tb, fb = total[base_year][k], female[base_year][k]
+    fshare = [(fb[a] / tb[a]) if tb[a] else 0.5 for a in range(NAGE)]
+    out = {"years": [], "m": [], "f": [], "proj": base_year + 1}
+    for y in years:
+        if y <= base_year:
+            t, f = total.get(y, {}).get(k), female.get(y, {}).get(k)
+            if t is None or f is None:
+                continue
+        else:
+            t = proj_series[y]
+            s = y - base_year
+            f = [t[a] * (fshare[a - s] if a >= s else fshare[a]) for a in range(NAGE)]
+        mm, ff = [], []
+        for lo, hi in GROUPS5:
+            w = sum(f[lo:hi + 1])
+            ff.append(round(w))
+            mm.append(round(sum(t[lo:hi + 1]) - w))
+        out["years"].append(y)
+        out["m"].append(mm)
+        out["f"].append(ff)
+    return out
+
+
+def sim_params(total, female, transitions=TRANSITIONS, base_year=BASE_YEAR):
+    """브라우저 인구 시뮬레이터 입력: 전국 기준연도 1세별 남녀 인구, 성별 코호트 변화율, 아동비."""
+    k = "00"
+
+    def male(y):
+        return [t - f for t, f in zip(total[y][k], female[y][k])]
+
+    def ccr(get):
+        num, den = [0.0] * NAGE, [0.0] * NAGE
+        for t0, t1 in transitions:
+            p0, p1 = get(t0), get(t1)
+            for a in range(1, NAGE):
+                num[a] += p1[a]
+                den[a] += p0[a - 1] + (p0[a] if a == NAGE - 1 else 0)
+        return [1.0] + [round(num[a] / den[a], 5) if den[a] else 1.0 for a in range(1, NAGE)]
+
+    c_num = c_den = 0.0
+    boys = 0.0
+    for y in (base_year - 2, base_year - 1, base_year):
+        c_num += total[y][k][0]
+        boys += total[y][k][0] - female[y][k][0]
+        c_den += sum(female[y][k][W_LO:W_HI + 1])
+    return {
+        "baseYear": base_year,
+        "male": [round(x) for x in male(base_year)],
+        "female": [round(x) for x in female[base_year][k]],
+        "ccrMale": ccr(male),
+        "ccrFemale": ccr(lambda y: female[y][k]),
+        "childRatio": round(c_num / c_den, 5),
+        "maleBirthShare": round(boys / c_num, 4),
+    }

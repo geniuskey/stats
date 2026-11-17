@@ -2,7 +2,8 @@
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
-import BarList from "../../components/BarList.astro";
+import ChartSwitch from "../../components/ChartSwitch.astro";
+import KoreaMap from "../../components/KoreaMap.astro";
 import data from "../../data/korea.json";
 import { pts } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -71,19 +72,75 @@ const closest = Object.entries(vs).sort((a: any, b: any) => Math.abs(a[1]) - Mat
 const scenName: Record<string, string> = { low: "저위", mid: "중위", high: "고위" };
 
 const P = d.pyramid;
-const pyrSpec = { type: "pyramid" as const, groups: P.labels, left: P.male2050, right: P.female2050, leftOutline: P.male2025, rightOutline: P.female2025, leftName: "남자", rightName: "여자", outlineName: `${by}년`, height: 420 };
 const pyrTable = { headers: ["연령", `남 ${by}`, `여 ${by}`, "남 2050", "여 2050"], rows: P.labels.map((l: string, i: number) => [l, int(P.male2025[i]), int(P.female2025[i]), int(P.male2050[i]), int(P.female2050[i])]) };
 
 const v = d.village;
-const sidoBars = d.sidos.map((s: any) => ({ name: s.name, value: s.change2050 }));
-const sidoOld = [...d.sidos].sort((a: any, b: any) => b.oldShare2050 - a.oldShare2050).map((s: any) => ({ name: s.name, value: s.oldShare2050 }));
+// ---- 시각화 확장
+const yrs = Object.keys(nat.mid).map(Number).filter((y) => y >= 2015 && y <= 2050);
+const ageArea = {
+  type: "area" as const, percent: true, projStart: by, height: 300,
+  series: [
+    { name: "0~14세", color: "var(--series-3)", data: yrs.map((y) => [y, nat.mid[y].kids] as [number, number]) },
+    { name: "15~64세", color: "var(--series-1)", data: yrs.map((y) => [y, nat.mid[y].work] as [number, number]) },
+    { name: "65~84세", color: "var(--series-4)", data: yrs.map((y) => [y, nat.mid[y].old - nat.mid[y].old85] as [number, number]) },
+    { name: "85세 이상", color: "var(--series-2)", data: yrs.map((y) => [y, nat.mid[y].old85] as [number, number]) },
+  ],
+};
+const ageStack = {
+  type: "stack" as const, height: 300, yFormat: "man" as const,
+  categories: yrs.filter((y) => y % 5 === 0).map(String),
+  projFrom: yrs.filter((y) => y % 5 === 0).findIndex((y) => y > by),
+  series: [
+    { name: "0~14세", color: "var(--series-3)", values: yrs.filter((y) => y % 5 === 0).map((y) => nat.mid[y].kids) },
+    { name: "15~64세", color: "var(--series-1)", values: yrs.filter((y) => y % 5 === 0).map((y) => nat.mid[y].work) },
+    { name: "65세 이상", color: "var(--series-2)", values: yrs.filter((y) => y % 5 === 0).map((y) => nat.mid[y].old) },
+  ],
+};
+const PF = d.pyramidFrames;
+const pyrFrames = (s: string) => ({
+  type: "pyramid" as const, groups: P.labels, left: [], right: [], leftName: "남자", rightName: "여자", height: 440,
+  frames: PF[s], refYear: by, start: 2050, speed: 260,
+});
+const waffleYears = yrs.filter((y) => y % 5 === 0);
+const waffle = {
+  type: "waffle" as const, caption: "명", start: waffleYears.indexOf(by), speed: 900,
+  projFrom: waffleYears.findIndex((y) => y > by),
+  groups: [
+    { name: "어린이 0~14세", color: "var(--series-3)" },
+    { name: "일하는 나이 15~64세", color: "var(--series-1)" },
+    { name: "고령자 65~84세", color: "var(--series-4)" },
+    { name: "85세 이상", color: "var(--series-2)" },
+  ],
+  frames: waffleYears.map((y) => {
+    const r = nat.mid[y];
+    return { label: y, values: [r.kids, r.work, r.old - r.old85, r.old85].map((v: number) => (v / r.total) * 100) };
+  }),
+};
+// 시도 지도 (연도 재생)
+const sidoNames = Object.fromEntries(d.sidos.map((s: any) => [s.id, s.full]));
+const mapYears = Object.keys(d.sidos[0].series).map(Number).filter((y) => y >= 2015 && y <= 2050);
+const projYears = mapYears.filter((y) => y >= by);
+const sidoMetrics = [
+  { key: "ch", label: `인구 변화 (${by}년 대비)`, format: "pctS" as const, kind: "div" as const, breaks: [-0.3, -0.2, -0.1, -0.05, 0, 0.05, 0.1], desc: `${by}년 인구 대비 변화율 (중위 추계). ▶ 를 누르면 ${by}→2050년 변화를 재생합니다.`,
+    frames: { labels: projYears, values: projYears.map((y) => Object.fromEntries(d.sidos.map((s: any) => [s.id, s.series[y].total / s.series[by].total - 1]))), start: projYears.length - 1 } },
+  { key: "old", label: "65세 이상 비중", format: "pct" as const, kind: "seq" as const, breaks: [0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45], desc: "주민 중 65세 이상 비율. 2015년 실측부터 2050년 추계까지.",
+    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(d.sidos.map((s: any) => [s.id, s.series[y].oldShare]))), start: mapYears.indexOf(2050), projFrom: mapYears.indexOf(by + 1) } },
+  { key: "age", label: "중위연령", format: "age" as const, kind: "seq-warm" as const, breaks: [42, 45, 48, 51, 54, 57, 60], desc: "주민을 나이순으로 세웠을 때 한가운데 사람의 나이.",
+    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(d.sidos.map((s: any) => [s.id, s.series[y].medianAge]))), start: mapYears.indexOf(2050), projFrom: mapYears.indexOf(by + 1) } },
+];
+const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((y) => y >= by).map((y) => [y, nat.mid[y].total])), groups: P.labels }).replace(/</g, "\\u003c");
+
 ---
 <Base title="대한민국의 미래" active="korea" description={`출생·사망·이동·연령별 인구를 결합한 2050년 대한민국 전망. 65세 이상 비중 ${pct(h.oldShare2025)} → ${pct(h.oldShare2050)}.`}>
   <div class="wrap">
-    <section class="hero">
-      <div class="eyebrow">대한민국의 미래 · 출생 × 사망 × 이동 × 연령별 인구</div>
-      <h1>2050년, 고령자 1명을 일하는 나이 {h.workPerOld2050}명이 받칩니다</h1>
-      <p class="lede">지금은 {h.workPerOld2025}명입니다. 주민등록 인구 5,100만 명을 1세 단위로 한 해씩 나이 들게 하고, 지역별 이동과 출생을 더해 2050년까지 굴려 봤습니다. 공식 추계가 나온 뒤의 실제 출생 흐름까지 반영했습니다.</p>
+    <section class="hero hero-split">
+      <div>
+        <div class="eyebrow">대한민국의 미래 · 출생 × 사망 × 이동 × 연령별 인구</div>
+        <h1>2050년, 고령자 1명을 일하는 나이 {h.workPerOld2050}명이 받칩니다</h1>
+        <p class="lede">지금은 {h.workPerOld2025}명입니다. 주민등록 인구 5,100만 명을 1세 단위로 한 해씩 나이 들게 하고, 지역별 이동과 출생을 더해 2050년까지 굴려 봤습니다. 공식 추계가 나온 뒤의 실제 출생 흐름까지 반영했습니다.</p>
+        <p class="small muted">오른쪽 피라미드는 2015년부터 해마다 한 프레임씩 재생됩니다. 검은 선은 {by}년 모습입니다. <a href="#sim">출산율을 직접 바꿔 보기 →</a></p>
+      </div>
+      <Chart spec={{ ...pyrFrames("mid"), start: 2015, autoplay: true, height: 400 }} table={pyrTable} title="인구 피라미드 2015 → 2050" sub="5세 단위, 남(왼쪽)·여(오른쪽). 2026년부터 자체 추계 중위" />
     </section>
     <div class="grid grid-4">
       <Stat label={`인구 ${by} → 2050 (중위)`} value={`${compact(h.pop2025)} → ${compact(h.pop2050.mid)}`} note={`${pct(h.pop2050.mid / h.pop2025 - 1, 0, true)} · 내국인 주민등록 기준`} tone="down" />
@@ -105,14 +162,14 @@ const sidoOld = [...d.sidos].sort((a: any, b: any) => b.oldShare2050 - a.oldShar
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={ageSpec} table={ageTable} title="연령 구조" sub="전체 인구 대비 비중, 중위" />
+      <ChartSwitch views={[{ label: "선", spec: ageSpec }, { label: "누적 영역", spec: ageArea }, { label: "인구 막대", spec: ageStack }]} table={ageTable} title="연령 구조" sub="같은 데이터를 비중 선 · 100% 누적 · 인원 막대로 바꿔 볼 수 있습니다 (중위)" />
       <Chart spec={supportSpec} title="고령자 1명을 받치는 20~64세 인구" sub={`2명 아래로: ${ms.workPerOld2}년`} />
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={pyrSpec} table={pyrTable} title={`인구 피라미드: 2050년 (막대) vs ${by}년 (선)`} sub="자체 추계 중위, 5세 단위" />
+      <Chart spec={waffle} title="대한민국이 100명의 마을이라면" sub="5년 단위로 재생 · 한 칸 = 국민 1%" />
       <div class="card">
-        <h3 class="card-title">대한민국이 100명의 마을이라면</h3>
+        <h3 class="card-title">100명의 마을, 숫자로</h3>
         <p class="card-sub">중위 추계</p>
         <div class="table-wrap">
           <table>
@@ -124,17 +181,59 @@ const sidoOld = [...d.sidos].sort((a: any, b: any) => b.oldShare2050 - a.oldShar
       </div>
     </section>
 
-    <section class="section grid grid-2">
-      <div class="card">
-        <h3 class="card-title">시도별 인구 변화 ({by} → 2050)</h3>
-        <p class="card-sub">시군구 추계의 합, 중위</p>
-        <BarList items={sidoBars} format="pct" diverging />
+    <section class="section">
+      <h2>지역마다 다른 속도</h2>
+      <p class="section-desc">시군구 229곳을 각각 추계해 시도로 더했습니다. 지표를 바꾸고 ▶ 를 눌러 보세요. 지역을 누르면 그 안의 시군구를 볼 수 있는 <a href={`${import.meta.env.BASE_URL}dongne/`}>우리 동네의 미래</a>로 이어집니다.</p>
+      <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} links={Object.fromEntries(d.sidos.map((s: any) => [s.id, `${import.meta.env.BASE_URL}dongne/#map`]))} title="시도별 인구 지도" sub="중위 추계" />
+    </section>
+
+    <section class="section card" id="sim">
+      <h2 style="margin-top:0">직접 바꿔 보는 2050년</h2>
+      <p class="section-desc">출산율이 오르면, 이민을 받으면, 더 오래 살면 2050년은 어떻게 달라질까요? 이 페이지의 추계와 같은 코호트 모형을 브라우저에서 바로 돌립니다. 회색 점선은 이 사이트의 기본 추계(중위)로, 통계청 중위 가정처럼 출산율이 2050년 약 {(d.sim.tfrBase * d.sim.fertMid["2050"]).toFixed(2)}명까지 회복한다고 본 값입니다. 출산율이 지금 수준({d.sim.tfrBase})에 머물면 인구는 그보다 빨리 줄어듭니다.</p>
+      <div class="sim">
+        <div class="sim-controls">
+          <div class="slider">
+            <div class="slider-top"><label for="s-tfr">합계출산율 목표</label><output id="o-tfr"></output></div>
+            <input type="range" id="s-tfr" min="0.5" max="2.1" step="0.05" value={d.sim.tfrBase} />
+            <div class="slider-hint"><span>0.5</span><span>{by}년 실제 {d.sim.tfrBase}</span><span>2.1 (인구 유지)</span></div>
+          </div>
+          <div class="slider">
+            <div class="slider-top"><label for="s-year">목표 도달 연도</label><output id="o-year"></output></div>
+            <input type="range" id="s-year" min="2027" max="2045" step="1" value="2030" />
+          </div>
+          <div class="slider">
+            <div class="slider-top"><label for="s-mig">이민 순유입 (매년 추가)</label><output id="o-mig"></output></div>
+            <input type="range" id="s-mig" min="0" max="400000" step="10000" value="0" />
+            <div class="slider-hint"><span>0</span><span>20만</span><span>40만 명</span></div>
+          </div>
+          <div class="slider">
+            <div class="slider-top"><label for="s-mort">60세 이상 사망률 개선 (매년)</label><output id="o-mort"></output></div>
+            <input type="range" id="s-mort" min="0" max="0.03" step="0.0025" value="0" />
+            <div class="slider-hint"><span>최근 수준 유지</span><span>연 3%</span></div>
+          </div>
+          <div>
+            <div class="small muted" style="margin-bottom:6px">빠른 시나리오</div>
+            <div class="presets">
+              <button type="button" data-p="0.65,2030,0,0">저출산 심화</button>
+              <button type="button" data-p={`${d.sim.tfrBase},2030,0,0`}>현 수준 유지</button>
+              <button type="button" data-p={`${(d.sim.tfrBase * d.sim.fertMid["2050"]).toFixed(2)},2045,0,0`}>기본 추계(중위)와 비슷하게</button>
+              <button type="button" data-p="1.0,2035,0,0.01">완만한 회복</button>
+              <button type="button" data-p="1.3,2035,100000,0.01">프랑스 절반 수준</button>
+              <button type="button" data-p="1.0,2035,250000,0.01">이민 확대</button>
+              <button type="button" data-p="2.1,2030,0,0.01">인구 대체 수준</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="sim-out" id="sim-out"></div>
+          <div class="grid grid-2" style="margin-top:14px">
+            <div><h3 class="card-title">총인구</h3><div class="chart" id="sim-pop"></div></div>
+            <div><h3 class="card-title">2050년 인구 피라미드</h3><div class="chart" id="sim-pyr"></div></div>
+          </div>
+        </div>
       </div>
-      <div class="card">
-        <h3 class="card-title">2050년 65세 이상 비중</h3>
-        <p class="card-sub">시도별, 중위</p>
-        <BarList items={sidoOld} format="pct" color="var(--series-2)" />
-      </div>
+      <p class="small muted" style="margin-top:12px">모형: 성별 1세 코호트 변화율(최근 3년, 사망+이동 포함) × 출생(20~44세 여성 × 아동비 × 출산율 비율). 이민자는 20대 후반 중심 연령 분포로 남녀 반반 가정. 내국인 주민등록 기준이며 장기 이민의 귀화·출산 효과는 단순화했습니다.</p>
+      <script type="application/json" id="sim-data" set:html={simJson} />
     </section>
 
     <section class="section card method" id="method">
@@ -142,8 +241,8 @@ const sidoOld = [...d.sidos].sort((a: any, b: any) => b.oldShare2050 - a.oldShar
       <h3>무엇을 결합했나</h3>
       <p>행정안전부 주민등록인구(1세별, 시군구, 2015~2025년 말), 통계청 인구동향 출생아·합계출산율, 통계청 장래인구추계(2022년 기준)의 시나리오별 출생아·가임여성 인구를 결합했습니다. 공식 추계는 2022년 인구에서 출발하지만, 그 뒤 3년의 실제 출생과 이동이 반영된 2025년 주민등록 인구에서 다시 출발한 것이 차이입니다.</p>
       <h3>추계 방법</h3>
-      <div class="formula">인구(a세, t+1) = 인구(a−1세, t) × 코호트 변화율(a)      ← 사망 + 국내외 이동
-0세(t)       = 20~44세 여성(t) × 아동비 × 출산율 지수(시나리오, t)</div>
+      <pre class="formula">인구(a세, t+1) = 인구(a−1세, t) × 코호트 변화율(a)      ← 사망 + 국내외 이동
+0세(t)       = 20~44세 여성(t) × 아동비 × 출산율 지수(시나리오, t)</pre>
       <p>코호트 변화율은 최근 3년 평균입니다. 시군구 229곳을 각각 추계한 뒤 더해 전국과 시도 값을 만들었습니다. 출산율 지수는 공식 추계 시나리오의 "가임여성 1명당 출생아" 변화율을 {by}년 = 1로 둔 것입니다. 2050년 피라미드의 남녀 구분은 같은 출생 코호트의 {by}년 성비를 적용했습니다.</p>
       <h3>한계</h3>
       <ul>
@@ -156,3 +255,72 @@ const sidoOld = [...d.sidos].sort((a: any, b: any) => b.oldShare2050 - a.oldShar
     </section>
   </div>
 </Base>
+
+<script>
+  import { simulate } from "../../lib/popsim";
+  import { mount } from "../../lib/charts";
+  import { fmt } from "../../lib/format";
+  const D = JSON.parse(document.getElementById("sim-data")!.textContent || "{}");
+  const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const inputs = { tfr: $("s-tfr"), year: $("s-year"), mig: $("s-mig"), mort: $("s-mort") };
+  const popEl = document.getElementById("sim-pop")!;
+  const pyrEl = document.getElementById("sim-pyr")!;
+  const out = document.getElementById("sim-out")!;
+  const baseline = simulate(D.p, { tfr: D.p.tfrBase, tfrYear: 2030, mig: 0, mortImp: 0 });
+  const b50 = baseline.years[baseline.years.length - 1];
+  let raf = 0;
+  const run = () => {
+    const inp = { tfr: +inputs.tfr.value, tfrYear: +inputs.year.value, mig: +inputs.mig.value, mortImp: +inputs.mort.value };
+    $("o-tfr").textContent = inp.tfr.toFixed(2) + "명";
+    $("o-year").textContent = inp.tfrYear + "년";
+    $("o-mig").textContent = inp.mig ? fmt(inp.mig, "man") + "명" : "없음";
+    $("o-mort").textContent = inp.mortImp ? (inp.mortImp * 100).toFixed(2).replace(/0$/, "") + "%" : "없음";
+    const r = simulate(D.p, inp);
+    const y50 = r.years[r.years.length - 1];
+    const tiles: [string, string, string][] = [
+      ["2050년 총인구", fmt(y50.total, "man"), `현 수준 유지 대비 ${fmt(y50.total / b50.total - 1, "pct1S")}`],
+      ["65세 이상 비중", fmt(y50.old / y50.total, "pct1"), `현 수준 유지 ${fmt(b50.old / b50.total, "pct1")}`],
+      ["고령자 1명당 20~64세", y50.workPerOld.toFixed(2) + "명", `현 수준 유지 ${b50.workPerOld.toFixed(2)}명`],
+      ["2050년 출생아", fmt(y50.births, "man") + "명", `${D.p.baseYear}년 ${fmt(r.years[0].births, "man")}명`],
+    ];
+    out.innerHTML = "";
+    for (const [k, v, n] of tiles) {
+      const d = document.createElement("div");
+      d.className = "stat";
+      d.innerHTML = `<div class="stat-label"></div><div class="stat-value"></div><div class="stat-note"></div>`;
+      d.querySelector(".stat-label")!.textContent = k;
+      d.querySelector(".stat-value")!.textContent = v;
+      d.querySelector(".stat-note")!.textContent = n;
+      out.appendChild(d);
+    }
+    mount(popEl, {
+      type: "line", yFormat: "man", height: 240, zeroBased: false, animate: false,
+      series: [
+        { name: "기본 추계 (중위)", color: "var(--neutral-series)", dash: true, data: Object.entries(D.base).map(([y, v]) => [+y, v as number]) },
+        { name: "현 수준 유지", color: "var(--series-2)", data: baseline.years.map((y) => [y.year, y.total]), width: 1.5, muted: true },
+        { name: "내 시나리오", color: "var(--series-1)", data: r.years.map((y) => [y.year, y.total]), label: true, width: 2.5 },
+      ],
+    } as any);
+    mount(pyrEl, {
+      type: "pyramid", groups: D.groups, leftName: "남자", rightName: "여자", outlineName: "현 수준 유지", height: 300,
+      left: r.frames.m[r.frames.m.length - 1], right: r.frames.f[r.frames.f.length - 1],
+      leftOutline: baseline.frames.m[baseline.frames.m.length - 1], rightOutline: baseline.frames.f[baseline.frames.f.length - 1],
+    } as any);
+  };
+  const schedule = () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(run);
+  };
+  Object.values(inputs).forEach((i) => i.addEventListener("input", schedule));
+  document.querySelectorAll<HTMLButtonElement>(".presets button").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [t, y, m, mo] = b.dataset.p!.split(",");
+      inputs.tfr.value = t;
+      inputs.year.value = y;
+      inputs.mig.value = m;
+      inputs.mort.value = mo;
+      run();
+    }),
+  );
+  run();
+</script>

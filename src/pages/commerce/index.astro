@@ -4,6 +4,8 @@ import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import RegionSearch from "../../components/RegionSearch.astro";
+import KoreaMap from "../../components/KoreaMap.astro";
+import ChartSwitch from "../../components/ChartSwitch.astro";
 import data from "../../data/commerce.json";
 import { pts, joinProj, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -66,10 +68,6 @@ const consTable = {
   rows: [2015, 2020, 2025, 2030, 2035, 2040, 2045].map((y) => [`${y}${y > 2025 ? " (추계)" : ""}`, int(val(cs.actual, y) ?? val(cs.mid, y))]),
 };
 
-const sidoBars = Object.entries(S)
-  .filter(([k]) => k !== "00")
-  .map(([k, v]: [string, any]) => ({ name: v.name, value: p(v.consumerChange2035) as number }))
-  .sort((a, b) => a.value - b.value);
 const sidoRows = Object.entries(S)
   .filter(([k]) => k !== "00")
   .map(([k, v]: [string, any]) => {
@@ -85,6 +83,61 @@ const top = regions.slice(0, 10);
 const bottom = regions.slice(-10).reverse();
 const searchItems = regions.map((r) => ({ name: r.name, sub: `${r.sido} · ${CLASS[r.class].label}`, href: href(r) }));
 const storeChange = nat.stores[y1] / nat.stores[g0] - 1;
+// ---- 지도 · 산점도
+const names = Object.fromEntries(regions.map((r) => [r.id, `${r.sido} ${r.name}`]));
+const links = Object.fromEntries(regions.map((r) => [r.id, href(r)]));
+const notes = Object.fromEntries(regions.map((r) => [r.id, `${CLASS[r.class].label}${r.oversupply ? " · 점포 과잉 신호" : ""} · 소비인구 2035 ${pct(p(r.metrics.consumerChange2035), 0, true)}`]));
+const consYears = Array.from({ length: 21 }, (_, i) => 2025 + i);
+const consAt = (r: any, y: number) => {
+  const c = r.series.consumers;
+  const b = val(c.actual, 2025);
+  const v = y <= 2025 ? val(c.actual, y) : val(c.mid, y);
+  return b && v ? v / b - 1 : null;
+};
+const mapMetrics = [
+  { key: "idx", label: "상권 활력 지수", format: "dec1" as const, kind: "div" as const, mid: 50, breaks: [35, 42, 46, 50, 54, 58, 65],
+    desc: "50 = 전국 평균. 파랑은 평균보다 강하고 빨강은 약한 상권입니다. 시도를 누르면 확대되고, 한 번 더 누르면 상세 페이지로 갑니다.",
+    values: Object.fromEntries(regions.map((r) => [r.id, r.index])) },
+  { key: "cons", label: "소비인구 변화", format: "pctS" as const, kind: "div" as const, breaks: [-0.3, -0.2, -0.1, -0.05, 0, 0.05, 0.1],
+    desc: "20~64세 주민의 2025년 대비 변화 (중위 추계). ▶ 를 누르면 2045년까지 손님이 줄어드는 과정을 재생합니다.",
+    frames: { labels: consYears, values: consYears.map((y) => Object.fromEntries(regions.map((r) => [r.id, consAt(r, y)]))), start: consYears.indexOf(2035) } },
+  { key: "sg", label: `상권 사업체 증감 (${g0}→${y1}, 연)`, format: "pct1S" as const, kind: "div" as const, breaks: [-0.02, -0.01, 0, 0.01, 0.02, 0.04],
+    desc: "도소매+숙박음식 사업체의 연평균 증감률.",
+    values: Object.fromEntries(regions.map((r) => [r.id, p(r.metrics.storeGrowth)])) },
+];
+const scatterSpec = {
+  type: "scatter" as const, height: 440,
+  xLabel: `상권 사업체 증감 (연, ${g0}→${y1})`, yLabel: "소비인구 변화 (2025→2035)", rLabel: `사업체 ${y1}`,
+  xFormat: "pct1S" as const, yFormat: "pctS" as const, rFormat: "int" as const,
+  xRef: 0, yRef: -0.2,
+  quadrants: ["가게 감소", "가게 증가", "가게 감소 · 손님 20%↓", "점포 과잉 신호"] as [string, string, string, string],
+  groups: order.map((c) => ({ name: CLASS[c].label, color: CLASS[c].color })),
+  labels: overTop.slice(0, 5).map((r) => `${r.sido} ${r.name}`),
+  points: regions.filter((r) => r.metrics.storeGrowth != null && r.metrics.consumerChange2035 != null).map((r) => ({
+    x: p(r.metrics.storeGrowth) as number, y: p(r.metrics.consumerChange2035) as number, r: r.metrics.stores ?? 0,
+    label: `${r.sido} ${r.name}`, group: CLASS[r.class].label, href: href(r), note: `활력 지수 ${r.index.toFixed(1)}${r.oversupply ? " · 점포 과잉 신호" : ""}`,
+  })),
+};
+// 순진입률 (확정 연도만)
+const neYears = demYears.filter((y) => dem[y].deathRate != null);
+const netSpec = {
+  type: "column" as const, yFormat: "pp" as const, height: 260,
+  categories: neYears.map(String),
+  values: neYears.map((y) => Math.round((dem[y].birthRate - dem[y].deathRate) * 10) / 10),
+  colors: neYears.map((y) => (dem[y].birthRate - dem[y].deathRate < 0 ? "var(--div-neg)" : "var(--div-pos)")),
+};
+// 시도 지도
+const sidoIds = Object.keys(S).filter((k) => k !== "00");
+const sidoNames = Object.fromEntries(sidoIds.map((k) => [k, S[k].name]));
+const sidoMetrics = [
+  { key: "c35", label: "2035년 소비인구 변화", format: "pctS" as const, kind: "div" as const, breaks: [-0.25, -0.2, -0.15, -0.1, -0.05, 0],
+    values: Object.fromEntries(sidoIds.map((k) => [k, p(S[k].consumerChange2035)])) },
+  { key: "idx", label: "평균 활력 지수", format: "dec1" as const, kind: "div" as const, mid: 50, breaks: [42, 46, 50, 54, 58],
+    values: Object.fromEntries(sidoRows.map((s) => [sidoIds.find((k) => S[k].name === s.name)!, Math.round(s.idx * 10) / 10])) },
+  { key: "over", label: "점포 과잉 신호 시군구 비율", format: "pct" as const, kind: "seq-warm" as const, breaks: [0.1, 0.2, 0.3, 0.4, 0.5],
+    values: Object.fromEntries(sidoRows.map((s) => [sidoIds.find((k) => S[k].name === s.name)!, s.over / s.n])) },
+];
+
 ---
 <Base title="소멸하는 상권, 성장하는 상권" active="commerce" description={`사업체·창업·폐업·인구이동·인구추계를 결합한 시군구 상권 활력 지수. 전국 ${N}개 시군구 중 ${over.length}곳은 점포가 늘고 있지만 2035년 소비인구가 20% 이상 줄어듭니다.`}>
   <div class="wrap">
@@ -104,6 +157,12 @@ const storeChange = nat.stores[y1] / nat.stores[g0] - 1;
       <Stat label="상권 기업 신생률" value={`${firstDem.birthRate}% → ${lastDem.birthRate}%`} note={`${demYears[0]} → ${demYears.at(-1)}, 새로 문 여는 비율이 계속 낮아짐`} tone="down" />
       <Stat label="점포 과잉 신호" value={String(over.length)} unit="곳" note={`점포 증가 + 2035년 소비인구 20%↓ (${N}곳 중)`} />
     </div>
+
+    <section class="section" id="map">
+      <h2>상권 지도</h2>
+      <p class="section-desc">{N}개 시군구의 상권 활력, 앞으로의 손님(소비인구), 최근 가게 증감을 지도로 봅니다. 지표를 바꿔 보세요.</p>
+      <KoreaMap metrics={mapMetrics} names={names} links={links} notes={notes} title="시군구 상권 지도" sub="도소매 + 숙박음식 · 소비인구는 20~64세 주민" />
+    </section>
 
     <section class="section">
       <h2>전국 상권 상태 분포</h2>
@@ -130,12 +189,14 @@ const storeChange = nat.stores[y1] / nat.stores[g0] - 1;
 
     <section class="section grid grid-2">
       <Chart spec={consSpec} table={consTable} title="전국 소비인구 (20~64세)" sub="주민등록 실측(~2025) + 소지역 인구추계 합계. 음영은 출산율 저위~고위 (2045년까지는 차이가 작음)" />
-      <Chart spec={rateSpec} table={rateTable} title="상권 기업의 신생률·소멸률" sub={`도소매+숙박음식, 활동 기업 대비 %. 소멸은 ${demYears.at(-2)}년까지 확정`} />
+      <ChartSwitch views={[{ label: "신생·소멸률", spec: rateSpec }, { label: "순진입률", spec: netSpec, note: "신생률 − 소멸률. 0 아래면 닫는 기업이 여는 기업보다 많습니다." }]} table={rateTable} title="상권 기업의 신생률·소멸률" sub={`도소매+숙박음식, 활동 기업 대비 %. 소멸은 ${demYears.at(-2)}년까지 확정`} />
     </section>
 
     <section class="section">
       <h2>점포 과잉 신호: 가게는 느는데 손님은 줄어드는 곳</h2>
-      <p class="section-desc">{g0}→{y1}년 상권 사업체가 늘었지만 2035년 소비인구는 20% 이상 줄어드는 {over.length}곳. 점포 수가 그대로라면 소비인구 1천 명당 점포가 얼마나 많아지는지 보여 줍니다. 아래는 소비인구 감소 폭이 큰 순서입니다.</p>
+      <p class="section-desc">{g0}→{y1}년 상권 사업체가 늘었지만 2035년 소비인구는 20% 이상 줄어드는 {over.length}곳. 점포 수가 그대로라면 소비인구 1천 명당 점포가 얼마나 많아지는지 보여 줍니다.</p>
+      <Chart spec={scatterSpec} title="가게 증가율 × 10년 뒤 손님 변화" sub={`점 하나 = 시군구, 크기 = ${y1}년 상권 사업체 수, 색 = 상권 상태. 오른쪽 아래(가게는 늘고 소비인구는 20% 넘게 줄어듦)가 점포 과잉 신호 구역입니다. 점을 누르면 상세 페이지로 갑니다.`} />
+      <h3 style="margin-top:24px">점포 과잉 신호 {over.length}곳 (소비인구 감소 폭이 큰 순)</h3>
       <div class="table-wrap" style="max-height:480px">
         <table>
           <thead><tr><th>지역</th><th class="num">사업체 증감(연)</th><th class="num">소비인구 2035</th><th class="num">1천 명당 점포 {y1}</th><th class="num">→ 2035</th><th class="num">활력 지수</th></tr></thead>
@@ -172,7 +233,7 @@ const storeChange = nat.stores[y1] / nat.stores[g0] - 1;
       <h2>시도별 요약</h2>
       <p class="section-desc">2025→2035년 소비인구(20~64세) 변화와 시도 안 시군구의 상권 상태.</p>
       <div class="grid grid-2">
-        <div class="card"><h3 class="card-title">2035년 소비인구 변화</h3><BarList items={sidoBars} format="pct" diverging /></div>
+        <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} rank={false} compact title="시도별 상권 지도" sub="지표를 바꿔 보세요" />
         <div class="table-wrap">
           <table>
             <thead><tr><th>시도</th><th class="num">평균 지수</th><th class="num">성장</th><th class="num">위축·소멸위험</th><th class="num">과잉 신호</th></tr></thead>
@@ -243,7 +304,7 @@ const storeChange = nat.stores[y1] / nat.stores[g0] - 1;
         <li>소비인구(20~64세) 2025→2030 변화 (이 사이트의 소지역 인구추계 중위) — {meta.weights.consumers2030 * 100}%</li>
         <li>20~39세 순이동률 (최근 3년, 인구 1천 명당) — {meta.weights.youngMigration * 100}%</li>
       </ul>
-      <div class="formula">활력 지수 = 50 + 15 × Σ(가중치 × z)   (0~100으로 제한, 50 = 전국 평균)</div>
+      <pre class="formula">활력 지수 = 50 + 15 × Σ(가중치 × z)   (0~100으로 제한, 50 = 전국 평균)</pre>
       <h3>2. 상태 분류와 조기 신호</h3>
       <ul>{order.map((c) => <li>{meta.classes[c]}</li>)}<li>{meta.oversupply}</li></ul>
       <p>소멸위험은 지수와 상관없이 먼저 적용합니다. '1천 명당 점포 → 2035'는 점포 수가 {y1}년 그대로일 때 2035년 소비인구 1천 명당 점포 수로, 점포 1곳이 나눠 갖는 손님이 얼마나 줄어드는지 보여 줍니다. 미래 값은 인구추계에 따른 시나리오이며 예측이 아닙니다.</p>

@@ -3,6 +3,7 @@ import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
+import ChartSwitch from "../../components/ChartSwitch.astro";
 import data from "../../data/industry.json";
 import { pts } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -63,19 +64,6 @@ const demandKeys = [
   ["hold", "현 수준 유지"],
   ["trend", "추세 연장"],
 ] as const;
-const supplyKeys = [
-  ["base", "고용률 유지"],
-  ["older", "고령자 고용 확대"],
-] as const;
-const gapYears = ["2035", "2045"];
-const gapLists: Record<string, { name: string; value: number }[]> = {};
-for (const [d] of demandKeys)
-  for (const [s] of supplyKeys)
-    for (const y of gapYears)
-      gapLists[`${d}-${s}-${y}`] = inds
-        .map((i) => ({ name: i.name, value: i.gap[d][s][y] * 1000 }))
-        .sort((a, b) => a.value - b.value);
-const totalGap = S.gap;
 const short35 = S.largestShortage2035 as any[];
 
 // 은퇴 대체 수요
@@ -94,16 +82,61 @@ const top = (key: string, n = 1) => [...inds].sort((a, b) => (b.cagr[key] ?? -9)
 const bestProd = top("productivity")[0];
 const qInd = inds.find((i) => i.id === "Q");
 const qShare = qInd.gap.demo.base["2035"] / S.gap.demo.base["2035"];
+// ---- 시각화 확장
+const clsSeries: Record<string, string> = { 성장: "var(--series-1)", 정체: "var(--neutral-series)", 쇠퇴: "var(--series-2)" };
+const ageNames: Record<string, string> = { "15-29": "15~29세", "30-39": "30대", "40-49": "40대", "50-59": "50대", "60+": "60세 이상" };
+const ageColors = ["var(--series-3)", "var(--series-1)", "var(--series-7)", "var(--series-4)", "var(--series-2)"];
+const sbaYears = Object.keys(sba).map(Number);
+const ageAreaSpec = {
+  type: "area" as const, yFormat: "man" as const, height: 300,
+  series: ageKeys.map((a, i) => ({ name: ageNames[a], color: ageColors[i], data: sbaYears.map((y) => [y, sba[y][a] * 1000] as [number, number]) })),
+};
+const ageStackSpec = {
+  type: "stack" as const, percent: true, height: 300, categories: sbaYears.map(String),
+  series: ageKeys.map((a, i) => ({ name: ageNames[a], color: ageColors[i], values: sbaYears.map((y) => sba[y][a] * 1000) })),
+};
+// 막대 레이스: 산업별 취업자 2013→2025
+const empYears = Object.keys(inds[0].employment).sort();
+const raceSpec = {
+  type: "race" as const, top: 12, format: "man" as const, unit: "명", speed: 800, start: 0,
+  names: inds.map((i) => i.name), colors: inds.map((i) => clsSeries[i.class]),
+  frames: empYears.map((y) => ({ label: y, values: inds.map((i) => (i.employment[y] == null ? null : i.employment[y] * 1000)) })),
+};
+// 버블: 고용 vs 실질 부가가치 증가율
+const scatterSpec = {
+  type: "scatter" as const, height: 420, xFormat: "pct1S" as const, yFormat: "pct1S" as const, rFormat: "man" as const,
+  xLabel: "취업자 연평균 증가율", yLabel: "실질 부가가치 연평균 증가율", rLabel: `취업자 ${base}`,
+  xRef: N.cagr.employment, yRef: N.cagr.gva,
+  quadrants: ["사람은 덜, 생산은 더", "", "고용·생산 동반 축소", "고용만 늘고 생산은 정체"] as [string, string, string, string],
+  groups: ["성장", "정체", "쇠퇴"].map((c) => ({ name: c, color: clsSeries[c] })),
+  labels: ["보건·사회복지", "전자·전기·기계·정밀", "정보통신", "도매·소매", "섬유·의복·가죽", "건설", "금융·보험", "교육"],
+  points: inds.filter((i) => i.cagr.gva != null).map((i) => ({ x: i.cagr.employment, y: i.cagr.gva, r: i.employment[base] * 1000, label: i.name, group: i.class, note: `1인당 생산성 연 ${pct(i.cagr.productivity, 1, true)}` })),
+};
+// 과부족 시뮬레이터 입력
+const simJson = JSON.stringify({
+  base,
+  total: { supply: N.supply, },
+  inds: inds.map((i) => ({ id: i.id, name: i.name, supply: i.supply, demand: i.demand })),
+}).replace(/</g, "\\u003c");
+
 ---
 <Base title="대한민국 산업의 미래" active="industry" description={`산업별 고용·생산·수출과 인구추계를 결합한 산업구조·고용수요 전망. 고용률이 지금과 같다면 노동공급은 ${base}년 대비 ${end}년 ${pct(S.supplyChange2045.base, 0, true)} 변합니다.`}>
   <div class="wrap">
-    <section class="hero">
-      <div class="eyebrow">대한민국 산업의 미래 · 산업별 고용 × 생산 × 수출 × 인구추계</div>
-      <h1>일할 사람은 줄고, 돌봄 일자리만 커집니다</h1>
-      <p class="lede">
-        산업별 취업자의 나이 구조, 실질 부가가치, 수출 실적에 주민등록 기반 인구추계를 결합했습니다. 어떤 산업이 커지고 있는지,
-        10년 안에 은퇴로 비는 자리가 얼마나 되는지, 그리고 인구가 줄 때 어느 산업에서 사람이 모자라는지 시나리오로 계산합니다.
-      </p>
+    <section class="hero hero-split">
+      <div>
+        <div class="eyebrow">대한민국 산업의 미래 · 산업별 고용 × 생산 × 수출 × 인구추계</div>
+        <h1>일할 사람은 줄고, 돌봄 일자리만 커집니다</h1>
+        <p class="lede">
+          산업별 취업자의 나이 구조, 실질 부가가치, 수출 실적에 주민등록 기반 인구추계를 결합했습니다. 어떤 산업이 커지고 있는지,
+          10년 안에 은퇴로 비는 자리가 얼마나 되는지, 그리고 인구가 줄 때 어느 산업에서 사람이 모자라는지 시나리오로 계산합니다.
+        </p>
+        <p class="small muted">오른쪽은 {empYears[0]}→{empYears.at(-1)}년 산업별 취업자 순위입니다. 보건·사회복지가 {compact(qInd.employment[empYears[0]] * 1000)}명에서 {compact(qInd.employment[empYears.at(-1)!] * 1000)}명으로 늘며 순위를 끌어올리는 모습을 재생해 보세요. 색: <span class="kw" style="--c:var(--series-1)">성장</span> <span class="kw" style="--c:var(--neutral-series)">정체</span> <span class="kw" style="--c:var(--series-2)">쇠퇴</span></p>
+      </div>
+      <figure class="card" style="margin:0">
+        <h3 class="card-title">산업별 취업자 순위 {empYears[0]} → {empYears.at(-1)}</h3>
+        <p class="card-sub">상위 12개 산업, 지역별고용조사 연평균</p>
+        <div class="chart" data-chart><script type="application/json" set:html={JSON.stringify({ ...raceSpec, autoplay: true }).replace(/</g, "\\u003c")} /></div>
+      </figure>
     </section>
 
     <div class="grid grid-4">
@@ -124,16 +157,7 @@ const qShare = qInd.gap.demo.base["2035"] / S.gap.demo.base["2035"];
     </section>
 
     <section class="section grid grid-2">
-      <div class="card">
-        <h3 class="card-title">노동공급의 연령 구성 (고용률 유지)</h3>
-        <p class="card-sub">60세 이상 비중: {base}년 {pct(older2025, 0)} → {end}년 {pct(older2045, 0)}</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr>{ageTable.headers.map((h, i) => <th class={i ? "num" : ""}>{h}</th>)}</tr></thead>
-            <tbody>{ageTable.rows.map((r) => <tr>{r.map((c, i) => <td class={i ? "num" : ""}>{c}</td>)}</tr>)}</tbody>
-          </table>
-        </div>
-      </div>
+      <ChartSwitch views={[{ label: "인원 누적", spec: ageAreaSpec }, { label: "구성비 막대", spec: ageStackSpec }]} table={ageTable} title="노동공급의 연령 구성 (고용률 유지)" sub={`60세 이상 비중: ${base}년 ${pct(older2025, 0)} → ${end}년 ${pct(older2045, 0)}`} />
       <div class="card">
         <h3 class="card-title">무엇이 새로 보이나</h3>
         <div class="insight" style="margin-top:8px">
@@ -149,39 +173,48 @@ const qShare = qInd.gap.demo.base["2035"] / S.gap.demo.base["2035"];
     </section>
 
     <section class="section" id="gap">
-      <h2>산업별 인력 과부족 시나리오</h2>
+      <h2>산업별 인력 과부족 시뮬레이터</h2>
       <p class="section-desc">
-        공급에서 수요를 뺀 값입니다. 왼쪽(빨강)은 사람이 모자라고, 오른쪽(파랑)은 남는다는 뜻입니다. 수요와 공급 가정을 바꿔 보세요.
+        공급에서 수요를 뺀 값입니다. 왼쪽(빨강)은 사람이 모자라고, 오른쪽(파랑)은 남는다는 뜻입니다. 수요 가정을 고르고, 고령자 고용과 생산성 향상을 슬라이더로 바꿔 보세요.
         어느 시나리오도 예측이 아니라 "이 가정이면 이렇게 된다"를 보여주는 계산입니다.
       </p>
-      <div class="controls" role="group" aria-label="시나리오 선택">
-        <div class="seg" data-group="d">
-          {demandKeys.map(([k, l], i) => <button type="button" data-v={k} aria-pressed={i === 0 ? "true" : "false"}>수요: {l}</button>)}
-        </div>
-        <div class="seg" data-group="s">
-          {supplyKeys.map(([k, l], i) => <button type="button" data-v={k} aria-pressed={i === 0 ? "true" : "false"}>공급: {l}</button>)}
-        </div>
-        <div class="seg" data-group="y">
-          {gapYears.map((y, i) => <button type="button" data-v={y} aria-pressed={i === 0 ? "true" : "false"}>{y}년</button>)}
-        </div>
-      </div>
       <div class="card">
-        {Object.entries(gapLists).map(([key, items]) => {
-          const [d, s, y] = key.split("-");
-          return (
-            <div data-gap={key} hidden={key !== "demo-base-2035"}>
-              <p class="card-sub">
-                경제 전체 {y}년: <strong>{totalGap[d][s][y] < 0 ? `${compact(-totalGap[d][s][y] * 1000)}명 부족` : `${compact(totalGap[d][s][y] * 1000)}명 여유`}</strong>
-                · {demandKeys.find((x) => x[0] === d)![1]} 수요 / {supplyKeys.find((x) => x[0] === s)![1]}
-              </p>
-              <BarList items={items} format="man" diverging />
+        <div class="sim">
+          <div class="sim-controls">
+            <div>
+              <div class="small muted" style="margin-bottom:6px">수요 가정</div>
+              <div class="seg" data-group="d">
+                {demandKeys.map(([k, l], i) => <button type="button" data-v={k} aria-pressed={i === 0 ? "true" : "false"}>{l}</button>)}
+              </div>
             </div>
-          );
-        })}
+            <div class="slider">
+              <div class="slider-top"><label for="g-older">고령자(60~74세) 고용 확대</label><output id="o-older"></output></div>
+              <input type="range" id="g-older" min="0" max="2" step="0.1" value="0" />
+              <div class="slider-hint"><span>지금 고용률 유지</span><span>시나리오 1배</span><span>2배</span></div>
+            </div>
+            <div class="slider">
+              <div class="slider-top"><label for="g-prod">생산성 향상으로 줄어드는 인력 수요</label><output id="o-prod"></output></div>
+              <input type="range" id="g-prod" min="0" max="0.02" step="0.001" value="0" />
+              <div class="slider-hint"><span>없음</span><span>연 2%</span></div>
+            </div>
+            <div>
+              <div class="small muted" style="margin-bottom:6px">기준 연도</div>
+              <div class="seg" data-group="y">
+                {["2030", "2035", "2040", "2045"].map((y) => <button type="button" data-v={y} aria-pressed={y === "2035" ? "true" : "false"}>{y}년</button>)}
+              </div>
+            </div>
+            <p class="small muted" style="margin:0">고령자 고용 확대 1배 = {M.scenarios.supply.older}. 수요 — 인구 연동: {M.scenarios.demand.demo} · 현 수준 유지: {M.scenarios.demand.hold} · 추세 연장: {M.scenarios.demand.trend}</p>
+          </div>
+          <div>
+            <div class="sim-out" id="g-out"></div>
+            <h3 class="card-title" style="margin-top:16px">경제 전체 인력 과부족 추이</h3>
+            <div class="chart" id="g-line"></div>
+          </div>
+        </div>
+        <h3 class="card-title" style="margin-top:20px" id="g-bars-title">산업별 과부족</h3>
+        <div class="bar-list" id="g-bars" role="list"></div>
       </div>
-      <p class="small muted" style="margin-top:10px">
-        수요 시나리오 — 인구 연동: {M.scenarios.demand.demo} · 현 수준 유지: {M.scenarios.demand.hold} · 추세 연장: {M.scenarios.demand.trend}
-      </p>
+      <script type="application/json" id="g-data" set:html={simJson} />
     </section>
 
     <section class="section grid grid-2">
@@ -217,6 +250,11 @@ const qShare = qInd.gap.demo.base["2035"] / S.gap.demo.base["2035"];
         {M.trendFrom}→{M.trendTo}년 연평균 증가율을 경제 전체(취업자 {pct(N.cagr.employment, 1, true)}, 실질 부가가치 {pct(N.cagr.gva, 1, true)}, 수출 {pct(N.cagr.exports, 1, true)})와 비교했습니다.
         ▲는 경제 전체보다 1%p 이상 높고, ▼는 1%p 이상 낮다는 뜻입니다. 수출 통계는 광업·제조업·도소매만 있습니다.
       </p>
+      <figure class="card" style="margin:0 0 16px">
+        <h3 class="card-title">고용 증가율 × 실질 부가가치 증가율</h3>
+        <p class="card-sub">{M.trendFrom}→{M.trendTo}년 연평균, 점선은 경제 전체. 원 크기 = {base}년 취업자. 오른쪽 위가 고용과 생산이 함께 큰 산업입니다. 점을 가리키면 생산성이 보입니다</p>
+        <div class="chart" data-chart><script type="application/json" set:html={JSON.stringify(scatterSpec).replace(/</g, "\\u003c")} /></div>
+      </figure>
       <div class="table-wrap">
         <table>
           <thead>
@@ -252,15 +290,15 @@ const qShare = qInd.gap.demo.base["2035"] / S.gap.demo.base["2035"];
       <h3>1. 3축 성장 점수</h3>
       <p>{M.trendFrom}→{M.trendTo}년 취업자, 실질 부가가치(한국은행, 2020년 연쇄가격), 수출액(수출 기업의 산업 기준)의 연평균 증가율을 구합니다. 각 축이 경제 전체보다 1%p 이상 높으면 +1, 낮으면 −1, 그 사이면 0입니다. 평균 점수가 +0.5 이상이면서 취업자와 부가가치가 모두 늘면 '성장', −0.5 이하이면서 둘 중 하나가 줄면 '쇠퇴', 나머지는 '정체'로 분류합니다.</p>
       <h3>2. 은퇴 대체 수요</h3>
-      <div class="formula">10년 내 은퇴 연령 도달
-  = 60세 이상 취업자 + 50대 취업자 × 0.5</div>
+      <pre class="formula">10년 내 은퇴 연령 도달
+  = 60세 이상 취업자 + 50대 취업자 × 0.5</pre>
       <p>50대는 나이가 고르게 분포한다고 보고 절반을 55~59세로 근사합니다. 은퇴 연령은 65세로 둡니다.</p>
       <h3>3. 노동공급과 과부족</h3>
-      <div class="formula">공급(t) = Σ 고용률(연령, {base})
+      <pre class="formula">공급(t) = Σ 고용률(연령, {base})
         × 인구추계(연령, t) × 보정계수
 산업 공급(t) = Σ 연령대 공급(t)
         × 산업의 연령대 점유율({base})
-과부족 = 산업 공급 − 산업 수요</div>
+과부족 = 산업 공급 − 산업 수요</pre>
       <p>인구추계는 이 사이트의 주민등록 기반 코호트 추계(통계청 출산율 중위 시나리오)입니다. 보정계수는 {base}년 공급이 실제 취업자와 같아지도록 맞춘 값입니다. 공급 시나리오: {M.scenarios.supply.base} / {M.scenarios.supply.older}. 수요 시나리오: 현 수준 유지({M.scenarios.demand.hold}), 추세 연장({M.scenarios.demand.trend}), 인구 연동({M.scenarios.demand.demo}).</p>
       <h3>한계</h3>
       <ul>
@@ -279,21 +317,100 @@ const qShare = qInd.gap.demo.base["2035"] / S.gap.demo.base["2035"];
   .method .formula { white-space: pre-wrap; overflow-wrap: anywhere; }
   #gap .controls .seg { max-width: 100%; }
   :global(.grid > *) { min-width: 0; }
+  .kw { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
+  .kw::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+  #g-bars .g-fill { animation: none; transition: left 0.35s ease, width 0.35s ease; border-radius: 4px; }
+  #gap .seg { max-width: 100%; }
 </style>
 <script>
-  const state: Record<string, string> = { d: "demo", s: "base", y: "2035" };
-  const apply = () => {
-    const key = `${state.d}-${state.s}-${state.y}`;
-    document.querySelectorAll<HTMLElement>("[data-gap]").forEach((el) => (el.hidden = el.dataset.gap !== key));
+  import { mount } from "../../lib/charts";
+  import { fmt, compact } from "../../lib/format";
+  const G = JSON.parse(document.getElementById("g-data")!.textContent || "{}");
+  const years = ["2025", "2030", "2035", "2040", "2045"];
+  const state: Record<string, string> = { d: "demo", y: "2035" };
+  const older = document.getElementById("g-older") as HTMLInputElement;
+  const prod = document.getElementById("g-prod") as HTMLInputElement;
+  const lineEl = document.getElementById("g-line")!;
+  const barsEl = document.getElementById("g-bars")!;
+  const outEl = document.getElementById("g-out")!;
+  const gapOf = (ind: any, y: string, k: number, p: number) => {
+    const sb = ind.supply.base[y], so = ind.supply.older[y];
+    const sup = sb + (so - sb) * k;
+    const dem = ind.demand[state.d][y] * Math.pow(1 - p, +y - G.base);
+    return (sup - dem) * 1000;
   };
+  let raf = 0;
+  const run = () => {
+    const k = +older.value, p = +prod.value;
+    document.getElementById("o-older")!.textContent = k === 0 ? "유지" : `${k.toFixed(1)}배`;
+    document.getElementById("o-prod")!.textContent = p === 0 ? "없음" : `연 ${(p * 100).toFixed(1)}%`;
+    const tot = years.map((y) => [+y, G.inds.reduce((a: number, i: any) => a + gapOf(i, y, k, p), 0)] as [number, number]);
+    const totBase = years.map((y) => [+y, G.inds.reduce((a: number, i: any) => a + gapOf(i, y, 0, 0), 0)] as [number, number]);
+    const items = G.inds.map((i: any) => ({ name: i.name, value: gapOf(i, state.y, k, p) })).sort((a: any, b: any) => a.value - b.value);
+    const short = items.filter((x: any) => x.value < 0);
+    const ty = tot.find((t) => String(t[0]) === state.y)![1];
+    const tiles: [string, string, string][] = [
+      [`${state.y}년 경제 전체`, ty < 0 ? `${compact(-ty)}명 부족` : `${compact(ty)}명 여유`, `고용률 유지·생산성 불변이면 ${compact(Math.abs(totBase.find((t) => String(t[0]) === state.y)![1]))}명 ${totBase.find((t) => String(t[0]) === state.y)![1] < 0 ? "부족" : "여유"}`],
+      ["사람이 모자란 산업", `${short.length}개`, `25개 산업 중`],
+      ["가장 크게 부족", short[0] ? short[0].name : "없음", short[0] ? `${compact(-short[0].value)}명` : ""],
+    ];
+    outEl.innerHTML = "";
+    for (const [a, b, c] of tiles) {
+      const d = document.createElement("div");
+      d.className = "stat";
+      d.innerHTML = `<div class="stat-label"></div><div class="stat-value"></div><div class="stat-note"></div>`;
+      d.querySelector(".stat-label")!.textContent = a;
+      d.querySelector(".stat-value")!.textContent = b;
+      d.querySelector(".stat-note")!.textContent = c;
+      outEl.appendChild(d);
+    }
+    mount(lineEl, {
+      type: "line", yFormat: "man", height: 220, zeroBased: false, animate: false,
+      hLines: [{ y: 0, label: "균형" }],
+      series: [
+        { name: "고용률 유지 · 생산성 불변", color: "var(--neutral-series)", dash: true, data: totBase },
+        { name: "내 시나리오", color: "var(--series-1)", data: tot, label: true, width: 2.5 },
+      ],
+    } as any);
+    // 발산 막대
+    const maxAbs = Math.max(...items.map((x: any) => Math.abs(x.value)), 1);
+    document.getElementById("g-bars-title")!.textContent = `산업별 과부족 · ${state.y}년 (공급 − 수요)`;
+    if (barsEl.children.length !== items.length) {
+      barsEl.innerHTML = "";
+      items.forEach(() => {
+        const r = document.createElement("div");
+        r.className = "bar-row";
+        r.setAttribute("role", "listitem");
+        r.innerHTML = `<span class="bar-name"></span><span class="bar-track"><span class="bar-fill g-fill"></span><span class="bar-zero" style="left:50%"></span></span><span class="bar-val"></span>`;
+        barsEl.appendChild(r);
+      });
+    }
+    [...barsEl.children].forEach((r, idx) => {
+      const it = items[idx];
+      const w = (Math.abs(it.value) / maxAbs) * 50;
+      const f = r.querySelector<HTMLElement>(".bar-fill")!;
+      f.classList.toggle("neg", it.value < 0);
+      f.style.left = it.value < 0 ? `${50 - w}%` : "50%";
+      f.style.width = `${w}%`;
+      f.style.background = it.value < 0 ? "var(--div-neg)" : "var(--div-pos)";
+      r.querySelector(".bar-name")!.textContent = it.name;
+      r.querySelector(".bar-val")!.textContent = (it.value > 0 ? "+" : "") + fmt(it.value, "man");
+    });
+  };
+  const schedule = () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(run);
+  };
+  [older, prod].forEach((i) => i.addEventListener("input", schedule));
   document.querySelectorAll<HTMLElement>("#gap .seg").forEach((seg) => {
     const g = seg.dataset.group!;
     seg.querySelectorAll<HTMLButtonElement>("button").forEach((b) =>
       b.addEventListener("click", () => {
         state[g] = b.dataset.v!;
         seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-        apply();
+        run();
       }),
     );
   });
+  run();
 </script>

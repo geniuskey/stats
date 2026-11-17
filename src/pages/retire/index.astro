@@ -3,6 +3,7 @@ import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
+import ChartSwitch from "../../components/ChartSwitch.astro";
 import data from "../../data/retire.json";
 import { pts, val } from "../../lib/series";
 import { int, compact, pct, won } from "../../lib/format";
@@ -110,16 +111,72 @@ const calcData = JSON.stringify({ lt, defaults: calc.defaults, infl: calc.inflat
 const grid = d.depletionGrid as any[];
 const gridAssets = [...new Set(grid.map((g) => g.asset))];
 const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
+// ---- 시각화 확장
+// 연금이 적정 생활비를 얼마나 채우나 (두 통계가 함께 있는 해)
+const bothYears = Object.keys(lc.adeqSingle).filter((y) => pn.mean[y] != null).map(Number);
+const fillStack = {
+  type: "stack" as const, yFormat: "won" as const, height: 300, categories: bothYears.map(String),
+  series: [
+    { name: "연금 월평균", color: "var(--series-1)", values: bothYears.map((y) => pn.mean[y]) },
+    { name: "모자란 금액", color: "var(--neutral-series)", values: bothYears.map((y) => Math.max(0, lc.adeqSingle[y] - pn.mean[y])) },
+  ],
+};
+const fillWaffle = {
+  type: "waffle" as const, caption: "칸", start: bothYears.length - 1, speed: 1000,
+  groups: [{ name: "연금(평균)이 채우는 몫", color: "var(--series-1)" }, { name: "스스로 마련할 몫", color: "var(--neutral-series)" }],
+  frames: bothYears.map((y) => {
+    const c = Math.min(100, (pn.mean[y] / lc.adeqSingle[y]) * 100);
+    return { label: y, values: [c, 100 - c] };
+  }),
+};
+// 은퇴 나이·성별 필요자금 = 연금이 채우는 몫 + 공백
+const needCats = retireAges.flatMap((a) => [`${a}세 남`, `${a}세 여`]);
+const needStack = {
+  type: "stack" as const, yFormat: "won" as const, height: 300, categories: needCats,
+  series: [
+    { name: "평균 연금이 채우는 몫", color: "var(--series-1)", values: retireAges.flatMap((a) => ["male", "female"].map((x) => d.need[x][a].needAdequate - d.need[x][a].gapAdequate)) },
+    { name: "연금 공백 (스스로 마련)", color: "var(--series-2)", values: retireAges.flatMap((a) => ["male", "female"].map((x) => d.need[x][a].gapAdequate)) },
+  ],
+};
+// 연금 수급액 연령대별 추이
+const pba = d.pensionsByAge as Record<string, any>;
+const pbaColors = ["var(--series-1)", "var(--series-3)", "var(--series-4)", "var(--series-2)", "var(--series-7)"];
+const pbaSpec = {
+  type: "line" as const, yFormat: "won" as const, height: 260, zeroBased: true,
+  series: Object.entries(pba).map(([k, v]: any, i) => ({ name: k, color: pbaColors[i % pbaColors.length], data: pts(v.mean), label: true })),
+};
+// 체감물가: 지출 비중 차이 × 물가상승률
+const cpiScatter = {
+  type: "scatter" as const, height: 340, xFormat: "pp" as const, yFormat: "dec1" as const, rFormat: "won" as const,
+  xLabel: "65세+ 가구 지출 비중 − 전체 가구 (%p)", yLabel: "10년 연평균 물가상승률 (%)", rLabel: "65세+ 가구 월지출",
+  xRef: 0, yRef: h.generalCpi10,
+  labelTop: 6,
+  points: cats.map((c) => ({ x: Math.round((c.share65 - c.shareAll) * 1000) / 10, y: c.cagr10, r: c.spend65, label: c.name, color: c.share65 > c.shareAll ? "var(--series-2)" : "var(--series-1)" })),
+};
+// 고령 인구 구성 (부양 구조)
+const depAreaSpec = dep && {
+  type: "area" as const, yFormat: "man" as const, height: 280, projStart: 2025,
+  series: [
+    { name: "65~74세", color: "var(--series-4)", data: Object.entries(dep.mid).map(([y, v]: any) => [+y, v.old - v.old75] as [number, number]) },
+    { name: "75~84세", color: "var(--series-2)", data: Object.entries(dep.mid).map(([y, v]: any) => [+y, v.old75 - v.old85] as [number, number]) },
+    { name: "85세 이상", color: "var(--series-7)", data: Object.entries(dep.mid).map(([y, v]: any) => [+y, v.old85] as [number, number]) },
+  ],
+};
+
 ---
 <Base title="은퇴 후 대한민국" active="retire" description={`기대수명·연금·물가·가계지출을 결합한 은퇴 후 생활비와 자금 시나리오. 65세 이상 연금 월평균 ${manwon(h.pensionMean)}은 적정 노후생활비 ${manwon(h.adequateSingle)}의 ${pct(h.pensionCoverage, 0)}입니다.`}>
   <div class="wrap">
-    <section class="hero">
+    <section class="hero hero-split">
+      <div>
       <div class="eyebrow">은퇴 후 대한민국 · 기대수명 × 연금 × 물가 × 가계지출</div>
       <h1>연금은 노후 생활비의 {pct(h.pensionCoverage, 0)}만 채웁니다</h1>
       <p class="lede">
         65세 이상 {h.pensionRate}%가 연금을 하나 이상 받지만 월평균은 {manwon(h.pensionMean)}(중위 {manwon(h.pensionMedian)})입니다.
         스스로 생각하는 적정 생활비는 {manwon(h.adequateSingle)}입니다. 기대여명, 고령가구 지출 구조, 물가를 결합해 은퇴 후 몇 년을, 얼마로 살아야 하는지 계산했습니다.
       </p>
+      <p class="small muted"><a href="#calc">내 노후자금이 몇 살까지 버티는지 계산해 보기 →</a></p>
+      </div>
+      <Chart spec={{ ...fillWaffle, autoplay: true, start: 0 }} title="적정 생활비를 100칸으로 나누면" sub={`65세 이상 연금 월평균이 채우는 칸 (${bothYears[0]}→${bothYears.at(-1)}, 조사 연도 가격)`} />
     </section>
 
     <div class="grid grid-4">
@@ -135,7 +192,7 @@ const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
         국민노후보장패널이 조사한 '개인 기준 적정 노후생활비'와 연금통계의 65세 이상 월평균 수급액(기초·국민·직역·퇴직·개인·주택·농지연금 합산)을 같은 축에 놓았습니다. 생활비는 조사 연도 가격이며, 최신 물가로 환산하면 {manwon(h.adequateSingle)}입니다.
       </p>
       <div class="grid grid-2">
-        <Chart spec={gapSpec} table={gapTable} title="월 금액 (원)" sub="적정·최소 생활비(격년 조사) vs 연금 수급액" />
+        <ChartSwitch views={[{ label: "추이", spec: gapSpec }, { label: "채운 몫", spec: fillStack, note: "막대 전체 = 적정 노후생활비(조사 연도 가격)" }]} table={gapTable} title="연금과 적정 생활비 (월, 원)" sub="적정·최소 생활비(격년 조사) vs 65세 이상 연금 수급액" />
         <div class="card">
           <h3 class="card-title">연금 종류별 월평균 수급액 ({h.pensionYear})</h3>
           <p class="card-sub">65세 이상 수급자 기준. 이름 옆 숫자는 65세 이상 인구 중 수급률</p>
@@ -151,46 +208,47 @@ const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
       <h2>은퇴 나이·성별로 본 필요 노후자금</h2>
       <p class="section-desc">필요자금 = 적정 생활비(오늘 가격) × 12개월 × 은퇴 나이의 기대여명. 연금 공백은 여기서 평균 연금을 뺀 금액입니다. 물가만큼 자산이 불어난다고 보는 실질 기준이고, 생명표는 지금의 사망률이 이어진다고 가정합니다.</p>
       <div class="stack">
-        <div class="card">
-          <h3 class="card-title">필요 노후자금과 연금 공백</h3>
-          <p class="card-sub">개인 기준, 오늘 가격</p>
-          <div class="table-wrap">
-            <table>
-              <thead><tr>{needTable.headers.map((x, i) => <th class={i ? "num" : ""}>{x}</th>)}</tr></thead>
-              <tbody>{needTable.rows.map((r) => <tr>{r.map((c, i) => <td class={i ? "num" : ""}>{c}</td>)}</tr>)}</tbody>
-            </table>
-          </div>
-          <p class="small muted" style="margin-top:10px">여성은 기대여명이 약 {(h.lifeExp65Female - h.lifeExp65Male).toFixed(1)}년 길어 같은 생활비라도 {won(h.needAdequate65Female - h.needAdequate65Male)}이 더 필요합니다.</p>
+        <Chart spec={needStack} table={needTable} title="필요 노후자금 = 연금이 채우는 몫 + 공백" sub={`개인 기준, 오늘 가격. 여성은 기대여명이 약 ${(h.lifeExp65Female - h.lifeExp65Male).toFixed(1)}년 길어 같은 생활비라도 ${won(h.needAdequate65Female - h.needAdequate65Male)}이 더 필요합니다`} />
+        <div class="grid grid-2">
+          <Chart spec={leSpec} title="65세 기대여명 (년)" sub="1990~2024년 생명표, 이후는 통계청 장래생명표 중위(65~69세 연령군)" />
+          <Chart spec={pbaSpec} title="연령대별 연금 월평균 수급액" sub="65세 이상, 모든 연금 합산. 젊은 노인일수록 더 받습니다" />
         </div>
-        <Chart spec={leSpec} title="65세 기대여명 (년)" sub="1990~2024년 생명표, 이후는 통계청 장래생명표 중위(65~69세 연령군)" />
       </div>
     </section>
 
     <section class="section card" id="calc">
       <h2>내 노후자금은 몇 살까지 버틸까?</h2>
       <p class="section-desc">입력값으로 매년 (월 생활비 − 월 연금) × 12를 인출하고 남은 자산에 수익률을 적용합니다. 모두 오늘 가격(실질)으로 환산해 보여 줍니다. 시나리오 계산이며 예측이 아닙니다.</p>
-      <div class="controls calc-grid">
-        <label class="field">성별
-          <select id="c-sex"><option value="male">남자</option><option value="female">여자</option></select>
-        </label>
-        <label class="field">은퇴 나이
-          <input id="c-age" type="number" min="40" max="80" step="1" />
-        </label>
-        <label class="field">은퇴 시 금융자산 (만원)
-          <input id="c-asset" type="number" min="0" step="1000" />
-        </label>
-        <label class="field">월 생활비 (만원)
-          <input id="c-need" type="number" min="0" step="10" />
-        </label>
-        <label class="field">월 연금 (만원)
-          <input id="c-pension" type="number" min="0" step="5" />
-        </label>
-        <label class="field">연 수익률 (%)
-          <input id="c-ret" type="number" min="-5" max="15" step="0.1" />
-        </label>
-        <label class="field">연 물가상승률 (%)
-          <input id="c-infl" type="number" min="0" max="10" step="0.1" />
-        </label>
+      <div class="calc-sliders">
+        <div class="slider">
+          <div class="slider-top"><span>성별</span></div>
+          <div class="seg" id="c-sex-seg"><button type="button" data-v="male" aria-pressed="true">남자</button><button type="button" data-v="female" aria-pressed="false">여자</button></div>
+          <select id="c-sex" hidden><option value="male">남자</option><option value="female">여자</option></select>
+        </div>
+        <div class="slider">
+          <div class="slider-top"><label for="c-age">은퇴 나이</label><output id="o-age"></output></div>
+          <input id="c-age" type="range" min="50" max="75" step="1" />
+        </div>
+        <div class="slider">
+          <div class="slider-top"><label for="c-asset">은퇴 시 금융자산</label><output id="o-asset"></output></div>
+          <input id="c-asset" type="range" min="0" max="150000" step="1000" />
+        </div>
+        <div class="slider">
+          <div class="slider-top"><label for="c-need">월 생활비</label><output id="o-need"></output></div>
+          <input id="c-need" type="range" min="80" max="600" step="5" />
+        </div>
+        <div class="slider">
+          <div class="slider-top"><label for="c-pension">월 연금</label><output id="o-pension"></output></div>
+          <input id="c-pension" type="range" min="0" max="400" step="5" />
+        </div>
+        <div class="slider">
+          <div class="slider-top"><label for="c-ret">연 수익률</label><output id="o-ret"></output></div>
+          <input id="c-ret" type="range" min="0" max="10" step="0.1" />
+        </div>
+        <div class="slider">
+          <div class="slider-top"><label for="c-infl">연 물가상승률</label><output id="o-infl"></output></div>
+          <input id="c-infl" type="range" min="0" max="6" step="0.05" />
+        </div>
       </div>
       <div class="controls">
         <span class="small muted">물가 시나리오</span>
@@ -205,8 +263,13 @@ const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
         <div class="stat"><div class="stat-label">기대 수명 (생명표)</div><div class="stat-value" id="r-life">–</div><div class="stat-note" id="r-life-note"></div></div>
         <div class="stat"><div class="stat-label">기대수명까지 필요한 자산</div><div class="stat-value" id="r-need">–</div><div class="stat-note" id="r-need-note"></div></div>
       </div>
+      <div class="life-bar" id="life-bar" aria-hidden="true">
+        <div class="lb-fill" id="lb-fill"></div>
+        <div class="lb-mark" id="lb-life"><span></span></div>
+        <div class="lb-scale"><span id="lb-start"></span><span>100세</span></div>
+      </div>
       <div class="chart" id="calc-chart"></div>
-      <p class="small muted" style="margin-top:8px">막대: 나이별 남은 자산(오늘 가격). 주황 막대가 생명표 기대수명에 해당하는 나이입니다(자산이 남아 있을 때만 보임). 절반의 사람은 그보다 오래 삽니다.</p>
+      <p class="small muted" style="margin-top:8px">위 띠: 은퇴부터 100세까지, 파랑 = 자금이 남아 있는 기간, 세로선 = 생명표 기대수명. 아래 그래프: 나이별 남은 자산(오늘 가격)과 수익률 0%일 때 비교. 절반의 사람은 기대수명보다 오래 삽니다.</p>
       <script type="application/json" id="calc-data" set:html={calcData} />
       <details class="table-view">
         <summary>미리 계산한 시나리오 표 (65세 은퇴, 적정생활비 {manwon(h.adequateSingle)}, 평균 연금 {manwon(h.pensionMean)})</summary>
@@ -256,6 +319,11 @@ const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
           </details>
         </div>
       </div>
+      <figure class="card" style="margin:16px 0 0">
+        <h3 class="card-title">고령가구가 많이 쓰는 항목일수록 많이 올랐다</h3>
+        <p class="card-sub">가로: 65세 이상 가구의 지출 비중이 전체 가구보다 큰 정도 · 세로: 10년 연평균 물가상승률(점선 = 전체 {h.generalCpi10.toFixed(2)}%) · 원 크기 = 65세+ 가구 월지출. 주황 = 고령가구가 더 많이 쓰는 항목. 오른쪽 위일수록 고령가구에 불리한 물가입니다</p>
+        <div class="chart" data-chart><script type="application/json" set:html={JSON.stringify(cpiScatter).replace(/</g, "\\u003c")} /></div>
+      </figure>
     </section>
 
     {dep && (
@@ -264,22 +332,22 @@ const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
         <p class="section-desc">
           주민등록인구 기반 자체 추계(중위). 65세 이상은 {compact(h.old2025)}명에서 2050년 {compact(h.old2050)}명으로 늘고, 20~64세 인구 대비 비율은 {h.workPerOld2025} → {h.workPerOld2035}(2035) → {h.workPerOld2050}(2050)로 떨어집니다. 지금 수급률({h.pensionRate}%)이면 2035년 연금 수급 노인은 약 {compact(h.pensioners2035)}명입니다.
         </p>
-        <Chart spec={depSpec} table={depTable} title="20~64세 인구 ÷ 65세 이상 인구 (명)" sub="음영: 출산율 저위~고위 시나리오. 2050년까지는 이미 태어난 세대가 대부분이라 차이가 작습니다" />
+        <ChartSwitch views={[{ label: "부양 비율", spec: depSpec, note: "20~64세 인구 ÷ 65세 이상 인구 (명). 음영: 출산율 저위~고위" }, { label: "고령 인구 구성", spec: depAreaSpec, note: "65세 이상 인구를 나이대로 나눠 쌓은 값 (중위)" }]} table={depTable} title="일하는 세대와 노인" sub="2050년까지는 이미 태어난 세대가 대부분이라 시나리오 차이가 작습니다" />
       </section>
     )}
 
     <section class="section card method" id="method">
       <h2>방법론</h2>
       <h3>1. 필요 노후자금과 연금 공백</h3>
-      <div class="formula">필요자금 = 적정 생활비 × (최신 CPI ÷ 조사연도 CPI) × 12 × 기대여명(은퇴 나이, 성별)
-연금 공백 = (적정 생활비 − 65세+ 연금 월평균 수급액) × 12 × 기대여명</div>
+      <pre class="formula">필요자금 = 적정 생활비 × (최신 CPI ÷ 조사연도 CPI) × 12 × 기대여명(은퇴 나이, 성별)
+연금 공백 = (적정 생활비 − 65세+ 연금 월평균 수급액) × 12 × 기대여명</pre>
       <p>적정 생활비는 국민노후보장패널(국민연금연구원) '개인 기준 필요 적정 노후생활비'({h.livingCostYear}년 {manwon(h.adequateSingleNominal)})를 소비자물가로 {h.cpiYear}년 가격으로 환산했습니다. 기대여명은 {h.lifeYear}년 완전생명표(1세별) 값입니다.</p>
       <h3>2. 고령가구 체감물가</h3>
-      <div class="formula">체감물가 = Σ (항목 지출 비중₆₅₊ × 항목별 10년 연평균 CPI 상승률)</div>
+      <pre class="formula">체감물가 = Σ (항목 지출 비중₆₅₊ × 항목별 10년 연평균 CPI 상승률)</pre>
       <p>지출 비중은 가계동향조사 가구주 65세 이상 가구(전국, 1인 이상)의 소비지출 12대 항목 구성입니다. 같은 방식으로 전체 가구 비중을 적용하면 일반 체감물가가 됩니다.</p>
       <h3>3. 자금 소진 나이 계산기</h3>
-      <div class="formula">실질수익률 = (1 + 수익률) ÷ (1 + 물가) − 1
-잔고(t+1) = 잔고(t) × (1 + 실질수익률) − (월 생활비 − 월 연금) × 12</div>
+      <pre class="formula">실질수익률 = (1 + 수익률) ÷ (1 + 물가) − 1
+잔고(t+1) = 잔고(t) × (1 + 실질수익률) − (월 생활비 − 월 연금) × 12</pre>
       <p>연금도 물가에 연동(국민연금·기초연금은 실제로 CPI 연동)된다고 보고 실질 기준으로 계산합니다. 기본값은 적정 생활비와 65세 이상 평균 연금입니다.</p>
       <h3>4. 부양 구조</h3>
       <p>행정안전부 주민등록 1세별 인구를 코호트 변화율법으로 추계하고, 통계청 장래인구추계(2022년 기준)의 출산율 시나리오를 결합했습니다. 자세한 방법은 <a href={`${import.meta.env.BASE_URL}korea/`}>대한민국의 미래</a>를 참고하세요.</p>
@@ -303,15 +371,52 @@ const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
   .stack > :global(* + *) {
     margin-top: 20px;
   }
-  .calc-grid {
+  .calc-sliders {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px 24px;
+    margin-bottom: 16px;
   }
-  .calc-grid input,
-  .calc-grid select {
-    width: 100%;
-    min-width: 0;
+  .life-bar {
+    position: relative;
+    height: 26px;
+    margin: 4px 0 26px;
+    border-radius: 8px;
+    background: repeating-linear-gradient(135deg, var(--surface-2) 0 6px, color-mix(in srgb, var(--div-neg) 18%, var(--surface-2)) 6px 12px);
+  }
+  .lb-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 8px;
+    background: var(--series-1);
+    transition: width 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .lb-mark {
+    position: absolute;
+    top: -6px;
+    bottom: -6px;
+    width: 2px;
+    background: var(--text-primary);
+    transition: left 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .lb-mark span {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .lb-scale {
+    position: absolute;
+    top: 30px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
   }
 </style>
 <script>
@@ -331,6 +436,16 @@ const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
   pension.value = String(Math.round(D.monthlyPension / 1e4));
   ret.value = (D.nominalReturn * 100).toFixed(1);
   infl.value = (D.inflation * 100).toFixed(2);
+  const sexSeg = document.getElementById("c-sex-seg")!;
+  sexSeg.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.v === sex.value));
+    b.addEventListener("click", () => {
+      sex.value = b.dataset.v!;
+      sexSeg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      run();
+    });
+  });
+  const manwon = (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(v % 10000 ? 1 : 0)}억원` : `${v.toLocaleString("ko-KR")}만원`);
   const host = document.getElementById("calc-chart")!;
   const seg = document.getElementById("c-infl-seg")!;
 
@@ -366,16 +481,39 @@ const gridReturns = [...new Set(grid.map((g) => g.realReturn))];
     set("r-need", won(Math.max(pv, 0)));
     const short = Math.max(pv, 0) - A;
     set("r-need-note", short > 0 ? `지금 입력한 자산보다 ${won(short)} 부족` : `입력 자산으로 충분 (여유 ${won(-short)})`);
-    const hi = cats.indexOf(`${Math.min(lifeAge, 100)}세`);
+    set("o-age", `${a0}세`);
+    set("o-asset", manwon(Number(asset.value) || 0));
+    set("o-need", `${need.value}만원`);
+    set("o-pension", `${pension.value}만원`);
+    set("o-ret", `${Number(ret.value).toFixed(1)}%`);
+    set("o-infl", `${Number(infl.value).toFixed(2)}%`);
+    // 자금 지속 띠
+    const span = 100 - a0 || 1;
+    const lastAge = gap <= 0 ? 100 : deplete == null ? 100 : deplete;
+    (document.getElementById("lb-fill") as HTMLElement).style.width = `${((lastAge - a0) / span) * 100}%`;
+    const lm = document.getElementById("lb-life") as HTMLElement;
+    lm.style.left = `${(Math.min(Math.max(lifeAge - a0, 0), span) / span) * 100}%`;
+    lm.querySelector("span")!.textContent = `기대수명 ${lifeAge}세`;
+    set("lb-start", `${a0}세 은퇴`);
+    // 수익률 0% 비교
+    const r0 = 1 / (1 + (Number(infl.value) || 0) / 100) - 1;
+    let b0 = A;
+    const zero: [number, number][] = [];
+    const mine: [number, number][] = [];
+    for (let x = a0; x <= 100; x++) {
+      zero.push([x, Math.max(b0, 0) / 1e8]);
+      mine.push([x, vals[x - a0]]);
+      b0 = b0 * (1 + r0) - gap;
+    }
     mount(host, {
-      type: "column",
-      categories: cats,
-      values: vals,
-      colors: cats.map((_, i) => (i === hi ? "var(--series-2)" : "var(--series-1)")),
-      highlight: hi >= 0 ? [hi] : [],
-      yFormat: "eok",
-      height: 280,
+      type: "line", yFormat: "eok", height: 280, zeroBased: true, xUnit: "세", animate: false,
+      markers: lifeAge <= 100 ? [{ x: lifeAge, label: "▲ 기대수명" }] : [],
+      series: [
+        { name: "남은 자산 (오늘 가격)", color: "var(--series-1)", data: mine, fill: true, label: true, width: 2.5 },
+        { name: "수익률 0%라면", color: "var(--neutral-series)", data: zero, dash: true },
+      ],
     } as any);
+    void cats;
   }
   [sex, age, asset, need, pension, ret, infl].forEach((i) => i.addEventListener("input", () => {
     if (i === infl) seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", "false"));

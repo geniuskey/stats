@@ -3,6 +3,8 @@ import Base from "../../layouts/Base.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import RegionSearch from "../../components/RegionSearch.astro";
+import KoreaMap from "../../components/KoreaMap.astro";
+import { dongneMetrics, dongneNames, dongneNotes, dongneLinks } from "../../lib/dongneMap";
 import data from "../../data/dongne.json";
 import { int, compact, pct } from "../../lib/format";
 
@@ -23,6 +25,10 @@ const search = R.map((r) => ({ name: r.name, sub: r.sido, href: `${base}dongne/$
 const riskOrder = ["소멸고위험", "소멸위험", "주의", "보통"];
 const outlookOrder = ["급감", "축소", "유지", "성장"];
 const outlookDesc: Record<string, string> = { 급감: "−20% 미만", 축소: "−20 ~ −5%", 유지: "±5%", 성장: "+5% 이상" };
+const riskDesc: Record<string, string> = { 소멸고위험: "0.2 미만", 소멸위험: "0.2~0.5", 주의: "0.5~1.0", 보통: "1.0 이상" };
+// 분포 막대: 색은 의미 순서(나쁨=빨강 → 좋음=파랑)
+const outlookColors: Record<string, string> = { 급감: "var(--div-neg)", 축소: "color-mix(in oklab, var(--div-neg) 45%, var(--div-mid))", 유지: "var(--div-mid)", 성장: "var(--div-pos)" };
+const riskColors: Record<string, string> = { 소멸고위험: "var(--div-neg)", 소멸위험: "color-mix(in oklab, var(--div-neg) 45%, var(--div-mid))", 주의: "var(--div-mid)", 보통: "var(--div-pos)" };
 ---
 <Base title="우리 동네의 미래" active="dongne" description={`전국 229개 시군구의 ${end}년 인구 추계와 지속가능성 지수. ${shrink}곳의 인구가 줄어듭니다.`}>
   <div class="wrap">
@@ -39,20 +45,28 @@ const outlookDesc: Record<string, string> = { 급감: "−20% 미만", 축소: "
       <Stat label={`${end}년까지 주민 절반이 65세+`} value={`${halve}곳`} note="고령자 비중 50% 도달" />
     </div>
 
+    <section class="section" id="map">
+      <h2>지도로 보는 {R.length}개 시군구</h2>
+      <p class="section-desc">지표를 고르고 ▶ 로 연도를 재생해 보세요. 시도를 누르면 확대되고, 확대한 뒤 시군구를 누르면 상세 페이지로 갑니다. 오른쪽 순위와 지도는 서로 연동됩니다.</p>
+      <KoreaMap metrics={dongneMetrics()} names={dongneNames()} notes={dongneNotes()} links={dongneLinks(base)} title="시군구 인구 지도" sub="주민등록 실측(~2025) + 자체 추계 중위" />
+    </section>
+
     <section class="section grid grid-2">
       <div class="card">
         <h3 class="card-title">{end}년 인구 전망 분류</h3>
         <p class="card-sub">{by}년 대비 변화율 (중위)</p>
-        <div class="table-wrap"><table><thead><tr><th>분류</th><th>기준</th><th class="num">시군구</th></tr></thead>
-          <tbody>{outlookOrder.map((k) => <tr><td>{k}</td><td>{outlookDesc[k]}</td><td class="num">{d.counts[k] ?? 0}</td></tr>)}</tbody></table></div>
+        <div class="dist-bar reveal" role="img" aria-label={outlookOrder.map((k) => `${k} ${d.counts[k] ?? 0}곳`).join(", ")}>
+          {outlookOrder.map((k, i) => <span style={`flex:${d.counts[k] ?? 0};background:${outlookColors[k]};--i:${i}`}><b>{d.counts[k] ?? 0}</b></span>)}
+        </div>
+        <ul class="dist-legend">{outlookOrder.map((k) => <li><i style={`background:${outlookColors[k]}`}></i>{k} <span class="muted">{outlookDesc[k]}</span><b>{d.counts[k] ?? 0}곳</b></li>)}</ul>
       </div>
       <div class="card">
         <h3 class="card-title">소멸위험지수 분포 ({by}년)</h3>
         <p class="card-sub">20~39세 여성 인구 ÷ 65세 이상 인구</p>
-        <div class="table-wrap"><table><thead><tr><th>단계</th><th>지수</th><th class="num">시군구</th></tr></thead>
-          <tbody>
-            {riskOrder.map((k) => <tr><td>{k}</td><td>{({ 소멸고위험: "0.2 미만", 소멸위험: "0.2~0.5", 주의: "0.5~1.0", 보통: "1.0 이상" } as any)[k]}</td><td class="num">{d.risk[k] ?? 0}</td></tr>)}
-          </tbody></table></div>
+        <div class="dist-bar reveal" role="img" aria-label={riskOrder.map((k) => `${k} ${d.risk[k] ?? 0}곳`).join(", ")}>
+          {riskOrder.map((k, i) => <span style={`flex:${d.risk[k] ?? 0};background:${riskColors[k]};--i:${i}`}><b>{d.risk[k] ?? 0}</b></span>)}
+        </div>
+        <ul class="dist-legend">{riskOrder.map((k) => <li><i style={`background:${riskColors[k]}`}></i>{k} <span class="muted">{riskDesc[k]}</span><b>{d.risk[k] ?? 0}곳</b></li>)}</ul>
       </div>
     </section>
 
@@ -113,12 +127,12 @@ const outlookDesc: Record<string, string> = { 급감: "−20% 미만", 축소: "
       <h3>인구 추계</h3>
       <p>시군구별 주민등록 1세별 인구에 코호트 변화율법을 적용했습니다. 최근 3년 동안 각 나이 집단이 1년 뒤 몇 % 남았는지(사망과 전입·전출)를 구하고, 작은 지역은 시도 평균 쪽으로 보정합니다. 지역 고유의 순이동 효과는 연 ±8%로 제한하고 해마다 15%씩 전국 평균에 수렴시킵니다. 출생은 20~44세 여성 수에 지역 아동비와 통계청 출산율 시나리오 지수를 곱해 구합니다. 학교 추계와 같은 엔진입니다.</p>
       <h3>지속가능성 지수</h3>
-      <div class="formula">지수 = 50 + 15 × Σ wᵢ·zᵢ   (zᵢ: 시군구 분포 표준화 값, ±3 절단)
+      <pre class="formula">지수 = 50 + 15 × Σ wᵢ·zᵢ   (zᵢ: 시군구 분포 표준화 값, ±3 절단)
   인구 변화({by}→2035)   30%
   20~39세 순이동률        20%
   소멸위험지수({by})      20%
   사업체 종사자 증감률    15%
-  빈집률 (낮을수록 +)     15%</div>
+  빈집률 (낮을수록 +)     15%</pre>
       <p>소멸위험지수는 20~39세 여성 인구를 65세 이상 인구로 나눈 값입니다(한국고용정보원 방식). 0.5 미만이면 소멸위험, 0.2 미만이면 고위험입니다. 지수는 상대 순위를 보기 위한 합성 지표이며, 가중치는 해석이 쉬운 방향으로 정했습니다.</p>
       <h3>데이터 출처</h3>
       <ul>{d.meta.sources.map((s: string) => <li>{s}</li>)}</ul>

@@ -64,6 +64,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
     </footer>
     <script>
       import { autoMount } from "../lib/charts";
+      import { autoMountMaps } from "../lib/map";
+      import { initMotion } from "../lib/anim";
       const btn = document.getElementById("theme-btn");
       btn?.addEventListener("click", () => {
         const root = document.documentElement;
@@ -74,6 +76,33 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
         } catch (e) {}
       });
       autoMount();
+      autoMountMaps();
+      initMotion();
+      // 차트 형태 토글
+      document.querySelectorAll<HTMLElement>("[data-switch]").forEach((fig) => {
+        const btns = fig.querySelectorAll<HTMLButtonElement>("[data-view]");
+        btns.forEach((b) =>
+          b.addEventListener("click", () => {
+            const v = b.dataset.view;
+            btns.forEach((x) => {
+              x.setAttribute("aria-pressed", String(x === b));
+              x.setAttribute("aria-selected", String(x === b));
+            });
+            fig.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => {
+              const on = p.dataset.panel === v;
+              p.hidden = !on;
+              if (on) {
+                p.classList.remove("cs-in");
+                void p.offsetWidth;
+                p.classList.add("cs-in");
+                autoMount(p);
+              }
+            });
+          }),
+        );
+      });
+      // 일반 페이지 스크립트가 그린 뒤 추가되는 요소용
+      (window as any).__viz = { autoMount, autoMountMaps, initMotion };
     </script>
   </body>
 </html>

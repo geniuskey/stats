@@ -3,6 +3,8 @@ import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
+import KoreaMap from "../../components/KoreaMap.astro";
+import ChartSwitch from "../../components/ChartSwitch.astro";
 import data from "../../data/commerce.json";
 import { pts, joinProj, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -164,11 +166,36 @@ const hhFirst = Object.keys(dn.households)[0];
 const hhLast = Object.keys(dn.households).at(-1)!;
 
 const near = [...peers].sort((a, b) => b.index - a.index);
+// ---- 시도 지도 (이 지역 강조)
+const names = Object.fromEntries(peers.map((x) => [x.id, `${x.sido} ${x.name}`]));
+const links = Object.fromEntries(peers.map((x) => [x.id, `${base}commerce/${x.id}/`]));
+const notes = Object.fromEntries(peers.map((x) => [x.id, `${CLASS[x.class].label}${x.oversupply ? " · 점포 과잉 신호" : ""}`]));
+const consYears = Array.from({ length: 21 }, (_, i) => 2025 + i);
+const consAt = (x: any, y: number) => {
+  const c = x.series.consumers;
+  const b = val(c.actual, 2025);
+  const v = y <= 2025 ? val(c.actual, y) : val(c.mid, y);
+  return b && v ? v / b - 1 : null;
+};
+const mapMetrics = [
+  { key: "idx", label: "활력 지수", format: "dec1" as const, kind: "div" as const, mid: 50, breaks: [35, 42, 46, 50, 54, 58, 65],
+    values: Object.fromEntries(peers.map((x) => [x.id, x.index])) },
+  { key: "cons", label: "소비인구 변화", format: "pctS" as const, kind: "div" as const, breaks: [-0.3, -0.2, -0.1, -0.05, 0, 0.05, 0.1],
+    frames: { labels: consYears, values: consYears.map((y) => Object.fromEntries(peers.map((x) => [x.id, consAt(x, y)]))), start: consYears.indexOf(2035) } },
+];
+const storeCountSpec = {
+  type: "column" as const, yFormat: "int" as const, height: 260,
+  categories: pts(r.series.stores).map(([y]) => String(y)),
+  values: pts(r.series.stores).map(([, v]) => v),
+  colors: pts(r.series.stores).map(([y]) => (y < g0 ? "var(--neutral-series)" : "var(--series-1)")),
+};
+
 ---
 <Base title={`${full} 상권 전망`} active="commerce" description={`${full} 상권 활력 지수 ${r.index.toFixed(1)} (${C.label}). 2035년 소비인구 ${pct(p(m.consumerChange2035), 0, true)}, 상권 사업체 ${int(m.stores)}곳.`}>
   <div class="wrap">
     <nav class="breadcrumb"><a href={`${base}commerce/`}>소멸하는 상권, 성장하는 상권</a> › {r.sido} › {r.name}</nav>
-    <section class="hero">
+    <section class="hero hero-split">
+      <div>
       <div class="eyebrow">{full} · 사업체 × 창업·폐업 × 인구이동 × 인구추계</div>
       <h1>{r.name} 상권은 '{C.label}' — {headline}</h1>
       <p class="lede">
@@ -176,6 +203,8 @@ const near = [...peers].sort((a, b) => b.index - a.index);
         50이 전국 평균입니다. 점포 수가 지금 그대로라면 2035년에는 점포 1곳이 나눠 갖는 소비인구가 <strong>{pct(p(m.demandPerStore2035), 0, true)}</strong> 달라집니다.
         {r.oversupply && <span> <span class="badge"><span class="dot" style="background:var(--serious)"></span>점포 과잉 신호</span></span>}
       </p>
+      </div>
+      <KoreaMap metrics={mapMetrics} names={names} links={links} notes={notes} only={r.sidoCode} highlight={r.id} compact title={`${sidoSum?.name ?? r.sido} 안에서 ${r.name}`} sub="굵은 테두리 = 이 지역. 다른 지역을 누르면 이동합니다" />
     </section>
 
     <div class="grid grid-4">
@@ -196,7 +225,7 @@ const near = [...peers].sort((a, b) => b.index - a.index);
             <tbody>{compTable.map((row) => <tr><td>{row[0]}</td><td class="num">{row[1]}</td><td class="num">{row[2]}</td></tr>)}</tbody></table></div>
         </details>
       </div>
-      <Chart spec={trendSpec} table={trendTable} title="상권 사업체·종사자 추이" sub={`도소매+숙박음식, ${g0}년 = 100 지수. 회색은 전국 사업체. ${g0}년에 전국 수준이 크게 꺾여 그 이전과의 비교는 주의`} />
+      <ChartSwitch views={[{ label: `지수 (${g0}=100)`, spec: trendSpec }, { label: "사업체 수", spec: storeCountSpec, note: `회색 막대는 ${g0}년 이전(통계 수준 단절 구간).` }]} table={trendTable} title="상권 사업체·종사자 추이" sub={`도소매+숙박음식. 지수의 회색 선은 전국 사업체. ${g0}년에 전국 수준이 크게 꺾여 그 이전과의 비교는 주의`} />
     </section>
 
     <section class="section">
