@@ -1,0 +1,70 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 매월 3일·18일 03:00 KST — KOSIS 월간 갱신 반영
+    - cron: "0 18 2,17 * *"
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: "KOSIS에서 데이터를 새로 받아 재계산"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Refresh data from KOSIS
+        if: github.event_name == 'schedule' || inputs.refresh
+        env:
+          KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+        run: |
+          cd etl
+          python3 run_all.py --fresh
+      - name: Commit refreshed data
+        if: github.event_name == 'schedule' || inputs.refresh
+        run: |
+          if [ -n "$(git status --porcelain src/data)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src/data
+            git commit -m "data: KOSIS 자동 갱신 $(date -u +%Y-%m-%d)"
+            git push
+          fi
+      - run: npm ci
+      - name: Build
+        run: npm run build
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://stats.euiyun.com' }}
+          BASE_PATH: ${{ vars.BASE_PATH || '/' }}
+          ASTRO_TELEMETRY_DISABLED: 1
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

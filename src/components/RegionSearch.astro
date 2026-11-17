@@ -1,0 +1,63 @@
+---
+// 지역 검색 (클라이언트 필터). items: {name, sub, href}
+interface Props {
+  items: { name: string; sub: string; href: string }[];
+  placeholder?: string;
+}
+const { items, placeholder = "시·군·구 이름을 입력하세요 (예: 수원, 강남구)" } = Astro.props;
+const json = JSON.stringify(items).replace(/</g, "\\u003c");
+---
+<div class="region-search" data-region-search>
+  <input type="search" placeholder={placeholder} aria-label="지역 검색" autocomplete="off" />
+  <ul hidden></ul>
+  <script type="application/json" set:html={json} />
+</div>
+<script>
+  document.querySelectorAll<HTMLElement>("[data-region-search]").forEach((root) => {
+    const input = root.querySelector("input")!;
+    const list = root.querySelector("ul")!;
+    const items = JSON.parse(root.querySelector("script")!.textContent || "[]") as { name: string; sub: string; href: string }[];
+    let active = 0;
+    const draw = () => {
+      const q = input.value.trim().replace(/\s+/g, "");
+      list.innerHTML = "";
+      if (!q) {
+        list.hidden = true;
+        return;
+      }
+      const hits = items.filter((i) => (i.sub + i.name).replace(/\s+/g, "").includes(q) || i.name.includes(q)).slice(0, 30);
+      active = 0;
+      hits.forEach((h, idx) => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = h.href;
+        if (idx === 0) a.className = "active";
+        a.appendChild(document.createTextNode(h.name));
+        const s = document.createElement("span");
+        s.textContent = h.sub;
+        a.appendChild(s);
+        li.appendChild(a);
+        list.appendChild(li);
+      });
+      list.hidden = hits.length === 0;
+    };
+    input.addEventListener("input", draw);
+    input.addEventListener("keydown", (e) => {
+      const links = [...list.querySelectorAll("a")];
+      if (!links.length) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        links[active]?.classList.remove("active");
+        active = (active + (e.key === "ArrowDown" ? 1 : -1) + links.length) % links.length;
+        links[active].classList.add("active");
+        links[active].scrollIntoView({ block: "nearest" });
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        links[active]?.click();
+      }
+    });
+    document.addEventListener("click", (e) => {
+      if (!root.contains(e.target as Node)) list.hidden = true;
+    });
+  });
+</script>

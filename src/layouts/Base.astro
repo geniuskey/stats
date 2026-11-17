@@ -1,0 +1,79 @@
+---
+import "../styles/global.css";
+import { SERVICES } from "../lib/nav";
+interface Props {
+  title: string;
+  description?: string;
+  active?: string;
+}
+const { title, description = "공공 통계를 결합해 기존에 없던 지표와 미래 예측을 만듭니다.", active } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const fullTitle = title === "홈" ? "숫자 너머 — 공공 통계로 보는 대한민국의 미래" : `${title} | 숫자 너머`;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+---
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content="ko_KR" />
+    <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <script is:inline>
+      try {
+        const t = localStorage.getItem("theme");
+        if (t) document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href={base}>
+          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="4" height="9" rx="1.5" fill="var(--series-1)"></rect><rect x="10" y="8" width="4" height="14" rx="1.5" fill="var(--series-1)" opacity="0.7"></rect><path d="M17 3 L22 3 L22 8" fill="none" stroke="var(--series-2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M14 11 L22 3" fill="none" stroke="var(--series-2)" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3 2.4"></path></svg>
+          숫자 너머
+        </a>
+        <nav class="nav" aria-label="서비스">
+          {SERVICES.map((s) => <a href={`${base}${s.slug}/`} aria-current={active === s.slug ? "page" : undefined}>{s.short}</a>)}
+          <a href={`${base}methodology/`} aria-current={active === "methodology" ? "page" : undefined}>방법론</a>
+        </nav>
+        <button class="theme-btn" type="button" aria-label="다크 모드 전환" id="theme-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+        </button>
+      </div>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <p>
+          데이터: 통계청 KOSIS 국가통계포털 OpenAPI(행정안전부, 교육부, 고용노동부, 한국부동산원, 한국은행 등 작성기관 자료). 공공누리 제1유형 출처표시.
+          이 사이트의 추계·지표는 공공 통계를 결합해 독자적으로 계산한 값이며 국가승인통계가 아닙니다.
+        </p>
+        <p><a href={`${base}methodology/`}>방법론과 한계</a> · <a href="https://github.com/geniuskey/stats">소스 코드</a></p>
+      </div>
+    </footer>
+    <script>
+      import { autoMount } from "../lib/charts";
+      const btn = document.getElementById("theme-btn");
+      btn?.addEventListener("click", () => {
+        const root = document.documentElement;
+        const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        root.dataset.theme = dark ? "light" : "dark";
+        try {
+          localStorage.setItem("theme", root.dataset.theme);
+        } catch (e) {}
+      });
+      autoMount();
+    </script>
+  </body>
+</html>

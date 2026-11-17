@@ -1,0 +1,101 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import data from "../../data/school.json";
+import { pts, joinProj, val } from "../../lib/series";
+import { int, compact, pct } from "../../lib/format";
+
+export function getStaticPaths() {
+  return (data as any).regions.filter((r: any) => r.level !== "nation").map((r: any) => ({ params: { id: r.id }, props: { r } }));
+}
+const { r } = Astro.props as any;
+const d = data as any;
+const base = import.meta.env.BASE_URL;
+const last = d.meta.lastActual;
+const s = r.summary;
+const nat = d.regions.find((x: any) => x.key === "00");
+const parent = r.level === "sgg" ? d.regions.find((x: any) => x.key === r.sidoCode) : null;
+const title = r.level === "sgg" ? `${r.sido} ${r.name}` : r.name;
+
+const spec = {
+  type: "line" as const, yFormat: "int" as const, projStart: last, height: 320,
+  series: [
+    { name: "초등학생 (실측)", color: "var(--series-1)", data: pts(r.actual) },
+    { name: "추계 (중위)", color: "var(--series-1)", data: joinProj(r.actual, r.proj.mid), dash: true, label: true },
+  ],
+  bands: [{ name: "출산율 저위~고위", color: "var(--series-1)", lower: pts(r.proj.low), upper: pts(r.proj.high) }],
+  hLines: s.current ? [{ y: s.current / 2, label: `${last}년의 절반` }] : [],
+};
+const table = { headers: ["연도", "저위", "중위", "고위"], rows: [...Object.keys(r.actual).filter((y) => +y >= 2016).map((y) => [y, int(r.actual[y]), "실측", ""]), ...[2027, 2028, 2030, 2032, 2035, 2040, 2045].map((y) => [`${y} (추계)`, int(val(r.proj.low, y)), int(val(r.proj.mid, y)), int(val(r.proj.high, y))])] };
+
+const ey = Object.keys(r.entrants).filter((y) => +y >= 2016 && +y <= 2040);
+const entrSpec = { type: "column" as const, categories: ey, values: ey.map((y) => r.entrants[y]), colors: ey.map((y) => (+y > last ? "var(--seq-300)" : "var(--series-1)")), yFormat: "int" as const, height: 230 };
+const entrTable = { headers: ["연도", "입학생(추정)"], rows: ey.map((y) => [y, int(r.entrants[y])]) };
+
+const idx = (m: any, y0: number) => { const b = val(m, y0); return b ? (y: number) => { const v = val(m, y); return v == null ? null : v / b * 100; } : null; };
+const cmpYears = [...Array(2045 - 2016 + 1).keys()].map((i) => 2016 + i);
+const ser = (reg: any) => { const all = { ...reg.actual, ...reg.proj.mid }; const f = idx(all, last)!; return cmpYears.map((y) => [y, f(y)] as [number, number | null]); };
+const cmpSpec = { type: "line" as const, yFormat: "int" as const, projStart: last, height: 260, zeroBased: false,
+  series: [
+    { name: title, color: "var(--series-1)", data: ser(r), label: true },
+    ...(parent ? [{ name: parent.name, color: "var(--series-2)", data: ser(parent), label: true }] : []),
+    { name: "전국", color: "var(--neutral-series)", data: ser(nat), label: true },
+  ],
+  hLines: [{ y: 100, label: `${last} = 100` }],
+};
+const sa = r.schoolAgePop;
+const secSpec = { type: "line" as const, yFormat: "int" as const, projStart: last, height: 240,
+  series: [
+    { name: "중학교 나이(12~14세) 주민", color: "var(--series-2)", data: pts(sa.mid), label: true },
+    { name: "고등학교 나이(15~17세) 주민", color: "var(--series-3)", data: pts(sa.high), label: true },
+  ] };
+const bt = r.backtest;
+const btRows = bt ? Object.entries(bt).map(([y, v]: any) => [y, int(v.pred), int(v.actual), pct(v.pred / v.actual - 1, 1, true)]) : [];
+const peers = r.level === "sgg" ? d.regions.filter((x: any) => x.level === "sgg" && x.sidoCode === r.sidoCode).sort((a: any, b: any) => a.summary.change2035 - b.summary.change2035) : d.regions.filter((x: any) => x.level === "sgg" && x.sidoCode === r.sidoCode).sort((a: any, b: any) => a.summary.change2035 - b.summary.change2035);
+const lead = s.halfYear ? `${s.halfYear}년이면 지금의 절반 아래로` : s.change2035 < 0 ? `2035년까지 ${pct(-s.change2035)} 감소` : `2035년까지 ${pct(s.change2035)} 증가`;
+---
+<Base title={`${title} 학교 전망`} active="school" description={`${title} 초등학생 ${int(s.current)}명(${last}) → 2035년 ${int(s.y2035)}명(${pct(s.change2035, 0, true)}). 학급 ${int(s.classes2026)} → ${int(s.classes2035)}.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="breadcrumb"><a href={`${base}school/`}>학교는 얼마나 남을까?</a>{parent && <> › <a href={`${base}school/${parent.id}/`}>{parent.name}</a></>}</div>
+      <h1>{title} 초등학생, {lead}</h1>
+      <p class="lede">{last}년 {int(s.current)}명 → 2030년 {int(s.y2030)}명 → 2035년 {int(s.y2035)}명 (중위 추계, 범위 {int(val(r.proj.low, 2035))} ~ {int(val(r.proj.high, 2035))}명).</p>
+    </section>
+    <div class="grid grid-4">
+      <Stat label="2035년 변화" value={pct(s.change2035, 0, true)} note={`${int(s.current)} → ${int(s.y2035)}명`} tone={s.change2035 < 0 ? "down" : "up"} />
+      <Stat label="학급 수 (학급당 학생 수 유지 시)" value={`${int(s.classes2026)} → ${int(s.classes2035)}`} note={r.classSize ? `학급당 ${r.classSize}명 기준` : ""} />
+      <Stat label="학교당 학생 수" value={`${int(s.perSchool2026)} → ${int(s.perSchool2035)}`} note={r.schools ? `학교 ${int(r.schools)}곳 유지 가정` : ""} />
+      <Stat label="입학생 수" value={`${int(s.entrants2026)} → ${int(s.entrants2032)}`} note={`${last} → 2032, 이미 태어난 아이들`} />
+    </div>
+
+    <section class="section"><Chart spec={spec} table={table} title="초등학생 수 (명)" sub={`실측 ${Object.keys(r.actual)[0]}~${last}, 추계 ~2045`} /></section>
+    <section class="section grid grid-2">
+      <Chart spec={entrSpec} table={entrTable} title="초등 입학생(1학년) 추정" sub="연한 막대 = 추계 (6세 주민 × 취학 보정계수)" />
+      <Chart spec={cmpSpec} title={`${last}년 = 100 으로 본 변화`} sub="시도·전국과 비교" />
+    </section>
+    <section class="section grid grid-2">
+      <Chart spec={secSpec} title="중·고등학교 나이 주민 수" sub="주민등록 기준, 다음 해 학생 수의 선행 지표" />
+      <div class="card">
+        <h3 class="card-title">이 지역 과거 검증</h3>
+        <p class="card-sub">2020년 말 인구만으로 같은 방법을 적용해 예측한 값과 실제</p>
+        {bt ? (
+          <div class="table-wrap"><table><thead><tr><th>연도</th><th class="num">예측</th><th class="num">실제</th><th class="num">오차</th></tr></thead>
+            <tbody>{btRows.map((row) => <tr>{row.map((c, i) => <td class={i ? "num" : ""}>{c}</td>)}</tr>)}</tbody></table></div>
+        ) : <p class="muted">검증 자료 없음 (행정구역 변경)</p>}
+        <p class="small muted" style="margin-top:10px">취학 보정계수 r = {r.ratio} (실제 학생 수 ÷ 6~11세 주민). 1보다 크면 다른 지역에서 통학해 오는 학생이 많다는 뜻입니다.</p>
+      </div>
+    </section>
+    {peers.length > 1 && (
+      <section class="section">
+        <h2>{r.level === "sgg" ? r.sido : r.name} 안의 다른 지역</h2>
+        <div class="table-wrap" style="max-height:420px"><table>
+          <thead><tr><th>지역</th><th class="num">{last}</th><th class="num">2035</th><th class="num">변화</th><th class="num">절반 도달</th></tr></thead>
+          <tbody>{peers.map((p: any) => <tr><td>{p.key === r.key ? <strong>{p.name}</strong> : <a href={`${base}school/${p.id}/`}>{p.name}</a>}</td><td class="num">{int(p.summary.current)}</td><td class="num">{int(p.summary.y2035)}</td><td class="num">{pct(p.summary.change2035, 0, true)}</td><td class="num">{p.summary.halfYear ?? "–"}</td></tr>)}</tbody>
+        </table></div>
+      </section>
+    )}
+    {r.level === "sgg" && <section class="section"><a class="card svc" href={`${base}dongne/${r.id}/`}><h3>{title}의 미래 전체 보기</h3><p>인구·고령화·청년 이동·지속가능성 지수</p></a></section>}
+    <p class="small muted section">방법은 <a href={`${base}school/#method`}>학교 전망 방법론</a>을 참고하세요. 학급·학교 수는 현재 편성 기준이 유지된다고 가정한 값입니다.</p>
+  </div>
+</Base>

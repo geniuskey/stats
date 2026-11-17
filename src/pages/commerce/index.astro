@@ -1,0 +1,346 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import RegionSearch from "../../components/RegionSearch.astro";
+import data from "../../data/commerce.json";
+import { pts, joinProj, val } from "../../lib/series";
+import { int, compact, pct } from "../../lib/format";
+
+const base = import.meta.env.BASE_URL;
+const meta = data.meta as any;
+const regions = data.regions as any[];
+const S = data.summary as any;
+const nat = S["00"];
+const [y0, y1] = meta.storeYears as number[];
+const [g0] = meta.growthPeriod as number[];
+const counts = meta.classCounts as Record<string, number>;
+const N = regions.length;
+const p = (v: number | null | undefined) => (v == null ? null : v / 100); // JSON % → 비율
+
+const CLASS: Record<string, { label: string; color: string }> = {
+  growth: { label: "성장", color: "var(--good)" },
+  stagnant: { label: "정체", color: "var(--neutral-series)" },
+  shrink: { label: "위축", color: "var(--serious)" },
+  decline: { label: "소멸위험", color: "var(--critical)" },
+};
+const order = ["growth", "stagnant", "shrink", "decline"];
+
+const over = regions.filter((r) => r.oversupply);
+const overTop = [...over].sort((a, b) => a.metrics.consumerChange2035 - b.metrics.consumerChange2035);
+const cons20 = regions.filter((r) => r.metrics.consumerChange2035 != null && r.metrics.consumerChange2035 <= -20).length;
+
+const dem = nat.demography as Record<string, any>;
+const demYears = Object.keys(dem).map(Number).sort();
+const firstDem = dem[demYears[0]];
+const lastDem = dem[demYears.at(-1)!];
+const rateSpec = {
+  type: "line" as const,
+  yFormat: "pct1" as const,
+  series: [
+    { name: "신생률", color: "var(--series-1)", data: demYears.map((y) => [y, p(dem[y].birthRate)] as [number, number | null]), label: true },
+    { name: "소멸률", color: "var(--series-2)", data: demYears.map((y) => [y, p(dem[y].deathRate)] as [number, number | null]), label: true },
+  ],
+  height: 260,
+};
+const rateTable = {
+  headers: ["연도", "활동 기업", "신생", "소멸", "신생률", "소멸률"],
+  rows: demYears.map((y) => [y, int(dem[y].active), int(dem[y].birth), int(dem[y].death), pct(p(dem[y].birthRate), 1), pct(p(dem[y].deathRate), 1)]),
+};
+
+const cs = nat.consumers;
+const consSpec = {
+  type: "line" as const,
+  yFormat: "man" as const,
+  projStart: 2025,
+  series: [
+    { name: "소비인구 (20~64세)", color: "var(--series-1)", data: pts(cs.actual) },
+    { name: "추계 (중위)", color: "var(--series-1)", data: joinProj(cs.actual, cs.mid), dash: true, label: true },
+  ],
+  bands: [{ name: "저위~고위", color: "var(--series-1)", lower: pts(cs.low), upper: pts(cs.high) }],
+  height: 260,
+};
+const consTable = {
+  headers: ["연도", "20~64세 인구"],
+  rows: [2015, 2020, 2025, 2030, 2035, 2040, 2045].map((y) => [`${y}${y > 2025 ? " (추계)" : ""}`, int(val(cs.actual, y) ?? val(cs.mid, y))]),
+};
+
+const sidoBars = Object.entries(S)
+  .filter(([k]) => k !== "00")
+  .map(([k, v]: [string, any]) => ({ name: v.name, value: p(v.consumerChange2035) as number }))
+  .sort((a, b) => a.value - b.value);
+const sidoRows = Object.entries(S)
+  .filter(([k]) => k !== "00")
+  .map(([k, v]: [string, any]) => {
+    const rs = regions.filter((r) => r.sidoCode === k);
+    const idx = rs.reduce((a, r) => a + r.index, 0) / rs.length;
+    const c = (cl: string) => rs.filter((r) => r.class === cl).length;
+    return { name: v.name, n: rs.length, idx, growth: c("growth"), weak: c("shrink") + c("decline"), over: rs.filter((r) => r.oversupply).length, ch: p(v.consumerChange2035) };
+  })
+  .sort((a, b) => b.idx - a.idx);
+
+const href = (r: any) => `${base}commerce/${r.id}/`;
+const top = regions.slice(0, 10);
+const bottom = regions.slice(-10).reverse();
+const searchItems = regions.map((r) => ({ name: r.name, sub: `${r.sido} · ${CLASS[r.class].label}`, href: href(r) }));
+const storeChange = nat.stores[y1] / nat.stores[g0] - 1;
+---
+<Base title="소멸하는 상권, 성장하는 상권" active="commerce" description={`사업체·창업·폐업·인구이동·인구추계를 결합한 시군구 상권 활력 지수. 전국 ${N}개 시군구 중 ${over.length}곳은 점포가 늘고 있지만 2035년 소비인구가 20% 이상 줄어듭니다.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">소멸하는 상권, 성장하는 상권 · 사업체 × 창업·폐업 × 인구이동 × 인구추계</div>
+      <h1>{over.length}곳은 가게가 늘고 있지만, 10년 뒤 손님은 다섯에 하나 넘게 사라집니다</h1>
+      <p class="lede">
+        도소매·음식숙박 사업체의 증감, 기업의 창업·폐업, 20~30대의 전입·전출, 그리고 이 사이트의 소지역 인구추계를 하나로 묶었습니다.
+        전국 {N}개 시·군·구마다 상권의 지금 체력과 미래 수요를 함께 보여 주는 <strong>상권 활력 지수</strong>를 만들고, 성장·정체·위축·소멸위험으로 나눴습니다.
+      </p>
+      <div style="margin-top:20px"><RegionSearch items={searchItems} /></div>
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label="2035년 소비인구 (20~64세)" value={pct(p(nat.consumerChange2035), 1, true)} note={`2025년 ${compact(nat.consumers2025)} → ${compact(nat.consumers2035)}명 (중위 추계)`} tone="down" />
+      <Stat label={`상권 사업체 ${y1}년`} value={compact(nat.stores[y1])} unit="곳" note={`${g0}년 대비 ${pct(storeChange, 1, true)} · 도소매+숙박음식`} />
+      <Stat label="상권 기업 신생률" value={`${firstDem.birthRate}% → ${lastDem.birthRate}%`} note={`${demYears[0]} → ${demYears.at(-1)}, 새로 문 여는 비율이 계속 낮아짐`} tone="down" />
+      <Stat label="점포 과잉 신호" value={String(over.length)} unit="곳" note={`점포 증가 + 2035년 소비인구 20%↓ (${N}곳 중)`} />
+    </div>
+
+    <section class="section">
+      <h2>전국 상권 상태 분포</h2>
+      <p class="section-desc">활력 지수(50 = 전국 평균)와 소멸위험 조건으로 나눈 {N}개 시군구. 시군구의 {pct(cons20 / N, 0)}({cons20}곳)는 2035년까지 소비인구가 20% 이상 줄어듭니다.</p>
+      <div class="card">
+        <div class="segbar" role="img" aria-label={order.map((c) => `${CLASS[c].label} ${counts[c] ?? 0}곳`).join(", ")}>
+          {order.map((c) => {
+            const n = counts[c] ?? 0;
+            const share = n / N;
+            return n > 0 && (
+              <span class="segbar-part" style={`flex:${n};background:${CLASS[c].color}`} title={`${CLASS[c].label} ${n}곳 (${pct(share, 0)})`}>
+                {share >= 0.08 && <span class={c === "stagnant" ? "dark" : ""}>{n}곳</span>}
+              </span>
+            );
+          })}
+        </div>
+        <ul class="legend-row">
+          {order.map((c) => (
+            <li><span class="dot" style={`background:${CLASS[c].color}`}></span>{CLASS[c].label} <strong>{counts[c] ?? 0}</strong><span class="muted small"> · {meta.classes[c].split(": ")[1]}</span></li>
+          ))}
+        </ul>
+      </div>
+    </section>
+
+    <section class="section grid grid-2">
+      <Chart spec={consSpec} table={consTable} title="전국 소비인구 (20~64세)" sub="주민등록 실측(~2025) + 소지역 인구추계 합계. 음영은 출산율 저위~고위 (2045년까지는 차이가 작음)" />
+      <Chart spec={rateSpec} table={rateTable} title="상권 기업의 신생률·소멸률" sub={`도소매+숙박음식, 활동 기업 대비 %. 소멸은 ${demYears.at(-2)}년까지 확정`} />
+    </section>
+
+    <section class="section">
+      <h2>점포 과잉 신호: 가게는 느는데 손님은 줄어드는 곳</h2>
+      <p class="section-desc">{g0}→{y1}년 상권 사업체가 늘었지만 2035년 소비인구는 20% 이상 줄어드는 {over.length}곳. 점포 수가 그대로라면 소비인구 1천 명당 점포가 얼마나 많아지는지 보여 줍니다. 아래는 소비인구 감소 폭이 큰 순서입니다.</p>
+      <div class="table-wrap" style="max-height:480px">
+        <table>
+          <thead><tr><th>지역</th><th class="num">사업체 증감(연)</th><th class="num">소비인구 2035</th><th class="num">1천 명당 점포 {y1}</th><th class="num">→ 2035</th><th class="num">활력 지수</th></tr></thead>
+          <tbody>
+            {overTop.map((r) => (
+              <tr>
+                <td><a href={href(r)}>{r.sido} {r.name}</a></td>
+                <td class="num">{pct(p(r.metrics.storeGrowth), 1, true)}</td>
+                <td class="num">{pct(p(r.metrics.consumerChange2035), 0, true)}</td>
+                <td class="num">{r.metrics.storesPer1k?.toFixed(1)}</td>
+                <td class="num">{r.metrics.storesPer1k2035?.toFixed(1)}</td>
+                <td class="num">{r.index.toFixed(1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section grid grid-2">
+      <div class="card">
+        <h3 class="card-title">활력 지수 상위 10</h3>
+        <p class="card-sub">50 = 전국 평균. 신도시·택지 입주로 젊은 소비인구가 들어오는 곳</p>
+        <BarList items={top.map((r) => ({ name: `${r.sido} ${r.name}`, value: r.index, href: href(r) }))} format="dec1" color="var(--series-1)" />
+      </div>
+      <div class="card">
+        <h3 class="card-title">활력 지수 하위 10</h3>
+        <p class="card-sub">점포·종사자 감소, 청년 유출, 소비인구 급감이 겹친 곳</p>
+        <BarList items={bottom.map((r) => ({ name: `${r.sido} ${r.name}`, value: r.index, href: href(r) }))} format="dec1" color="var(--series-2)" />
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>시도별 요약</h2>
+      <p class="section-desc">2025→2035년 소비인구(20~64세) 변화와 시도 안 시군구의 상권 상태.</p>
+      <div class="grid grid-2">
+        <div class="card"><h3 class="card-title">2035년 소비인구 변화</h3><BarList items={sidoBars} format="pct" diverging /></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>시도</th><th class="num">평균 지수</th><th class="num">성장</th><th class="num">위축·소멸위험</th><th class="num">과잉 신호</th></tr></thead>
+            <tbody>
+              {sidoRows.map((s) => (
+                <tr><td>{s.name}</td><td class="num">{s.idx.toFixed(1)}</td><td class="num">{s.growth}/{s.n}</td><td class="num">{s.weak}/{s.n}</td><td class="num">{s.over}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>시군구 전체 목록</h2>
+      <p class="section-desc">열 제목을 누르면 정렬됩니다. 사업체 증감은 {g0}→{y1}년 연평균, 순진입률은 {meta.netEntryYears[0]}~{meta.netEntryYears[1]}년 평균(신생률 − 소멸률), 청년 순이동은 20~39세 1천 명당 연평균입니다.</p>
+      <div class="controls">
+        <input type="search" id="tbl-filter" placeholder="표에서 찾기" aria-label="표 필터" />
+        <div class="seg" role="group" aria-label="상태 필터">
+          <button type="button" data-cls="" aria-pressed="true">전체</button>
+          {order.map((c) => <button type="button" data-cls={c} aria-pressed="false">{CLASS[c].label}</button>)}
+          <button type="button" data-cls="over" aria-pressed="false">과잉 신호</button>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height:600px">
+        <table id="sgg-table">
+          <thead>
+            <tr>
+              <th><button class="sort" data-k="rank">순위</button></th>
+              <th><button class="sort" data-k="name">지역</button></th>
+              <th><button class="sort" data-k="cls">상태</button></th>
+              <th class="num"><button class="sort" data-k="idx">지수</button></th>
+              <th class="num"><button class="sort" data-k="stores">사업체 {y1}</button></th>
+              <th class="num"><button class="sort" data-k="sg">증감(연)</button></th>
+              <th class="num"><button class="sort" data-k="ne">순진입률</button></th>
+              <th class="num"><button class="sort" data-k="ym">청년 순이동</button></th>
+              <th class="num"><button class="sort" data-k="c35">소비인구 2035</button></th>
+            </tr>
+          </thead>
+          <tbody>
+            {regions.map((r) => (
+              <tr data-name={`${r.sido} ${r.name}`} data-rank={r.rank} data-cls={order.indexOf(r.class)} data-class={r.class} data-over={r.oversupply ? "1" : ""}
+                data-idx={r.index} data-stores={r.metrics.stores ?? ""} data-sg={r.metrics.storeGrowth ?? ""} data-ne={r.metrics.netEntry ?? ""} data-ym={r.metrics.youngMigrationRate ?? ""} data-c35={r.metrics.consumerChange2035 ?? ""}>
+                <td class="num">{r.rank}</td>
+                <td><a href={href(r)}>{r.sido} {r.name}</a></td>
+                <td><span class="badge"><span class="dot" style={`background:${CLASS[r.class].color}`}></span>{CLASS[r.class].label}</span></td>
+                <td class="num">{r.index.toFixed(1)}</td>
+                <td class="num">{int(r.metrics.stores)}</td>
+                <td class="num">{pct(p(r.metrics.storeGrowth), 1, true)}</td>
+                <td class="num">{r.metrics.netEntry == null ? "–" : `${r.metrics.netEntry > 0 ? "+" : ""}${r.metrics.netEntry.toFixed(1)}%p`}</td>
+                <td class="num">{r.metrics.youngMigrationRate == null ? "–" : `${r.metrics.youngMigrationRate > 0 ? "+" : ""}${r.metrics.youngMigrationRate.toFixed(1)}`}</td>
+                <td class="num">{pct(p(r.metrics.consumerChange2035), 0, true)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>방법론</h2>
+      <h3>1. 상권 활력 지수</h3>
+      <p>상권은 도매 및 소매업(G)과 숙박 및 음식점업(I)으로 정의합니다. 다섯 가지 신호를 시군구 분포에서 표준화(z 점수, ±3에서 절단)한 뒤 가중합합니다.</p>
+      <ul>
+        <li>상권 사업체 수 연평균 증감 ({g0}→{y1}, 고용노동부) — {meta.weights.estGrowth * 100}%</li>
+        <li>상권 종사자 수 연평균 증감 (같은 기간) — {meta.weights.empGrowth * 100}%</li>
+        <li>순진입률 = 신생률 − 소멸률 ({meta.netEntryYears[0]}~{meta.netEntryYears[1]} 평균, 기업생멸행정통계) — {meta.weights.netEntry * 100}%</li>
+        <li>소비인구(20~64세) 2025→2030 변화 (이 사이트의 소지역 인구추계 중위) — {meta.weights.consumers2030 * 100}%</li>
+        <li>20~39세 순이동률 (최근 3년, 인구 1천 명당) — {meta.weights.youngMigration * 100}%</li>
+      </ul>
+      <div class="formula">활력 지수 = 50 + 15 × Σ(가중치 × z)   (0~100으로 제한, 50 = 전국 평균)</div>
+      <h3>2. 상태 분류와 조기 신호</h3>
+      <ul>{order.map((c) => <li>{meta.classes[c]}</li>)}<li>{meta.oversupply}</li></ul>
+      <p>소멸위험은 지수와 상관없이 먼저 적용합니다. '1천 명당 점포 → 2035'는 점포 수가 {y1}년 그대로일 때 2035년 소비인구 1천 명당 점포 수로, 점포 1곳이 나눠 갖는 손님이 얼마나 줄어드는지 보여 줍니다. 미래 값은 인구추계에 따른 시나리오이며 예측이 아닙니다.</p>
+      <h3>한계</h3>
+      <ul>
+        <li>고용노동부 사업체 통계는 전국 상권 사업체가 {int(nat.stores[g0 - 1])}곳({g0 - 1}) → {int(nat.stores[g0])}곳({g0})으로 급감해 수준이 끊겨 있습니다(조사 체계 변경·코로나19 영향 추정). 그래서 증감률은 {g0}년부터 계산하며, 이 때문에 증감률이 전반적으로 높게 나옵니다. 지수는 시군구 간 상대 비교(z 점수)라 영향이 작습니다.</li>
+        <li>기업생멸의 '기업'은 점포(사업체)와 단위가 다르며, 최신 연도 소멸 기업은 1년 늦게 확정됩니다.</li>
+        <li>유동인구·카드매출·임대료 같은 골목 단위 자료는 포함하지 않습니다. 시군구 단위의 구조적 신호입니다.</li>
+        <li>소비인구는 주민등록 주민 기준이라 관광객·통근자 수요는 빠집니다. 관광지는 점포 밀도가 높게 보일 수 있습니다.</li>
+      </ul>
+      <h3>데이터 출처</h3>
+      <ul>{meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>
+<style>
+  .segbar {
+    display: flex;
+    gap: 2px;
+    height: 28px;
+    margin: 4px 0 14px;
+  }
+  .segbar-part {
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    min-width: 2px;
+    overflow: visible;
+  }
+  .segbar-part span {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .segbar-part span.dark {
+    color: #0b0b0b;
+  }
+  .legend-row {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    font-size: 14px;
+    color: var(--text-primary);
+  }
+  .legend-row .dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: -1px;
+  }
+</style>
+<script>
+  const table = document.getElementById("sgg-table") as HTMLTableElement;
+  const tbody = table.tBodies[0];
+  let dir = 1,
+    lastK = "rank";
+  table.querySelectorAll<HTMLButtonElement>("button.sort").forEach((b) =>
+    b.addEventListener("click", () => {
+      const k = b.dataset.k!;
+      dir = k === lastK ? -dir : 1;
+      lastK = k;
+      const rows = [...tbody.rows];
+      rows.sort((a, c) => {
+        const x = a.dataset[k] ?? "",
+          y = c.dataset[k] ?? "";
+        if (x === "" || y === "") return x === y ? 0 : x === "" ? 1 : -1;
+        const nx = Number(x),
+          ny = Number(y);
+        return (isNaN(nx) || isNaN(ny) ? x.localeCompare(y, "ko") : nx - ny) * dir;
+      });
+      rows.forEach((r) => tbody.appendChild(r));
+    }),
+  );
+  const f = document.getElementById("tbl-filter") as HTMLInputElement;
+  let cls = "";
+  const apply = () => {
+    const q = f.value.trim();
+    [...tbody.rows].forEach((r) => {
+      const okQ = !q || (r.dataset.name ?? "").includes(q);
+      const okC = !cls || (cls === "over" ? r.dataset.over === "1" : r.dataset.class === cls);
+      r.hidden = !(okQ && okC);
+    });
+  };
+  f.addEventListener("input", apply);
+  const segBtns = document.querySelectorAll<HTMLButtonElement>(".seg button[data-cls]");
+  segBtns.forEach((b) =>
+    b.addEventListener("click", () => {
+      cls = b.dataset.cls ?? "";
+      segBtns.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      apply();
+    }),
+  );
+</script>

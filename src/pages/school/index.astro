@@ -1,0 +1,213 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import RegionSearch from "../../components/RegionSearch.astro";
+import data from "../../data/school.json";
+import { pts, joinProj, val } from "../../lib/series";
+import { int, compact, pct } from "../../lib/format";
+
+const base = import.meta.env.BASE_URL;
+const regions = data.regions as any[];
+const nat = regions.find((r) => r.key === "00");
+const sidos = regions.filter((r) => r.level === "sido");
+const sggs = regions.filter((r) => r.level === "sgg");
+const L = data.levels as any;
+const last = data.meta.lastActual;
+const s = nat.summary;
+
+const lv = (k: string) => L[k]["00"];
+const natSpec = {
+  type: "line" as const,
+  yFormat: "man" as const,
+  projStart: last,
+  series: [
+    { name: "초등학생", color: "var(--series-1)", data: pts(lv("ele").actual, 2000), label: false },
+    { name: "초등 (추계·중위)", color: "var(--series-1)", data: joinProj(lv("ele").actual, lv("ele").proj.mid), dash: true, label: true },
+    { name: "중학생", color: "var(--series-2)", data: pts(lv("mid").actual, 2000) },
+    { name: "중학 (추계·중위)", color: "var(--series-2)", data: joinProj(lv("mid").actual, lv("mid").proj.mid), dash: true, label: true },
+    { name: "고등학생", color: "var(--series-3)", data: pts(lv("high").actual, 2000) },
+    { name: "고등 (추계·중위)", color: "var(--series-3)", data: joinProj(lv("high").actual, lv("high").proj.mid), dash: true, label: true },
+  ],
+  bands: [
+    { name: "초등 저위~고위", color: "var(--series-1)", lower: pts(lv("ele").proj.low), upper: pts(lv("ele").proj.high) },
+  ],
+  height: 340,
+};
+const years = [2000, 2010, 2020, 2026, 2030, 2035, 2040, 2045];
+const natTable = {
+  headers: ["연도", "초등", "중학", "고등"],
+  rows: years.map((y) => [
+    `${y}${y > last ? " (추계)" : ""}`,
+    int(val(lv("ele").actual, y) ?? val(lv("ele").proj.mid, y)),
+    int(val(lv("mid").actual, y) ?? val(lv("mid").proj.mid, y)),
+    int(val(lv("high").actual, y) ?? val(lv("high").proj.mid, y)),
+  ]),
+};
+
+// 입학생
+const entr = nat.entrants;
+const entrSpec = {
+  type: "column" as const,
+  categories: Object.keys(entr).filter((y) => +y >= 2016 && +y <= 2040),
+  values: Object.entries(entr).filter(([y]) => +y >= 2016 && +y <= 2040).map(([, v]) => v as number),
+  colors: Object.keys(entr).filter((y) => +y >= 2016 && +y <= 2040).map((y) => (+y > last ? "var(--seq-300)" : "var(--series-1)")),
+  yFormat: "man" as const,
+  height: 240,
+};
+
+const sidoBars = sidos
+  .map((r) => ({ name: r.short, value: r.summary.change2035, href: `${base}school/${r.id}/` }))
+  .sort((a, b) => a.value - b.value);
+
+const sorted = [...sggs].sort((a, b) => a.summary.change2035 - b.summary.change2035);
+const worst = sorted.slice(0, 10);
+const best = sorted.slice(-5).reverse();
+const halfCount = sggs.filter((r) => r.summary.halfYear && r.summary.halfYear <= 2035).length;
+const shrinkCount = sggs.filter((r) => r.summary.change2035 < 0).length;
+
+const bt = data.backtest as any;
+const searchItems = [...sidos, ...sggs].map((r) => ({ name: r.name, sub: r.level === "sido" ? "시도" : r.sido, href: `${base}school/${r.id}/` }));
+const tableRows = sggs.map((r) => ({
+  id: r.id, name: r.name, sido: r.sido, cur: r.summary.current, y2035: r.summary.y2035, ch: r.summary.change2035,
+  cls26: r.summary.classes2026, cls35: r.summary.classes2035, half: r.summary.halfYear,
+}));
+---
+<Base title="학교는 얼마나 남을까?" active="school" description={`출생아·학령인구·학교·교원 통계를 결합한 시군구별 초등학생 수 전망. 전국 초등학생은 ${last}년 ${compact(s.current)}명에서 2035년 ${compact(s.y2035)}명으로 줄어들 전망입니다.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">학교는 얼마나 남을까? · 출생아 × 학령인구 × 학교 × 교원</div>
+      <h1>10년 뒤, 교실 셋 중 하나가 빕니다</h1>
+      <p class="lede">
+        이미 태어난 아이들의 주민등록 인구로 앞으로 6년의 초등학생 수가 사실상 정해집니다. 여기에 지역별 인구 이동과 통계청 출산율 시나리오를 결합해
+        전국 228개 시·군·구의 2045년까지 초등학생·학급·입학생 수를 추계했습니다.
+      </p>
+      <div style="margin-top:20px"><RegionSearch items={searchItems} /></div>
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label={`초등학생 ${last}년`} value={compact(s.current)} unit="명" note="교육통계 실측" />
+      <Stat label="2035년 (중위 추계)" value={compact(s.y2035)} unit="명" note={`${pct(s.change2035, 0, true)} · 저위 ${compact(val(nat.proj.low, 2035))} ~ 고위 ${compact(val(nat.proj.high, 2035))}`} tone="down" />
+      <Stat label="학급 수 (학급당 학생 수 유지 시)" value={`${compact(s.classes2026)} → ${compact(s.classes2035)}`} note={`${last} → 2035, 학급당 ${nat.classSize}명 기준`} />
+      <Stat label="초등 입학생" value={`${compact(s.entrants2026)} → ${compact(s.entrants2032)}`} note={`${last} → 2032 (이미 태어난 아이들)`} />
+    </div>
+
+    <section class="section">
+      <h2>전국 학생 수: 실측과 추계</h2>
+      <p class="section-desc">실선은 교육기본통계 실측, 점선은 이 사이트의 추계(중위)입니다. 음영은 통계청 출산율 저위~고위 시나리오에 따른 초등학생 범위입니다. 2030년대 초까지의 감소는 이미 태어난 아이 수로 정해진 것이라 시나리오와 무관합니다.</p>
+      <Chart spec={natSpec} table={natTable} title="초·중·고 학생 수 (명)" sub="2000~2045년, 전국" />
+    </section>
+
+    <section class="section grid grid-2">
+      <Chart spec={entrSpec} title="초등학교 입학생 (1학년) 수" sub={`${last + 1}년 이후는 주민등록 6세 인구 × 취학 보정계수로 추계 (연한 막대)`} />
+      <div class="card">
+        <h3 class="card-title">이 추계는 얼마나 맞을까? (과거 검증)</h3>
+        <p class="card-sub">2020년 말 인구만 가지고 같은 방법으로 2021~2026년 시군구별 초등학생 수를 예측해 실제와 비교했습니다 ({bt.n}개 시군구).</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>예측 기간</th><th class="num">평균 오차</th><th class="num">중앙값 오차</th><th class="num">오차 10% 이내</th></tr></thead>
+            <tbody>
+              {Object.keys(bt.mape).map((h) => (
+                <tr><td>{h}년 후 ({2020 + +h})</td><td class="num">{pct(bt.mape[h], 1)}</td><td class="num">{pct(bt.median[h], 1)}</td><td class="num">{pct(bt.within10[h], 0)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p class="small muted" style="margin-top:10px">평균 오차는 시군구별 |예측/실제 − 1|의 평균. 6년 내 초등학생은 이미 태어나 있어 출산율 가정이 아닌 인구 이동 추정의 정확도를 보여줍니다.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>시도별 2035년 초등학생 변화</h2>
+      <p class="section-desc">{last}년 대비 2035년 중위 추계. 전국 228개 시군구 중 <strong>{shrinkCount}곳</strong>에서 줄고, <strong>{halfCount}곳</strong>은 2035년 이전에 지금의 절반 이하가 됩니다.</p>
+      <div class="card"><BarList items={sidoBars} format="pct" diverging /></div>
+    </section>
+
+    <section class="section grid grid-2">
+      <div class="card">
+        <h3 class="card-title">가장 빠르게 줄어드는 곳</h3>
+        <p class="card-sub">{last} → 2035 초등학생 변화율</p>
+        <BarList items={worst.map((r) => ({ name: `${r.sido} ${r.name}`, value: r.summary.change2035, href: `${base}school/${r.id}/` }))} format="pct" diverging />
+      </div>
+      <div class="card">
+        <h3 class="card-title">학생이 늘어나는 곳</h3>
+        <p class="card-sub">대규모 택지·신도시 입주 지역 (이동 효과는 시간이 지날수록 감쇠 가정)</p>
+        <BarList items={best.map((r) => ({ name: `${r.sido} ${r.name}`, value: r.summary.change2035, href: `${base}school/${r.id}/` }))} format="pct" diverging />
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>시군구 전체 목록</h2>
+      <p class="section-desc">열 제목을 누르면 정렬됩니다. 학급 수는 현재 학급당 학생 수가 유지된다고 가정한 값입니다.</p>
+      <div class="controls"><input type="search" id="tbl-filter" placeholder="표에서 찾기" aria-label="표 필터" /></div>
+      <div class="table-wrap" style="max-height:560px">
+        <table id="sgg-table">
+          <thead>
+            <tr>
+              <th><button class="sort" data-k="name">지역</button></th>
+              <th class="num"><button class="sort" data-k="cur">{last}년</button></th>
+              <th class="num"><button class="sort" data-k="y2035">2035년</button></th>
+              <th class="num"><button class="sort" data-k="ch">변화</button></th>
+              <th class="num"><button class="sort" data-k="cls26">학급 {last}</button></th>
+              <th class="num"><button class="sort" data-k="cls35">학급 2035</button></th>
+              <th class="num"><button class="sort" data-k="half">절반 도달</button></th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...tableRows].sort((a, b) => a.ch - b.ch).map((r) => (
+              <tr data-name={`${r.sido} ${r.name}`} data-cur={r.cur} data-y2035={r.y2035} data-ch={r.ch} data-cls26={r.cls26} data-cls35={r.cls35} data-half={r.half ?? 9999}>
+                <td><a href={`${base}school/${r.id}/`}>{r.sido} {r.name}</a></td>
+                <td class="num">{int(r.cur)}</td>
+                <td class="num">{int(r.y2035)}</td>
+                <td class="num">{pct(r.ch, 0, true)}</td>
+                <td class="num">{int(r.cls26)}</td>
+                <td class="num">{int(r.cls35)}</td>
+                <td class="num">{r.half ?? "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>방법론</h2>
+      <h3>1. 미래 학령인구: 코호트 변화율법</h3>
+      <p>행정안전부 주민등록인구(시군구·1세별, 2015~2025년 말)로 각 나이 집단이 1년 뒤 몇 % 남는지(사망 + 전입·전출)를 최근 3년 평균으로 구합니다. 작은 지역은 표본이 적어 시도 평균 쪽으로 보정(수축 추정)하고, 지역 고유의 순이동 효과는 연 ±8%로 제한한 뒤 해마다 15%씩 전국 평균으로 수렴시킵니다.</p>
+      <div class="formula">인구(a세, t+1) = 인구(a−1세, t) × 코호트 변화율(a)
+0세(t) = 20~44세 여성(t) × 아동비 × 출산율 지수(t, 시나리오)</div>
+      <h3>2. 출산율 시나리오</h3>
+      <p>통계청 장래인구추계(2022년 기준)의 중위·고위·저위 시나리오에서 "가임여성(20~44세) 1명당 출생아 수"의 변화율을 지수로 만들어, {data.meta.baseYear}년 실제 수준에 곱합니다. 즉 시작점은 실제 출생 수준이고 변화 방향만 공식 추계를 따릅니다.</p>
+      <h3>3. 학생 수로 변환</h3>
+      <div class="formula">초등학생(Y) = r × [6~11세 주민등록인구(Y−1년 말)]</div>
+      <p>r(취학 보정계수)은 {data.meta.calYears[0]}~{data.meta.calYears.at(-1)}년 실제 초등학생 수 ÷ 해당 학령 인구의 평균입니다. 다른 지역 학교로의 통학, 대안학교, 해외 체류 등이 반영됩니다(전국 r = {nat.ratio}). 학급 수와 학교당 학생 수는 현재 학급당 학생 수와 학교 수가 그대로라고 가정한 값으로, 실제로는 통폐합·학급 편성 기준 변화로 달라집니다.</p>
+      <h3>데이터 출처</h3>
+      <ul>{data.meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>
+<script>
+  const table = document.getElementById("sgg-table") as HTMLTableElement;
+  const tbody = table.tBodies[0];
+  let dir = 1, lastK = "ch";
+  table.querySelectorAll<HTMLButtonElement>("button.sort").forEach((b) =>
+    b.addEventListener("click", () => {
+      const k = b.dataset.k!;
+      dir = k === lastK ? -dir : 1;
+      lastK = k;
+      const rows = [...tbody.rows];
+      rows.sort((a, c) => {
+        const x = a.dataset[k] ?? "", y = c.dataset[k] ?? "";
+        const nx = Number(x), ny = Number(y);
+        return (isNaN(nx) || isNaN(ny) ? x.localeCompare(y, "ko") : nx - ny) * dir;
+      });
+      rows.forEach((r) => tbody.appendChild(r));
+    }),
+  );
+  const f = document.getElementById("tbl-filter") as HTMLInputElement;
+  f.addEventListener("input", () => {
+    const q = f.value.trim();
+    [...tbody.rows].forEach((r) => (r.hidden = !!q && !(r.dataset.name ?? "").includes(q)));
+  });
+</script>

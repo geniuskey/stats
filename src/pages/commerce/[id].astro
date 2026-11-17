@@ -1,0 +1,233 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import data from "../../data/commerce.json";
+import { pts, joinProj, val } from "../../lib/series";
+import { int, compact, pct } from "../../lib/format";
+
+export function getStaticPaths() {
+  return (data.regions as any[]).map((r) => ({ params: { id: String(r.id) }, props: { r } }));
+}
+
+const { r } = Astro.props as { r: any };
+const base = import.meta.env.BASE_URL;
+const meta = data.meta as any;
+const regions = data.regions as any[];
+const S = data.summary as any;
+const nat = S["00"];
+const sidoSum = S[r.sidoCode];
+const [y0, y1] = meta.storeYears as number[];
+const [g0] = meta.growthPeriod as number[];
+const N = regions.length;
+const m = r.metrics;
+const p = (v: number | null | undefined) => (v == null ? null : v / 100);
+const full = `${r.sido} ${r.name}`;
+
+const CLASS: Record<string, { label: string; color: string; line: string }> = {
+  growth: { label: "성장", color: "var(--good)", line: "젊은 소비인구가 들어오고 가게도 늘고 있습니다" },
+  stagnant: { label: "정체", color: "var(--neutral-series)", line: "전국 평균 언저리에서 버티고 있습니다" },
+  shrink: { label: "위축", color: "var(--serious)", line: "가게와 손님이 함께 줄어들고 있습니다" },
+  decline: { label: "소멸위험", color: "var(--critical)", line: "10년 안에 손님 다섯 중 하나가 사라지고, 새로 여는 가게보다 닫는 가게가 많습니다" },
+};
+const C = CLASS[r.class];
+const contrast = m.storeGrowth != null && m.consumerChange2035 != null && (m.storeGrowth >= 0) !== (m.consumerChange2035 >= 0);
+const storePart = m.storeGrowth == null ? "" : `가게는 ${m.storeGrowth >= 0 ? "늘고" : "줄고"} 있${contrast ? "지만" : "고"}`;
+const consPart = m.consumerChange2035 == null ? "" : m.consumerChange2035 >= 0
+  ? `손님이 될 인구도 2035년까지 ${Math.round(m.consumerChange2035)}% 늘어납니다`
+  : `손님이 될 인구는 2035년까지 ${Math.abs(Math.round(m.consumerChange2035))}% 줄어듭니다`;
+const headline = storePart && consPart ? `${storePart}, ${consPart}` : C.line;
+const peers = regions.filter((x) => x.sidoCode === r.sidoCode);
+const sidoRank = [...peers].sort((a, b) => b.index - a.index).findIndex((x) => x.key === r.key) + 1;
+
+// 구성요소
+const COMP: Record<string, string> = {
+  estGrowth: "상권 사업체 증감",
+  empGrowth: "상권 종사자 증감",
+  netEntry: "순진입률 (신생−소멸)",
+  consumers2030: "소비인구 2030 변화",
+  youngMigration: "20~39세 순이동",
+};
+const compItems = Object.entries(COMP).map(([k, name]) => ({ name, value: r.components[k] ?? 0 }));
+const compTable = Object.keys(COMP).map((k) => {
+  const raw: Record<string, string> = {
+    estGrowth: `${pct(p(m.storeGrowth), 1, true)}/년`,
+    empGrowth: `${pct(p(m.workerGrowth), 1, true)}/년`,
+    netEntry: m.netEntry == null ? "–" : `${m.netEntry > 0 ? "+" : ""}${m.netEntry.toFixed(1)}%p`,
+    consumers2030: pct(p(m.consumerChange2030), 1, true),
+    youngMigration: m.youngMigrationRate == null ? "–" : `${m.youngMigrationRate > 0 ? "+" : ""}${m.youngMigrationRate.toFixed(1)}명/천명`,
+  };
+  return [`${COMP[k]} (가중 ${Math.round(meta.weights[k] * 100)}%)`, raw[k], (r.components[k] ?? 0).toFixed(2)];
+});
+
+// 점포·종사자 추이: 기준연도 = 100 지수 (한 축)
+const idxSeries = (h: Record<string, number | null>) => {
+  const b = h[g0];
+  return pts(h).map(([x, y]) => [x, y != null && b ? (y / b) * 100 : null] as [number, number | null]);
+};
+const trendSpec = {
+  type: "line" as const,
+  yFormat: "dec1" as const,
+  series: [
+    { name: `${r.name} 사업체`, color: "var(--series-1)", data: idxSeries(r.series.stores), label: true },
+    { name: `${r.name} 종사자`, color: "var(--series-2)", data: idxSeries(r.series.workers), label: true },
+    { name: "전국 사업체", color: "var(--neutral-series)", data: idxSeries(nat.stores), muted: true },
+  ],
+  hLines: [{ y: 100, label: `${g0} = 100` }],
+  height: 260,
+};
+const trendTable = {
+  headers: ["연도", "사업체", "종사자", `사업체 지수(${g0}=100)`],
+  rows: pts(r.series.stores).map(([y, v]) => [y, int(v), int(val(r.series.workers, y)), v && r.series.stores[g0] ? ((v / r.series.stores[g0]) * 100).toFixed(1) : "–"]),
+};
+
+// 신생·소멸
+const dem = r.series.demography as Record<string, any>;
+const dYears = Object.keys(dem).map(Number).sort();
+const demSpec = {
+  type: "line" as const,
+  yFormat: "pct1" as const,
+  series: [
+    { name: "신생률", color: "var(--series-1)", data: dYears.map((y) => [y, p(dem[y].birthRate)] as [number, number | null]), label: true },
+    { name: "소멸률", color: "var(--series-2)", data: dYears.map((y) => [y, p(dem[y].deathRate)] as [number, number | null]), label: true },
+  ],
+  height: 240,
+};
+const demTable = {
+  headers: ["연도", "활동", "신생", "소멸", "신생률", "소멸률"],
+  rows: dYears.map((y) => [y, int(dem[y].active), int(dem[y].birth), int(dem[y].death), pct(p(dem[y].birthRate), 1), pct(p(dem[y].deathRate), 1)]),
+};
+
+// 소비인구
+const cs = r.series.consumers;
+const consSpec = {
+  type: "line" as const,
+  yFormat: "man" as const,
+  projStart: 2025,
+  series: [
+    { name: "20~64세 인구", color: "var(--series-1)", data: pts(cs.actual) },
+    { name: "추계 (중위)", color: "var(--series-1)", data: joinProj(cs.actual, cs.mid), dash: true, label: true },
+  ],
+  bands: [{ name: "저위~고위", color: "var(--series-1)", lower: pts(cs.low), upper: pts(cs.high) }],
+  height: 260,
+};
+const consTable = {
+  headers: ["연도", "저위", "중위", "고위"],
+  rows: [2015, 2020, 2025, 2030, 2035, 2040, 2045].map((y) =>
+    y <= 2025 ? [`${y}`, "", int(val(cs.actual, y)), ""] : [`${y} (추계)`, int(val(cs.low, y)), int(val(cs.mid, y)), int(val(cs.high, y))],
+  ),
+};
+
+// 1천 명당 점포 (실측 → 점포 고정 시 미래)
+const densCats: string[] = [];
+const densVals: (number | null)[] = [];
+const densColors: string[] = [];
+for (const [y, v] of pts(r.series.stores)) {
+  const c = val(cs.actual, y);
+  if (!v || !c) continue; // 행정구역 변경(예: 군위군 2023 대구 편입) 이전 등 인구 없는 해는 생략
+  densCats.push(String(y));
+  densVals.push(v && c ? (v / c) * 1000 : null);
+  densColors.push("var(--series-1)");
+}
+const lastStores = r.series.stores[y1];
+for (const y of [2030, 2035, 2040]) {
+  const c = val(cs.mid, y);
+  densCats.push(`${y}*`);
+  densVals.push(lastStores && c ? (lastStores / c) * 1000 : null);
+  densColors.push("var(--seq-300)");
+}
+const densSpec = { type: "column" as const, categories: densCats, values: densVals, colors: densColors, yFormat: "dec1" as const, height: 240 };
+const densTable = { headers: ["연도", "소비인구 1천 명당 점포"], rows: densCats.map((c, i) => [c.replace("*", " (점포 고정)"), densVals[i]?.toFixed(1) ?? "–"]) };
+
+// 동네 보조
+const dn = r.dongne;
+const migCats = Object.keys(dn.netMigrationYoung);
+const migSpec = {
+  type: "column" as const,
+  categories: migCats,
+  values: migCats.map((y) => dn.netMigrationYoung[y]),
+  colors: migCats.map((y) => ((dn.netMigrationYoung[y] ?? 0) < 0 ? "var(--div-neg)" : "var(--div-pos)")),
+  yFormat: "int" as const,
+  height: 220,
+};
+const migTable = { headers: ["연도", "20~39세 순이동", "전체 순이동"], rows: migCats.map((y) => [y, int(dn.netMigrationYoung[y]), int(dn.netMigration[y])]) };
+const vacSpec = {
+  type: "line" as const,
+  yFormat: "pct1" as const,
+  zeroBased: true,
+  series: [{ name: "빈집 비율", color: "var(--series-1)", data: pts(dn.vacancyRate).map(([x, y]) => [x, p(y)] as [number, number | null]), label: true }],
+  height: 220,
+};
+const vacTable = { headers: ["연도", "주택", "빈집", "빈집 비율"], rows: pts(dn.houses).map(([y, v]) => [y, int(v), int(val(dn.vacant, y)), pct(p(val(dn.vacancyRate, y)), 1)]) };
+const hhFirst = Object.keys(dn.households)[0];
+const hhLast = Object.keys(dn.households).at(-1)!;
+
+const near = [...peers].sort((a, b) => b.index - a.index);
+---
+<Base title={`${full} 상권 전망`} active="commerce" description={`${full} 상권 활력 지수 ${r.index.toFixed(1)} (${C.label}). 2035년 소비인구 ${pct(p(m.consumerChange2035), 0, true)}, 상권 사업체 ${int(m.stores)}곳.`}>
+  <div class="wrap">
+    <nav class="breadcrumb"><a href={`${base}commerce/`}>소멸하는 상권, 성장하는 상권</a> › {r.sido} › {r.name}</nav>
+    <section class="hero">
+      <div class="eyebrow">{full} · 사업체 × 창업·폐업 × 인구이동 × 인구추계</div>
+      <h1>{r.name} 상권은 '{C.label}' — {headline}</h1>
+      <p class="lede">
+        상권 활력 지수 <strong>{r.index.toFixed(1)}</strong> (전국 {N}곳 중 {r.rank}위, {sidoSum?.name} {peers.length}곳 중 {sidoRank}위).
+        50이 전국 평균입니다. 점포 수가 지금 그대로라면 2035년에는 점포 1곳이 나눠 갖는 소비인구가 <strong>{pct(p(m.demandPerStore2035), 0, true)}</strong> 달라집니다.
+        {r.oversupply && <span> <span class="badge"><span class="dot" style="background:var(--serious)"></span>점포 과잉 신호</span></span>}
+      </p>
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label="상권 활력 지수" value={r.index.toFixed(1)} note={`${C.label} · 전국 ${r.rank}/${N}위`} />
+      <Stat label={`상권 사업체 ${y1}년`} value={int(m.stores)} unit="곳" note={`${g0}→${y1} 연 ${pct(p(m.storeGrowth), 1, true)} · 종사자 ${int(m.workers)}명`} tone={m.storeGrowth < 0 ? "down" : undefined} />
+      <Stat label="소비인구 (20~64세) 2035" value={pct(p(m.consumerChange2035), 1, true)} note={`${compact(m.consumers2025)} → ${compact(m.consumers2035)}명 (전국 ${pct(p(nat.consumerChange2035), 1, true)})`} tone={m.consumerChange2035 < 0 ? "down" : "up"} />
+      <Stat label="소비인구 1천 명당 점포" value={`${m.storesPer1k?.toFixed(1)} → ${m.storesPer1k2035?.toFixed(1)}`} unit="곳" note={`${y1} → 2035, 점포 수 고정 가정`} />
+    </div>
+
+    <section class="section grid grid-2">
+      <div class="card">
+        <h3 class="card-title">활력 지수 구성요소</h3>
+        <p class="card-sub">전국 시군구 대비 표준점수(z). 0 = 전국 평균, 오른쪽일수록 강함</p>
+        <BarList items={compItems} format="dec2" diverging />
+        <details class="table-view">
+          <summary>표로 보기</summary>
+          <div class="table-wrap"><table><thead><tr><th>요소</th><th class="num">실제 값</th><th class="num">z 점수</th></tr></thead>
+            <tbody>{compTable.map((row) => <tr><td>{row[0]}</td><td class="num">{row[1]}</td><td class="num">{row[2]}</td></tr>)}</tbody></table></div>
+        </details>
+      </div>
+      <Chart spec={trendSpec} table={trendTable} title="상권 사업체·종사자 추이" sub={`도소매+숙박음식, ${g0}년 = 100 지수. 회색은 전국 사업체. ${g0}년에 전국 수준이 크게 꺾여 그 이전과의 비교는 주의`} />
+    </section>
+
+    <section class="section">
+      <h2>손님이 될 인구: 소비인구 추계</h2>
+      <p class="section-desc">상권 수요의 기반인 20~64세 주민 수. 실선은 주민등록 실측, 점선은 이 사이트의 소지역 인구추계(중위), 음영은 출산율 저위~고위입니다. 추계는 시나리오이며 예측이 아닙니다.</p>
+      <div class="grid grid-2">
+        <Chart spec={consSpec} table={consTable} title={`${r.name} 20~64세 인구`} sub="2015~2045년" />
+        <Chart spec={densSpec} table={densTable} title="소비인구 1천 명당 상권 점포 수" sub={`${y1}년 이후(*, 연한 막대)는 점포 수가 ${y1}년 그대로일 때의 값 = 점포 1곳당 수요 감소 신호`} />
+      </div>
+    </section>
+
+    <section class="section grid grid-2">
+      <Chart spec={demSpec} table={demTable} title="상권 기업 신생률·소멸률" sub={`활동 기업 대비 %. 최근 3년 평균 순진입률 ${m.netEntry == null ? "–" : `${m.netEntry > 0 ? "+" : ""}${m.netEntry.toFixed(1)}%p`} (전국 중앙값과 비교는 구성요소 참고)`} />
+      <Chart spec={migSpec} table={migTable} title="20~39세 순이동 (명)" sub={`전입 − 전출. 최근 3년 평균 1천 명당 ${m.youngMigrationRate == null ? "–" : m.youngMigrationRate.toFixed(1)}명`} />
+    </section>
+
+    <section class="section grid grid-2">
+      <Chart spec={vacSpec} table={vacTable} title="빈집 비율" sub="주택총조사 미거주주택 ÷ 전체 주택" />
+      <div class="card">
+        <h3 class="card-title">{sidoSum?.name} 안에서 비교</h3>
+        <p class="card-sub">같은 시도 시군구의 상권 활력 지수</p>
+        <BarList items={near.map((x) => ({ name: x.name, value: x.index, href: `${base}commerce/${x.id}/` }))} format="dec1" color="var(--series-1)" />
+        <p class="small muted" style="margin-top:10px">세대수 {hhFirst}년 {int(dn.households[hhFirst])} → {hhLast}년 {int(dn.households[hhLast])} · 전 산업 사업체 {y1}년 {int(dn.establishments[y1])}곳</p>
+      </div>
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>이 지표를 읽는 법</h2>
+      <p>상권 활력 지수는 상권 사업체·종사자 증감({g0}→{y1}), 순진입률(신생률 − 소멸률), 2030년 소비인구 변화, 20~39세 순이동률을 전국 시군구 분포에서 표준화해 가중합한 값입니다(50 = 전국 평균). 소멸위험은 2035년 소비인구 20% 이상 감소와 순진입률 0 이하가 겹치는 경우입니다. 자세한 정의와 한계는 <a href={`${base}commerce/#method`}>전체 방법론</a>을 보세요.</p>
+      <h3>데이터 출처</h3>
+      <ul>{meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>

@@ -1,0 +1,15 @@
+---
+interface Props {
+  label: string;
+  value: string;
+  unit?: string;
+  note?: string;
+  tone?: "up" | "down";
+}
+const { label, value, unit, note, tone } = Astro.props;
+---
+<div class="stat">
+  <div class="stat-label">{label}</div>
+  <div class={`stat-value ${tone === "down" ? "delta-down" : tone === "up" ? "delta-up" : ""}`}>{value}{unit && <small>{unit}</small>}</div>
+  {note && <div class="stat-note">{note}</div>}
+</div>

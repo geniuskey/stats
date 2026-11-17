@@ -1,0 +1,158 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import data from "../../data/korea.json";
+import { pts } from "../../lib/series";
+import { int, compact, pct } from "../../lib/format";
+
+const d = data as any;
+const h = d.headline;
+const ms = d.milestones;
+const by = d.meta.baseYear;
+const nat = d.national;
+const field = (s: string, f: string, from = 2015) => Object.entries(nat[s]).filter(([y]) => +y >= from).map(([y, v]: any) => [+y, v[f]] as [number, number]);
+const projOnly = (s: string, f: string) => field(s, f, by);
+const histOnly = (f: string) => field("mid", f).filter(([y]) => y <= by);
+const offField = (s: string, f: string) => Object.entries(d.official[s]).filter(([y]) => +y <= 2050).map(([y, v]: any) => [+y, v[f] ?? null] as [number, number | null]);
+
+const popSpec = {
+  type: "line" as const, yFormat: "man" as const, projStart: by, height: 320, zeroBased: false,
+  series: [
+    { name: "주민등록 인구 (실측)", color: "var(--series-1)", data: histOnly("total") },
+    { name: "자체 추계 (중위)", color: "var(--series-1)", data: projOnly("mid", "total"), dash: true, label: true },
+    { name: "통계청 공식 추계 (중위·외국인 포함)", color: "var(--neutral-series)", data: offField("mid", "total"), dash: true, label: true },
+  ],
+  bands: [{ name: "자체 추계 저위~고위", color: "var(--series-1)", lower: projOnly("low", "total"), upper: projOnly("high", "total") }],
+};
+const popTable = {
+  headers: ["연도", "자체 저위", "자체 중위", "자체 고위", "공식 중위"],
+  rows: [2025, 2030, 2035, 2040, 2045, 2050].map((y) => [y, int(nat.low[y].total), int(nat.mid[y].total), int(nat.high[y].total), int(d.official.mid[y]?.total)]),
+};
+
+const ageSpec = {
+  type: "line" as const, yFormat: "pct" as const, projStart: by, height: 300,
+  series: [
+    { name: "65세 이상", color: "var(--series-2)", data: field("mid", "oldShare"), label: true },
+    { name: "15~64세", color: "var(--series-1)", data: field("mid", "workShare"), label: true },
+    { name: "0~14세", color: "var(--series-3)", data: field("mid", "kidShare"), label: true },
+  ],
+};
+const ageTable = {
+  headers: ["연도", "0~14세", "15~64세", "65세 이상", "85세 이상(명)", "중위연령"],
+  rows: [2015, 2025, 2030, 2035, 2040, 2045, 2050].map((y) => [y, pct(nat.mid[y].kidShare, 1), pct(nat.mid[y].workShare, 1), pct(nat.mid[y].oldShare, 1), int(nat.mid[y].old85), nat.mid[y].medianAge]),
+};
+
+const supportSpec = {
+  type: "line" as const, yFormat: "dec1" as const, projStart: by, height: 260,
+  series: [{ name: "고령자 1명당 20~64세 인구", color: "var(--series-1)", data: field("mid", "workPerOld"), label: true }],
+  bands: [{ name: "저위~고위", color: "var(--series-1)", lower: projOnly("low", "workPerOld"), upper: projOnly("high", "workPerOld") }],
+  hLines: [{ y: 2, label: "2명" }, { y: 1, label: "1명" }],
+  zeroBased: true,
+};
+
+const B = d.births;
+const birthSpec = {
+  type: "line" as const, yFormat: "man" as const, height: 300, zeroBased: true,
+  series: [
+    { name: "실제 출생아", color: "var(--text-primary)", data: pts(B.actual, 2010), label: true, width: 2.5 },
+    { name: "공식 고위", color: "var(--series-3)", data: pts(B.official.high, 2022, 2035), dash: true },
+    { name: "공식 중위", color: "var(--series-1)", data: pts(B.official.mid, 2022, 2035), dash: true },
+    { name: "공식 저위", color: "var(--series-2)", data: pts(B.official.low, 2022, 2035), dash: true },
+  ],
+};
+const birthTable = {
+  headers: ["연도", "실제", "공식 저위", "공식 중위", "공식 고위", "합계출산율"],
+  rows: [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2030].map((y) => [y, int(B.actual[y]), int(B.official.low[y]), int(B.official.mid[y]), int(B.official.high[y]), B.tfr[y] ?? "–"]),
+};
+const vs = h.birthsVsScenario;
+const closest = Object.entries(vs).sort((a: any, b: any) => Math.abs(a[1]) - Math.abs(b[1]))[0][0];
+const scenName: Record<string, string> = { low: "저위", mid: "중위", high: "고위" };
+
+const P = d.pyramid;
+const pyrSpec = { type: "pyramid" as const, groups: P.labels, left: P.male2050, right: P.female2050, leftOutline: P.male2025, rightOutline: P.female2025, leftName: "남자", rightName: "여자", outlineName: `${by}년`, height: 420 };
+const pyrTable = { headers: ["연령", `남 ${by}`, `여 ${by}`, "남 2050", "여 2050"], rows: P.labels.map((l: string, i: number) => [l, int(P.male2025[i]), int(P.female2025[i]), int(P.male2050[i]), int(P.female2050[i])]) };
+
+const v = d.village;
+const sidoBars = d.sidos.map((s: any) => ({ name: s.name, value: s.change2050 }));
+const sidoOld = [...d.sidos].sort((a: any, b: any) => b.oldShare2050 - a.oldShare2050).map((s: any) => ({ name: s.name, value: s.oldShare2050 }));
+---
+<Base title="대한민국의 미래" active="korea" description={`출생·사망·이동·연령별 인구를 결합한 2050년 대한민국 전망. 65세 이상 비중 ${pct(h.oldShare2025)} → ${pct(h.oldShare2050)}.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">대한민국의 미래 · 출생 × 사망 × 이동 × 연령별 인구</div>
+      <h1>2050년, 고령자 1명을 일하는 나이 {h.workPerOld2050}명이 받칩니다</h1>
+      <p class="lede">지금은 {h.workPerOld2025}명입니다. 주민등록 인구 5,100만 명을 1세 단위로 한 해씩 나이 들게 하고, 지역별 이동과 출생을 더해 2050년까지 굴려 봤습니다. 공식 추계가 나온 뒤의 실제 출생 흐름까지 반영했습니다.</p>
+    </section>
+    <div class="grid grid-4">
+      <Stat label={`인구 ${by} → 2050 (중위)`} value={`${compact(h.pop2025)} → ${compact(h.pop2050.mid)}`} note={`${pct(h.pop2050.mid / h.pop2025 - 1, 0, true)} · 내국인 주민등록 기준`} tone="down" />
+      <Stat label="65세 이상 비중" value={`${pct(h.oldShare2025)} → ${pct(h.oldShare2050)}`} note={`30% 돌파: ${ms.old30}년`} />
+      <Stat label="중위연령" value={`${h.medianAge2025} → ${h.medianAge2050}`} unit="세" note="국민을 나이순으로 세웠을 때 한가운데" />
+      <Stat label="85세 이상" value={`${compact(h.old85_2025)} → ${compact(h.old85_2050)}`} unit="명" note={`${(h.old85_2050 / h.old85_2025).toFixed(1)}배`} />
+    </div>
+
+    <section class="section">
+      <h2>실제 출생은 공식 추계의 '{scenName[closest]}' 시나리오를 따라가는 중</h2>
+      <p class="section-desc">통계청 장래인구추계(2022년 기준)는 출생아가 계속 줄어든다고 봤습니다(중위). 그러나 {h.birthsLatestYear}년 실제 출생아는 {int(h.birthsLatest)}명(합계출산율 {h.tfrLatest})으로 중위보다 {pct(vs.mid, 0, true)}, 고위 시나리오와는 {pct(vs.high, 1, true)} 차이입니다. 이 사이트의 추계는 이 실제 수준에서 출발합니다.</p>
+      <Chart spec={birthSpec} table={birthTable} title="출생아 수: 실제 vs 공식 시나리오" sub="2010~2035년, 명" />
+    </section>
+
+    <section class="section">
+      <h2>총인구: 자체 추계와 공식 추계</h2>
+      <p class="section-desc">자체 추계는 주민등록 <strong>내국인</strong> 기준이라 외국인(약 270만 명)과 외국인 순유입이 포함된 공식 추계보다 낮습니다. 비교의 핵심은 수준보다 기울기입니다. 5천만 명 아래로 내려가는 해는 <strong>{ms.under50m}년</strong>(중위)입니다.</p>
+      <Chart spec={popSpec} table={popTable} title="총인구 (명)" sub="2015~2050년" />
+    </section>
+
+    <section class="section grid grid-2">
+      <Chart spec={ageSpec} table={ageTable} title="연령 구조" sub="전체 인구 대비 비중, 중위" />
+      <Chart spec={supportSpec} title="고령자 1명을 받치는 20~64세 인구" sub={`2명 아래로: ${ms.workPerOld2}년`} />
+    </section>
+
+    <section class="section grid grid-2">
+      <Chart spec={pyrSpec} table={pyrTable} title={`인구 피라미드: 2050년 (막대) vs ${by}년 (선)`} sub="자체 추계 중위, 5세 단위" />
+      <div class="card">
+        <h3 class="card-title">대한민국이 100명의 마을이라면</h3>
+        <p class="card-sub">중위 추계</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>연도</th><th class="num">어린이(0~14)</th><th class="num">일하는 나이(15~64)</th><th class="num">고령자(65+)</th><th class="num">85세 이상</th></tr></thead>
+            <tbody>{Object.entries(v).map(([y, r]: any) => <tr><td>{y}</td><td class="num">{r.kids}명</td><td class="num">{r.work}명</td><td class="num">{r.old}명</td><td class="num">{r.old85}명</td></tr>)}</tbody>
+          </table>
+        </div>
+        <p class="insight" style="margin-top:16px">20~39세 청년은 {compact(h.young2025)}명에서 2050년 <strong>{compact(h.young2050)}명</strong>으로 {pct(h.young2050 / h.young2025 - 1, 0, true)} 줄어듭니다. 2050년의 20~39세는 대부분 이미 태어났기 때문에 출산율 시나리오로 거의 바뀌지 않는 숫자입니다.</p>
+      </div>
+    </section>
+
+    <section class="section grid grid-2">
+      <div class="card">
+        <h3 class="card-title">시도별 인구 변화 ({by} → 2050)</h3>
+        <p class="card-sub">시군구 추계의 합, 중위</p>
+        <BarList items={sidoBars} format="pct" diverging />
+      </div>
+      <div class="card">
+        <h3 class="card-title">2050년 65세 이상 비중</h3>
+        <p class="card-sub">시도별, 중위</p>
+        <BarList items={sidoOld} format="pct" color="var(--series-2)" />
+      </div>
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>방법론</h2>
+      <h3>무엇을 결합했나</h3>
+      <p>행정안전부 주민등록인구(1세별, 시군구, 2015~2025년 말), 통계청 인구동향 출생아·합계출산율, 통계청 장래인구추계(2022년 기준)의 시나리오별 출생아·가임여성 인구를 결합했습니다. 공식 추계는 2022년 인구에서 출발하지만, 그 뒤 3년의 실제 출생과 이동이 반영된 2025년 주민등록 인구에서 다시 출발한 것이 차이입니다.</p>
+      <h3>추계 방법</h3>
+      <div class="formula">인구(a세, t+1) = 인구(a−1세, t) × 코호트 변화율(a)      ← 사망 + 국내외 이동
+0세(t)       = 20~44세 여성(t) × 아동비 × 출산율 지수(시나리오, t)</div>
+      <p>코호트 변화율은 최근 3년 평균입니다. 시군구 229곳을 각각 추계한 뒤 더해 전국과 시도 값을 만들었습니다. 출산율 지수는 공식 추계 시나리오의 "가임여성 1명당 출생아" 변화율을 {by}년 = 1로 둔 것입니다. 2050년 피라미드의 남녀 구분은 같은 출생 코호트의 {by}년 성비를 적용했습니다.</p>
+      <h3>한계</h3>
+      <ul>
+        <li>주민등록 기준이라 외국인 인구가 빠져 있습니다. 공식 추계와 수준이 다릅니다.</li>
+        <li>사망률 개선(기대수명 증가)을 따로 모형화하지 않고 최근 3년의 생존 비율을 유지합니다. 고령 인구가 다소 과소추계될 수 있습니다.</li>
+        <li>최근 3년의 이동 흐름이 점차 전국 평균으로 수렴한다고 가정합니다.</li>
+      </ul>
+      <h3>데이터 출처</h3>
+      <ul>{d.meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>

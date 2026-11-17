@@ -1,0 +1,145 @@
+---
+import Base from "../../layouts/Base.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import RegionSearch from "../../components/RegionSearch.astro";
+import data from "../../data/dongne.json";
+import { int, compact, pct } from "../../lib/format";
+
+const base = import.meta.env.BASE_URL;
+const d = data as any;
+const R = d.regions as any[];
+const by = d.meta.baseYear;
+const end = d.meta.end;
+const shrink = R.filter((r) => r.m.ch2045 < 0).length;
+const halve = R.filter((r) => r.m.oldHalfYear && r.m.oldHalfYear <= end).length;
+const top = R.slice(0, 10);
+const bottom = R.slice(-10).reverse();
+const mostDecline = [...R].sort((a, b) => a.m.ch2045 - b.m.ch2045).slice(0, 10);
+const vsOfficial = R.filter((r) => r.m.official2042).map((r) => ({ ...r, gap: r.m.ours2042 / r.m.official2042 - 1 }));
+const above = [...vsOfficial].sort((a, b) => b.gap - a.gap).slice(0, 8);
+const below = [...vsOfficial].sort((a, b) => a.gap - b.gap).slice(0, 8);
+const search = R.map((r) => ({ name: r.name, sub: r.sido, href: `${base}dongne/${r.id}/` }));
+const riskOrder = ["소멸고위험", "소멸위험", "주의", "보통"];
+const outlookOrder = ["급감", "축소", "유지", "성장"];
+const outlookDesc: Record<string, string> = { 급감: "−20% 미만", 축소: "−20 ~ −5%", 유지: "±5%", 성장: "+5% 이상" };
+---
+<Base title="우리 동네의 미래" active="dongne" description={`전국 229개 시군구의 ${end}년 인구 추계와 지속가능성 지수. ${shrink}곳의 인구가 줄어듭니다.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">우리 동네의 미래 · 인구이동 × 출생 × 사업체 × 주택</div>
+      <h1>{end}년, 시군구 {R.length}곳 중 {shrink}곳의 인구가 줄어듭니다</h1>
+      <p class="lede">주민등록 인구 추계에 청년 순이동, 일자리(사업체 종사자), 빈집, 소멸위험지수를 결합해 동네마다 <strong>지속가능성 지수</strong>를 만들었습니다. 우리 동네를 검색해 보세요.</p>
+      <div style="margin-top:20px"><RegionSearch items={search} /></div>
+    </section>
+    <div class="grid grid-4">
+      <Stat label={`인구 감소 (${by}→${end})`} value={`${shrink}곳`} note={`${R.length}개 시군구 중, 중위 추계`} tone="down" />
+      <Stat label="20% 넘게 줄어드는 곳" value={`${d.counts["급감"] ?? 0}곳`} note="'급감' 분류" tone="down" />
+      <Stat label="소멸위험 지역 (지수 0.5 미만)" value={`${(d.risk["소멸위험"] ?? 0) + (d.risk["소멸고위험"] ?? 0)}곳`} note={`그중 고위험(0.2 미만) ${d.risk["소멸고위험"] ?? 0}곳`} />
+      <Stat label={`${end}년까지 주민 절반이 65세+`} value={`${halve}곳`} note="고령자 비중 50% 도달" />
+    </div>
+
+    <section class="section grid grid-2">
+      <div class="card">
+        <h3 class="card-title">{end}년 인구 전망 분류</h3>
+        <p class="card-sub">{by}년 대비 변화율 (중위)</p>
+        <div class="table-wrap"><table><thead><tr><th>분류</th><th>기준</th><th class="num">시군구</th></tr></thead>
+          <tbody>{outlookOrder.map((k) => <tr><td>{k}</td><td>{outlookDesc[k]}</td><td class="num">{d.counts[k] ?? 0}</td></tr>)}</tbody></table></div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">소멸위험지수 분포 ({by}년)</h3>
+        <p class="card-sub">20~39세 여성 인구 ÷ 65세 이상 인구</p>
+        <div class="table-wrap"><table><thead><tr><th>단계</th><th>지수</th><th class="num">시군구</th></tr></thead>
+          <tbody>
+            {riskOrder.map((k) => <tr><td>{k}</td><td>{({ 소멸고위험: "0.2 미만", 소멸위험: "0.2~0.5", 주의: "0.5~1.0", 보통: "1.0 이상" } as any)[k]}</td><td class="num">{d.risk[k] ?? 0}</td></tr>)}
+          </tbody></table></div>
+      </div>
+    </section>
+
+    <section class="section grid grid-2">
+      <div class="card">
+        <h3 class="card-title">지속가능성 지수 상위 10</h3>
+        <p class="card-sub">50 = 전국 시군구 평균</p>
+        <BarList items={top.map((r) => ({ name: `${r.sido} ${r.name}`, value: r.m.index, href: `${base}dongne/${r.id}/` }))} format="dec1" color="var(--series-1)" />
+      </div>
+      <div class="card">
+        <h3 class="card-title">지속가능성 지수 하위 10</h3>
+        <p class="card-sub">인구 감소·청년 유출·고령화·빈집이 겹친 곳</p>
+        <BarList items={bottom.map((r) => ({ name: `${r.sido} ${r.name}`, value: r.m.index, href: `${base}dongne/${r.id}/` }))} format="dec1" color="var(--series-2)" />
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>공식 추계와 가장 다른 동네</h2>
+      <p class="section-desc">통계청 시군구 장래인구추계(2022년 기준)의 2042년 인구와 이 사이트의 추계(2025년 주민등록에서 출발)를 비교했습니다. 2022년 이후의 신도시 입주, 청년 유출 가속 같은 변화가 반영된 차이입니다. 공식 추계는 외국인을 포함해 수준이 조금 높습니다.</p>
+      <div class="grid grid-2">
+        <div class="card"><h3 class="card-title">공식 추계보다 많을 곳</h3><p class="card-sub">2042년 자체 ÷ 공식 − 1</p>
+          <BarList items={above.map((r) => ({ name: `${r.sido} ${r.name}`, value: r.gap, href: `${base}dongne/${r.id}/` }))} format="pct" diverging /></div>
+        <div class="card"><h3 class="card-title">공식 추계보다 적을 곳</h3><p class="card-sub">2042년 자체 ÷ 공식 − 1</p>
+          <BarList items={below.map((r) => ({ name: `${r.sido} ${r.name}`, value: r.gap, href: `${base}dongne/${r.id}/` }))} format="pct" diverging /></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>전체 시군구</h2>
+      <div class="controls"><input type="search" id="tbl-filter" placeholder="표에서 찾기" aria-label="표 필터" /></div>
+      <div class="table-wrap" style="max-height:600px">
+        <table id="tbl">
+          <thead><tr>
+            <th><button class="sort" data-k="name">지역</button></th>
+            <th class="num"><button class="sort" data-k="idx">지수</button></th>
+            <th class="num"><button class="sort" data-k="p25">인구 {by}</button></th>
+            <th class="num"><button class="sort" data-k="p45">{end}</button></th>
+            <th class="num"><button class="sort" data-k="ch">변화</button></th>
+            <th class="num"><button class="sort" data-k="old">65+ {end}</button></th>
+            <th class="num"><button class="sort" data-k="ext">소멸위험지수</button></th>
+            <th class="num"><button class="sort" data-k="mig">청년 순이동</button></th>
+          </tr></thead>
+          <tbody>{R.map((r) => (
+            <tr data-name={`${r.sido} ${r.name}`} data-idx={r.m.index} data-p25={r.m.pop2025} data-p45={r.m.pop2045} data-ch={r.m.ch2045} data-old={r.m.oldShare2045} data-ext={r.m.ext2025} data-mig={r.m.youngMig ?? -9999}>
+              <td><a href={`${base}dongne/${r.id}/`}>{r.sido} {r.name}</a></td>
+              <td class="num">{r.m.index}</td><td class="num">{int(r.m.pop2025)}</td><td class="num">{int(r.m.pop2045)}</td>
+              <td class="num">{pct(r.m.ch2045, 0, true)}</td><td class="num">{pct(r.m.oldShare2045)}</td>
+              <td class="num">{r.m.ext2025?.toFixed(2)}</td><td class="num">{r.m.youngMig == null ? "–" : r.m.youngMig.toFixed(1)}</td>
+            </tr>))}
+          </tbody>
+        </table>
+      </div>
+      <p class="small muted" style="margin-top:8px">청년 순이동: 20~39세 인구 1천 명당 연평균 순이동(최근 3년). 음수는 순유출.</p>
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>방법론</h2>
+      <h3>인구 추계</h3>
+      <p>시군구별 주민등록 1세별 인구에 코호트 변화율법을 적용했습니다. 최근 3년 동안 각 나이 집단이 1년 뒤 몇 % 남았는지(사망과 전입·전출)를 구하고, 작은 지역은 시도 평균 쪽으로 보정합니다. 지역 고유의 순이동 효과는 연 ±8%로 제한하고 해마다 15%씩 전국 평균에 수렴시킵니다. 출생은 20~44세 여성 수에 지역 아동비와 통계청 출산율 시나리오 지수를 곱해 구합니다. 학교 추계와 같은 엔진입니다.</p>
+      <h3>지속가능성 지수</h3>
+      <div class="formula">지수 = 50 + 15 × Σ wᵢ·zᵢ   (zᵢ: 시군구 분포 표준화 값, ±3 절단)
+  인구 변화({by}→2035)   30%
+  20~39세 순이동률        20%
+  소멸위험지수({by})      20%
+  사업체 종사자 증감률    15%
+  빈집률 (낮을수록 +)     15%</div>
+      <p>소멸위험지수는 20~39세 여성 인구를 65세 이상 인구로 나눈 값입니다(한국고용정보원 방식). 0.5 미만이면 소멸위험, 0.2 미만이면 고위험입니다. 지수는 상대 순위를 보기 위한 합성 지표이며, 가중치는 해석이 쉬운 방향으로 정했습니다.</p>
+      <h3>데이터 출처</h3>
+      <ul>{d.meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>
+<script>
+  const table = document.getElementById("tbl") as HTMLTableElement;
+  const tbody = table.tBodies[0];
+  let dir = 1, lastK = "idx";
+  table.querySelectorAll<HTMLButtonElement>("button.sort").forEach((b) =>
+    b.addEventListener("click", () => {
+      const k = b.dataset.k!;
+      dir = k === lastK ? -dir : -1;
+      lastK = k;
+      [...tbody.rows].sort((a, c) => {
+        const x = a.dataset[k] ?? "", y = c.dataset[k] ?? "";
+        const nx = Number(x), ny = Number(y);
+        return (isNaN(nx) || isNaN(ny) ? x.localeCompare(y, "ko") : nx - ny) * dir;
+      }).forEach((r) => tbody.appendChild(r));
+    }));
+  const f = document.getElementById("tbl-filter") as HTMLInputElement;
+  f.addEventListener("input", () => { const q = f.value.trim(); [...tbody.rows].forEach((r) => (r.hidden = !!q && !(r.dataset.name ?? "").includes(q))); });
+</script>

@@ -1,0 +1,10 @@
+export const SERVICES = [
+  { slug: "korea", title: "대한민국의 미래", short: "대한민국", desc: "출생·사망·이동을 결합한 2050년 인구와 고령화 전망", combo: ["출생", "사망", "이민", "연령별 인구"] },
+  { slug: "dongne", title: "우리 동네의 미래", short: "우리 동네", desc: "시군구별 인구 추계와 성장·축소 가능성", combo: ["인구이동", "출생", "사업체", "주택"] },
+  { slug: "school", title: "학교는 얼마나 남을까?", short: "학교", desc: "지역별 초등학생 수·학급 수 전망", combo: ["출생아", "학령인구", "학교", "교원"] },
+  { slug: "wage", title: "내 월급의 실질 가치", short: "실질 월급", desc: "물가·주거비·세금을 반영한 실질 구매력", combo: ["임금", "물가", "주거비", "세금"] },
+  { slug: "housing", title: "집값을 감당할 수 있을까?", short: "집값 부담", desc: "지역별 주택구입 부담의 변화", combo: ["소득", "주택가격", "금리", "대출"] },
+  { slug: "industry", title: "대한민국 산업의 미래", short: "산업", desc: "산업구조와 고용수요의 변화", combo: ["산업별 고용", "생산", "수출", "인구"] },
+  { slug: "commerce", title: "소멸하는 상권, 성장하는 상권", short: "상권", desc: "상권 변화의 조기 신호", combo: ["사업체", "창업·폐업", "가구", "인구"] },
+  { slug: "retire", title: "은퇴 후 대한민국", short: "은퇴", desc: "은퇴 후 생활비와 자금 시나리오", combo: ["기대수명", "연금", "물가", "가계지출"] },
+] as const;

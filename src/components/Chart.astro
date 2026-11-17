@@ -1,0 +1,30 @@
+---
+import type { ChartSpec } from "../lib/charts";
+interface Props {
+  spec: ChartSpec;
+  table?: { headers: string[]; rows: (string | number)[][] };
+  title?: string;
+  sub?: string;
+  id?: string;
+}
+const { spec, table, title, sub, id } = Astro.props;
+const json = JSON.stringify(spec).replace(/</g, "\\u003c");
+---
+<figure class="card" style="margin:0" id={id}>
+  {title && <h3 class="card-title">{title}</h3>}
+  {sub && <p class="card-sub">{sub}</p>}
+  <div class="chart" data-chart>
+    <script type="application/json" set:html={json} />
+  </div>
+  {table && (
+    <details class="table-view">
+      <summary>표로 보기</summary>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>{table.headers.map((h, i) => <th class={i ? "num" : ""}>{h}</th>)}</tr></thead>
+          <tbody>{table.rows.map((r) => <tr>{r.map((c, i) => <td class={i ? "num" : ""}>{c}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    </details>
+  )}
+</figure>

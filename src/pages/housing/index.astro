@@ -1,0 +1,440 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import data from "../../data/housing.json";
+import { int, compact, won } from "../../lib/format";
+
+const D = data as any;
+const regions = D.regions as any[];
+const R = Object.fromEntries(regions.map((r) => [r.id, r]));
+const nat = R["00"];
+const seoul = R["11"];
+const sidos = regions.filter((r) => r.level === "sido");
+const meta = D.meta;
+const A = meta.assumptions;
+const cy = meta.currentYear;
+const fy = nat.change.fromYear;
+const histYears = Object.keys(nat.hist).map(Number);
+
+const p1 = (v: number | null | undefined) => (v == null ? "–" : `${v.toFixed(1)}%`);
+const d1 = (v: number | null | undefined) => (v == null ? "–" : v.toFixed(1));
+const sgn = (v: number) => (v > 0 ? "+" : "") + v.toFixed(1);
+
+// 부담률·PIR 추이 (부담률은 % 값 → 비율로 변환해 pct 포맷)
+const lineRegions = [
+  { id: "11", color: "var(--series-1)" },
+  { id: "41", color: "var(--series-2)" },
+  { id: "00", color: "var(--series-3)" },
+  { id: "noncapital", color: "var(--series-4)" },
+];
+const histPts = (r: any, k: "burden" | "pir", div = 1) =>
+  Object.entries(r.hist).map(([y, v]: any) => [Number(y), v[k] / div] as [number, number]);
+const burdenSpec = {
+  type: "line" as const,
+  yFormat: "pct" as const,
+  zeroBased: true,
+  height: 300,
+  series: lineRegions.map((l) => ({ name: R[l.id].name, color: l.color, data: histPts(R[l.id], "burden", 100), label: true })),
+};
+const pirSpec = {
+  type: "line" as const,
+  yFormat: "dec1" as const,
+  zeroBased: true,
+  height: 300,
+  series: lineRegions.map((l) => ({ name: R[l.id].name, color: l.color, data: histPts(R[l.id], "pir"), label: true })),
+};
+const allRows = [nat, R["capital"], R["noncapital"], ...sidos];
+const histTable = (k: "burden" | "pir") => ({
+  headers: ["지역", ...histYears.map(String)],
+  rows: allRows.map((r) => [r.name, ...histYears.map((y) => (r.hist[y] ? (k === "burden" ? p1(r.hist[y][k]) : d1(r.hist[y][k])) : "–"))]),
+});
+
+// 순위
+const burdenBars = [...sidos].sort((a, b) => b.current.burden - a.current.burden)
+  .map((r) => ({ name: r.name, value: r.current.burden / 100 }));
+const changeBars = [...sidos].sort((a, b) => b.change.burden - a.change.burden)
+  .map((r) => ({ name: r.name, value: r.change.burden / 100 }));
+const pyeongBars = [...sidos].sort((a, b) => a.current.pyeong - b.current.pyeong)
+  .map((r) => ({ name: r.name, value: r.current.pyeong }));
+
+// 서울 권역
+const zones = [...(D.seoulZones as any[])].sort((a, b) => b.burden - a.burden);
+const topZone = zones[0];
+
+// 금리
+const rateYear: Record<number, number[]> = {};
+for (const [ym, v] of Object.entries(D.rate.monthly as Record<string, number>)) {
+  (rateYear[+ym.slice(0, 4)] ??= []).push(v);
+}
+const ratePts = Object.entries(rateYear).map(([y, a]) => [Number(y), a.reduce((s, x) => s + x, 0) / a.length / 100] as [number, number]);
+const rateSpec = {
+  type: "line" as const,
+  yFormat: "pct1" as const,
+  zeroBased: true,
+  height: 240,
+  series: [{ name: "주택담보대출 금리 (연평균)", color: "var(--series-1)", data: ratePts, label: true }],
+};
+const lastRateYear = ratePts[ratePts.length - 1];
+const sensRows = [nat, ...sidos].map((r) => [r.name, p1(r.sensitivity["-1"]), p1(r.sensitivity["0"]), p1(r.sensitivity["1"])]);
+
+// 시나리오: 클라이언트에서 토글 (데이터 직렬화)
+const scenRegions = lineRegions.map((l) => ({
+  id: l.id, name: R[l.id].name, color: l.color,
+  hist: histPts(R[l.id], "burden", 100),
+  outlook: R[l.id].outlook,
+}));
+const scenSido = [nat, ...sidos].map((r) => ({ id: r.id, name: r.name, now: r.current.burden, outlook: r.outlook }));
+const scenJson = JSON.stringify({ regions: scenRegions, sido: scenSido, cy }).replace(/</g, "\\u003c");
+
+// 계산기
+const calcJson = JSON.stringify({ ...D.calculator, A }).replace(/</g, "\\u003c");
+const defaultIncome = Math.round(nat.current.income / 100) * 100;
+
+const seoulFirst = seoul.hist[fy];
+---
+<Base title="집값을 감당할 수 있을까?" active="housing" description={`소득·주택가격·금리·대출을 결합한 지역별 주택구입 부담률. 서울에서 국민평형 아파트를 사면 월소득의 ${p1(seoul.current.burden)}를 대출 상환에 씁니다.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">집값을 감당할 수 있을까? · 소득 × 주택가격 × 금리 × 대출</div>
+      <h1>서울에서 국민평형을 사면, 월소득의 {Math.round(seoul.current.burden)}%가 대출 상환입니다</h1>
+      <p class="lede">
+        실거래 아파트 가격, 지역별 가구소득, 주택담보대출 금리를 하나로 묶었습니다. 보통 가구가 전용 {A.area}㎡ 아파트를
+        집값의 {A.ltv * 100}%를 빌려 {A.termYears}년 동안 갚는다면 매달 소득의 몇 %가 나가는지 계산한 값이 <strong>주택구입 부담률</strong>입니다.
+        {fy}년 {p1(seoulFirst.burden)}였던 서울의 부담률은 {cy}년 {p1(seoul.current.burden)}가 됐습니다.
+      </p>
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label={`서울 주택구입 부담률 ${cy}`} value={d1(seoul.current.burden)} unit="%" note={`${fy}년 대비 ${sgn(seoul.change.burden)}%p`} tone="down" />
+      <Stat label={`전국 주택구입 부담률 ${cy}`} value={d1(nat.current.burden)} unit="%" note={`${fy}년 대비 ${sgn(nat.change.burden)}%p`} tone="down" />
+      <Stat label="서울 PIR (84㎡ 가격 ÷ 연소득)" value={d1(seoul.current.pir)} unit="년" note={`${fy}년 ${d1(seoulFirst.pir)}년 · 전국 ${d1(nat.current.pir)}년`} />
+      <Stat label="서울, 1년치 소득으로 사는 면적" value={d1(seoul.current.pyeong)} unit="평" note={`${fy}년 ${d1(seoulFirst.pyeong)}평 · 전용면적 기준`} />
+    </div>
+
+    <section class="section">
+      <h2>10년 사이 무엇이 달라졌나</h2>
+      <p class="section-desc">연도 값은 1~12월 평균이고, {cy}년은 최근 12개월(~{meta.lastPriceMonth}) 평균입니다. 부담률은 집값·소득·금리가 함께 움직인 결과입니다. 2022년 이후 금리 상승이 부담을 한 단계 끌어올렸습니다.</p>
+      <div class="grid grid-2">
+        <Chart spec={burdenSpec} table={histTable("burden")} title="주택구입 부담률" sub={`월 상환액 ÷ 월소득, 전용 ${A.area}㎡ · LTV ${A.ltv * 100}% · ${A.termYears}년`} />
+        <Chart spec={pirSpec} table={histTable("pir")} title="PIR: 집값은 몇 년치 소득인가" sub={`전용 ${A.area}㎡ 아파트 가격 ÷ 가구 연소득 (년)`} />
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>시도별 순위</h2>
+      <p class="section-desc">같은 국민평형이라도 서울의 부담률은 가장 낮은 지역의 약 {Math.round(burdenBars[0].value / burdenBars[burdenBars.length - 1].value)}배입니다.</p>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3 class="card-title">주택구입 부담률 {cy}</h3>
+          <p class="card-sub">높을수록 부담이 큼</p>
+          <BarList items={burdenBars} format="pct1" />
+        </div>
+        <div class="card">
+          <h3 class="card-title">부담률 변화 ({fy}→{cy})</h3>
+          <p class="card-sub">%p, 클수록 빠르게 악화</p>
+          <BarList items={changeBars} format="pct1" color="var(--series-2)" />
+        </div>
+        <div class="card">
+          <h3 class="card-title">1년치 소득으로 사는 면적</h3>
+          <p class="card-sub">전용 평, 작을수록 비쌈</p>
+          <BarList items={pyeongBars} format="dec1" color="var(--series-3)" />
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>서울 안에서도 세 배 차이</h2>
+      <p class="section-desc">한국부동산원 서울 5개 권역의 실거래가에 서울 평균 가구소득({int(seoul.current.income)}만원)을 적용했습니다. {topZone.name}에서 국민평형을 사려면 {d1(topZone.pir)}년치 소득이 필요합니다.</p>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title">권역별 주택구입 부담률</h3>
+          <p class="card-sub">{cy}년 (최근 12개월)</p>
+          <BarList items={zones.map((z) => ({ name: z.name, value: z.burden / 100 }))} format="pct1" />
+        </div>
+        <div class="card">
+          <h3 class="card-title">권역별 지표</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>권역</th><th class="num">84㎡ 가격</th><th class="num">월 상환액</th><th class="num">PIR</th><th class="num">1년 소득 면적</th></tr></thead>
+              <tbody>
+                {zones.map((z) => (
+                  <tr><td>{z.name}</td><td class="num">{won(z.price84 * 1e4)}</td><td class="num">{int(z.payment)}만원</td><td class="num">{d1(z.pir)}년</td><td class="num">{d1(z.pyeong)}평</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p class="small muted" style="margin-top:10px">도심권: 종로·중구·용산 / 동북권: 성동·광진·동대문·중랑·성북·강북·도봉·노원 / 동남권: 서초·강남·송파·강동 / 서북권: 은평·서대문·마포 / 서남권: 양천·강서·구로·금천·영등포·동작·관악</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>금리가 1%p 움직이면</h2>
+      <p class="section-desc">주택담보대출 금리(신규취급액)는 {lastRateYear[0]}년 평균 {(lastRateYear[1] * 100).toFixed(2)}%입니다. 다른 조건이 그대로일 때 금리가 1%p 오르면 서울의 부담률은 {p1(seoul.sensitivity["0"])}에서 {p1(seoul.sensitivity["1"])}로 오릅니다.</p>
+      <div class="grid grid-2">
+        <Chart spec={rateSpec} title="예금은행 주택담보대출 금리" sub="신규취급액 기준, 연평균" table={{ headers: ["연도", "금리"], rows: ratePts.map(([y, v]) => [String(y), `${(v * 100).toFixed(2)}%`]) }} />
+        <div class="card">
+          <h3 class="card-title">금리 민감도: 현재 부담률</h3>
+          <p class="card-sub">현재 금리 {nat.current.rate.toFixed(2)}% 기준 ±1%p</p>
+          <div class="table-wrap" style="max-height:380px">
+            <table>
+              <thead><tr><th>지역</th><th class="num">−1%p</th><th class="num">현재</th><th class="num">+1%p</th></tr></thead>
+              <tbody>{sensRows.map((r) => <tr>{r.map((c, i) => <td class={i ? "num" : ""}>{c}</td>)}</tr>)}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="scenario">
+      <h2>2030년, 부담은 어디로</h2>
+      <p class="section-desc">집값과 금리 시나리오를 고르면 2030년까지의 부담률을 다시 계산합니다. 소득은 지역별 최근 3년 증가율로 늘고, 금리는 2년에 걸쳐 목표 수준으로 이동한다고 가정합니다. <strong>예측이 아니라 "이 조건이면 이렇게 된다"는 조건부 시나리오입니다.</strong></p>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="집값 시나리오" data-scen="price">
+          <button type="button" data-v="down" aria-pressed="false">집값 연 −2%</button>
+          <button type="button" data-v="flat" aria-pressed="false">집값 횡보</button>
+          <button type="button" data-v="trend" aria-pressed="true">{fy}년 이후 추세 지속</button>
+        </div>
+        <div class="seg" role="group" aria-label="금리 시나리오" data-scen="rate">
+          <button type="button" data-v="cut" aria-pressed="false">금리 −1%p</button>
+          <button type="button" data-v="hold" aria-pressed="true">금리 유지</button>
+          <button type="button" data-v="hike" aria-pressed="false">금리 +1%p</button>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <figure class="card" style="margin:0">
+          <h3 class="card-title">주택구입 부담률 시나리오</h3>
+          <p class="card-sub" id="scen-sub">실선 실측, 점선 시나리오</p>
+          <div class="chart" id="scen-chart"></div>
+        </figure>
+        <div class="card">
+          <h3 class="card-title">2030년 시도별 부담률</h3>
+          <p class="card-sub">선택한 시나리오 · 현재 대비 변화</p>
+          <div class="table-wrap" style="max-height:380px">
+            <table>
+              <thead><tr><th>지역</th><th class="num">{cy}</th><th class="num">2030</th><th class="num">변화</th></tr></thead>
+              <tbody id="scen-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <script type="application/json" id="scen-data" set:html={scenJson} />
+    </section>
+
+    <section class="section" id="calculator">
+      <h2>내 조건이면 어디를 살 수 있나</h2>
+      <p class="section-desc">연소득·자기자본·금리를 넣으면 지역별 평균 시세로 집을 살 때의 월 상환액과 소득 대비 비율을 계산합니다. 모자란 금액은 모두 대출(원리금균등)로 메운다고 가정합니다. 실제 대출 한도(LTV·DSR)와 단지별 가격은 다릅니다.</p>
+      <div class="card">
+        <div class="controls calc-controls">
+          <label class="field">가구 연소득 (만원)<input type="number" id="c-income" min="0" step="100" value={defaultIncome} inputmode="numeric" /></label>
+          <label class="field">자기자본 (만원)<input type="number" id="c-equity" min="0" step="1000" value="10000" inputmode="numeric" /></label>
+          <label class="field">대출 금리 (%)<input type="number" id="c-rate" min="0" max="20" step="0.1" value={nat.current.rate.toFixed(1)} inputmode="decimal" /></label>
+          <label class="field">만기 (년)<input type="number" id="c-term" min="5" max="50" step="5" value={A.termYears} inputmode="numeric" /></label>
+          <label class="field">전용면적
+            <select id="c-area"><option value={A.areaSmall}>{A.areaSmall}㎡ (25평형)</option><option value={A.area} selected>{A.area}㎡ (34평형)</option></select>
+          </label>
+        </div>
+        <p class="insight" id="c-summary" aria-live="polite"></p>
+        <div class="table-wrap" style="margin-top:14px">
+          <table id="c-table">
+            <thead><tr><th>지역</th><th class="num">평균 시세</th><th class="num">필요 대출</th><th class="num">월 상환액</th><th class="num">월소득 대비</th><th>판정</th><th class="num">감당 가능 면적</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="small muted" style="margin-top:10px">판정 기준: 월소득 대비 상환액 25% 이하 "여유", 40% 이하 "빠듯", 40% 초과 "어려움"(DSR 40% 규제 수준). 감당 가능 면적은 상환액을 월소득의 40%로 맞췄을 때 살 수 있는 전용면적입니다. 평균 시세는 최근 12개월 실거래 ㎡당 평균가격 × 면적입니다.</p>
+      </div>
+      <script type="application/json" id="calc-data" set:html={calcJson} />
+    </section>
+
+    <section class="section">
+      <h2>대출은 얼마나 쌓였나</h2>
+      <p class="section-desc">한국은행 차주당 가계대출 잔액(만원). 30·40대 차주의 평균 잔액은 1억원을 넘었습니다.</p>
+      <Chart
+        spec={{
+          type: "line",
+          yFormat: "int",
+          height: 260,
+          series: Object.entries(D.loans.byAge).map(([k, v]: any, i) => ({
+            name: k, color: `var(--series-${i + 1})`, label: true,
+            data: Object.entries(v).map(([y, x]: any) => [Number(y), x]),
+          })),
+        }}
+        title="차주당 가계대출 잔액"
+        sub="연령대별, 만원"
+        table={{
+          headers: ["연도", ...Object.keys(D.loans.byAge)],
+          rows: Object.keys(D.loans.byAge["전체"]).map((y) => [y, ...Object.values(D.loans.byAge).map((v: any) => `${int(v[y])}만원`)]),
+        }}
+      />
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>방법론</h2>
+      <h3>1. 주택구입 부담률</h3>
+      <p>한국부동산원 아파트 매매 실거래 ㎡당 평균가격에 전용 {A.area}㎡를 곱해 '국민평형' 가격을 구합니다. 그 {A.ltv * 100}%를 한국은행 주택담보대출 평균금리(신규취급액)로 {A.termYears}년 원리금균등 상환할 때의 월 상환액을 계산하고, 가계금융복지조사의 지역별 가구 월소득으로 나눕니다.</p>
+      <div class="formula">월 상환액 = 대출금 × r ÷ (1 − (1 + r)^−n),  r = 연금리 ÷ 12, n = {A.termYears * 12}
+주택구입 부담률 = 월 상환액 ÷ (가구 연소득 ÷ 12)
+PIR = {A.area}㎡ 가격 ÷ 가구 연소득
+1년치 소득 면적(평) = 가구 연소득 ÷ ㎡당 가격 ÷ {A.pyeong}</div>
+      <h3>2. 시점 맞추기</h3>
+      <p>실거래 평균가격은 그달 어떤 단지·면적이 거래됐는지에 따라 크게 흔들리므로 12개월 평균을 씁니다. 가계금융복지조사의 소득은 조사 전년도 소득이라 1년 앞당겨 맞췄고, 아직 발표되지 않은 {meta.lastIncomeYear + 1}년 이후 소득은 지역별 최근 3년 연평균 증가율로 연장한 추정치입니다. 금리는 전국 단일 값을 모든 지역에 적용합니다.</p>
+      <h3>3. 2030 시나리오</h3>
+      <p>집값 3가지(연 −2%, 횡보, {fy}년 이후 지역별 연평균 상승률 지속)와 금리 3가지(−1%p, 유지, +1%p, 2년에 걸쳐 이동)를 조합한 9개 경로를 계산합니다. 미래 집값을 맞히려는 예측이 아니라 조건별 부담 수준을 보여주는 시뮬레이션입니다.</p>
+      <h3>한계</h3>
+      <ul>
+        <li>평균 가구소득 기준이라 무주택 실수요자의 실제 부담은 이보다 클 수 있습니다.</li>
+        <li>LTV {A.ltv * 100}%는 단순 가정이며 실제 대출 규제(LTV·DSR)와 개인 조건은 다릅니다.</li>
+        <li>거래가 급감한 해(예: 2022년)에는 실거래 평균이 거래 구성 변화로 왜곡됩니다.</li>
+        <li>서울 권역 지표는 서울 평균소득을 사용한 근사치입니다. 광주·전남은 2026년 통합 이후에도 한국부동산원 권역 구분에 따라 따로 표시합니다.</li>
+      </ul>
+      {meta.notes.length > 0 && <ul class="small muted">{meta.notes.map((n: string) => <li>{n}</li>)}</ul>}
+      <h3>데이터 출처</h3>
+      <ul>{meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>
+
+<style>
+  :global(.grid > *),
+  :global(.card) {
+    min-width: 0;
+  }
+  .calc-controls label.field {
+    flex: 1 1 140px;
+  }
+  .calc-controls input,
+  .calc-controls select {
+    width: 100%;
+  }
+  .verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .verdict::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dot);
+  }
+</style>
+
+<script>
+  import { mount } from "../../lib/charts";
+  import { won, int } from "../../lib/format";
+
+  // ---------- 시나리오
+  const S = JSON.parse(document.getElementById("scen-data")!.textContent || "{}");
+  const state: Record<string, string> = { price: "trend", rate: "hold" };
+  const chartEl = document.getElementById("scen-chart") as HTMLElement;
+  const tbody = document.getElementById("scen-table") as HTMLTableSectionElement;
+
+  function drawScenario() {
+    const series: any[] = [];
+    for (const r of S.regions) {
+      const out = r.outlook[state.price][state.rate];
+      const last = r.hist[r.hist.length - 1];
+      series.push({ name: r.name, color: r.color, data: r.hist });
+      series.push({
+        name: `${r.name} (시나리오)`, color: r.color, dash: true, label: true, hideInTooltip: false,
+        data: [last, ...Object.entries(out).map(([y, v]: any) => [Number(y), v.burden / 100])],
+      });
+    }
+    mount(chartEl, { type: "line", yFormat: "pct", zeroBased: true, height: 320, projStart: S.cy, series, legend: true } as any);
+    tbody.textContent = "";
+    for (const r of S.sido) {
+      const v = r.outlook[state.price][state.rate]["2030"].burden;
+      const tr = document.createElement("tr");
+      const d = v - r.now;
+      for (const [i, txt] of [r.name, `${r.now.toFixed(1)}%`, `${v.toFixed(1)}%`, `${d > 0 ? "+" : ""}${d.toFixed(1)}%p`].entries()) {
+        const td = document.createElement("td");
+        if (i) td.className = "num";
+        td.textContent = txt;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+  document.querySelectorAll<HTMLElement>("[data-scen]").forEach((g) => {
+    const k = g.dataset.scen!;
+    g.querySelectorAll<HTMLButtonElement>("button").forEach((b) =>
+      b.addEventListener("click", () => {
+        state[k] = b.dataset.v!;
+        g.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+        drawScenario();
+      }),
+    );
+  });
+  drawScenario();
+
+  // ---------- 계산기
+  const C = JSON.parse(document.getElementById("calc-data")!.textContent || "{}");
+  const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const ctbody = document.querySelector("#c-table tbody") as HTMLTableSectionElement;
+  const summary = document.getElementById("c-summary")!;
+  const pay = (P: number, ratePct: number, years: number) => {
+    const n = years * 12, r = ratePct / 100 / 12;
+    if (P <= 0) return 0;
+    return r === 0 ? P / n : (P * r) / (1 - Math.pow(1 + r, -n));
+  };
+  const loanFor = (monthly: number, ratePct: number, years: number) => {
+    const n = years * 12, r = ratePct / 100 / 12;
+    return r === 0 ? monthly * n : (monthly * (1 - Math.pow(1 + r, -n))) / r;
+  };
+  const verdicts = [
+    { max: 25, label: "여유", dot: "var(--status-good, #0ca30c)" },
+    { max: 40, label: "빠듯", dot: "var(--status-warning, #fab219)" },
+    { max: Infinity, label: "어려움", dot: "var(--status-critical, #d03b3b)" },
+  ];
+
+  function calc() {
+    const income = Math.max(+$("c-income").value || 0, 0);
+    const equity = Math.max(+$("c-equity").value || 0, 0);
+    const rate = Math.max(+$("c-rate").value || 0, 0);
+    const term = Math.min(Math.max(+$("c-term").value || 30, 1), 50);
+    const area = +(document.getElementById("c-area") as HTMLSelectElement).value;
+    const mInc = income / 12;
+    const maxBudget = equity + loanFor(mInc * 0.4, rate, term); // 만원
+    const rows = [
+      ...C.regions.filter((r: any) => !["capital", "noncapital"].includes(r.id)).map((r: any) => ({ name: r.name, priceM2: r.priceM2 })),
+      ...C.seoulZones.map((z: any) => ({ name: `서울 ${z.name}`, priceM2: z.priceM2 })),
+    ].map((r: any) => {
+      const price = r.priceM2 * area;
+      const loan = Math.max(price - equity, 0);
+      const p = pay(loan, rate, term);
+      const ratio = mInc > 0 ? (p / mInc) * 100 : Infinity;
+      return { ...r, price, loan, p, ratio, maxArea: maxBudget / r.priceM2 };
+    }).sort((a: any, b: any) => a.ratio - b.ratio);
+
+    ctbody.textContent = "";
+    let ok = 0;
+    for (const r of rows) {
+      const v = verdicts.find((x) => r.ratio <= x.max)!;
+      if (r.ratio <= 40) ok++;
+      const tr = document.createElement("tr");
+      const cells = [r.name, won(r.price * 1e4), won(r.loan * 1e4), `${int(r.p)}만원`, isFinite(r.ratio) ? `${r.ratio.toFixed(0)}%` : "–", "", `${r.maxArea.toFixed(0)}㎡ (${(r.maxArea / 3.3058).toFixed(0)}평)`];
+      cells.forEach((txt, i) => {
+        const td = document.createElement("td");
+        if (i === 5) {
+          const s = document.createElement("span");
+          s.className = "verdict";
+          s.style.setProperty("--dot", v.dot);
+          s.textContent = v.label;
+          td.appendChild(s);
+        } else {
+          if (i) td.className = "num";
+          td.textContent = txt;
+        }
+        tr.appendChild(td);
+      });
+      ctbody.appendChild(tr);
+    }
+    summary.textContent = `연소득 ${int(income)}만원, 자기자본 ${int(equity)}만원, 금리 ${rate}%라면 월소득의 40%(${int(mInc * 0.4)}만원)까지 상환할 때 최대 약 ${won(maxBudget * 1e4)}짜리 집을 살 수 있습니다. 전용 ${area}㎡ 기준으로 ${rows.length}개 지역 중 ${ok}곳이 '빠듯' 이내입니다.`;
+  }
+  ["c-income", "c-equity", "c-rate", "c-term", "c-area"].forEach((id) => document.getElementById(id)!.addEventListener("input", calc));
+  calc();
+</script>

@@ -1,0 +1,340 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import data from "../../data/wage.json";
+import { pts } from "../../lib/series";
+import { int, compact, pct, won } from "../../lib/format";
+
+const d = data as any;
+const M = d.meta;
+const H = d.headline;
+const nat = d.national as any[];
+const REF = M.refYear as number;
+const BASE = M.baseYear as number;
+const LAST = M.lastYear as number;
+const ref = nat.find((r) => r.year === REF);
+const b = nat.find((r) => r.year === BASE);
+const lastRow = nat.find((r) => r.year === LAST);
+const estNote = `${LAST}년 임금 ${M.estimate2026.wageMonths}개월·물가 ${M.estimate2026.cpiMonths}개월 자료로 만든 잠정치`;
+
+// 1) 2015=100 지수 비교
+const idx = (k: string) => nat.map((r) => [r.year, Math.round((r[k] / ref[k]) * 1000) / 10] as [number, number]);
+const lines = [
+  { k: "nominal", name: "명목 월급", c: "var(--series-1)" },
+  { k: "real", name: "실질 (소비자물가)", c: "var(--series-2)" },
+  { k: "realLiving", name: "실질 (생활물가)", c: "var(--series-3)" },
+  { k: "netReal", name: "세후 실질", c: "var(--series-7)" },
+];
+const idxSpec = {
+  type: "line" as const,
+  yFormat: "int" as const,
+  projStart: BASE,
+  hLines: [{ y: 100, label: `${REF}=100` }],
+  series: lines.map((l) => ({ name: l.name, color: l.c, data: idx(l.k), label: true })),
+  height: 340,
+};
+const idxTable = {
+  headers: ["연도", "명목", "실질(CPI)", "실질(생활물가)", "세후 실질"],
+  rows: nat.map((r) => [
+    `${r.year}${r.estimate ? " (잠정)" : ""}`,
+    ...lines.map((l) => (Math.round((r[l.k] / ref[l.k]) * 1000) / 10).toFixed(1)),
+  ]),
+};
+
+// 2) 실질 월급 수준 (2025년 원)
+const lvlSpec = {
+  type: "line" as const,
+  yFormat: "won" as const,
+  projStart: BASE,
+  series: [
+    { name: "실질 월급 (세전)", color: "var(--series-2)", data: pts(Object.fromEntries(nat.map((r) => [r.year, r.real]))), label: true },
+    { name: "실질 월급 (세후)", color: "var(--series-7)", data: pts(Object.fromEntries(nat.map((r) => [r.year, r.netReal]))), label: true },
+  ],
+  height: 280,
+};
+const lvlTable = {
+  headers: ["연도", "명목 월급", "실질 세전", "세금", "4대보험", "세후 실질", "공제율"],
+  rows: nat.map((r) => [`${r.year}${r.estimate ? " (잠정)" : ""}`, int(r.nominal), int(r.real), int(r.tax), int(r.insurance), int(r.netReal), pct(r.burdenRate, 1)]),
+};
+const peak2021 = nat.find((r) => r.year === 2021);
+const stagnant = H.stagnantYears as number[];
+
+// 3) 품목별 구매력 (정책 극단값 제외)
+const EXCLUDE: Record<string, string> = { J01101: "유치원납입금" };
+const items = (d.items as any[]).filter((i) => !EXCLUDE[i.code] && i.code !== "0" && i.powerChange != null);
+const excluded = (d.items as any[]).filter((i) => EXCLUDE[i.code]);
+const itemBars = items.map((i) => ({ name: i.name, value: i.powerChange })).sort((a, b) => a.value - b.value);
+const worstItem = items.reduce((a, b) => (a.powerChange < b.powerChange ? a : b));
+const bestItem = items.reduce((a, b) => (a.powerChange > b.powerChange ? a : b));
+const cpiItem = (d.items as any[]).find((i) => i.code === "0");
+
+// 4) 산업·시도
+const ind = d.industries as any[];
+const indBars = ind.map((r) => ({ name: r.name, value: r.realChange }));
+const regs = d.regions as any[];
+const reg10 = regs.filter((r) => r.realChange != null).map((r) => ({ name: r.name, value: r.realChange }));
+const reg5 = [...regs].sort((a, b) => b.realChange5 - a.realChange5).map((r) => ({ name: r.name, value: r.realChange5 }));
+const neg5 = regs.filter((r) => r.realChange5 < 0).map((r) => r.name);
+
+// 5) 2030 시나리오
+const S = d.scenarios as any;
+const scenNames: Record<string, string> = {
+  target: `물가 ${pct(S.target.inflation, 1)} (한국은행 목표)`,
+  recent10: `물가 ${pct(S.recent10.inflation, 1)} (최근 10년 평균)`,
+  recent5: `물가 ${pct(S.recent5.inflation, 1)} (최근 5년 평균)`,
+};
+const scenColors: Record<string, string> = { target: "var(--series-3)", recent10: "var(--series-1)", recent5: "var(--series-2)" };
+const scenSpec = {
+  type: "line" as const,
+  yFormat: "won" as const,
+  projStart: LAST,
+  series: [
+    { name: "실질 월급 (실측·잠정)", color: "var(--text-secondary)", data: nat.map((r) => [r.year, r.real] as [number, number]) },
+    ...Object.keys(S).map((k) => ({
+      name: scenNames[k],
+      color: scenColors[k],
+      data: Object.entries(S[k].path).map(([y, v]: any) => [+y, v.real] as [number, number]),
+      dash: true,
+      label: true,
+    })),
+  ],
+  height: 300,
+};
+const scenTable = {
+  headers: ["시나리오", "2030 명목", "2030 실질(세전)", "2030 실질(세후)"],
+  rows: Object.keys(S).map((k) => [scenNames[k], int(S[k].path[2030].nominal), int(S[k].path[2030].real), int(S[k].path[2030].net)]),
+};
+const scenNetGap = S.target.path[2030].net - S.recent5.path[2030].net;
+
+const calcJson = JSON.stringify({ c: d.calculator, last: LAST, base: BASE }).replace(/</g, "\\u003c");
+const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는 구매력은 ${pct(H.netRealChange2015, 0)} 늘었습니다`;
+---
+<Base title="내 월급의 실질 가치" active="wage" description={`임금·물가·주거비·세금 통계를 결합한 실질 구매력 비교. ${REF}→${BASE}년 평균 월급은 명목 ${pct(H.nominalChange2015, 0, true)}, 세후 실질 ${pct(H.netRealChange2015, 0, true)}.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">내 월급의 실질 가치 · 임금 × 물가 × 주거비 × 세금</div>
+      <h1>{h1}</h1>
+      <p class="lede">
+        고용노동부 평균 임금에 소비자물가·생활물가·주거비 지수, 그리고 연도별 세법과 4대보험 요율을 결합했습니다.{" "}
+        {REF}년 평균 월급 {won(ref.nominal)}은 {BASE}년 {won(b.nominal)}이 되었지만, 물가와 세금·보험료를 빼고 나면 실제로 늘어난 구매력은 훨씬 작습니다.
+      </p>
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label={`명목 월급 ${REF}→${BASE}`} value={pct(H.nominalChange2015, 1, true)} note={`${won(ref.nominal)} → ${won(b.nominal)}`} />
+      <Stat label="실질 (소비자물가 기준)" value={pct(H.realChange2015, 1, true)} note={`생활물가 기준 ${pct(H.realLivingChange2015, 1, true)}`} />
+      <Stat label="세후 실질 월급" value={pct(H.netRealChange2015, 1, true)} note="세금·4대보험 근로자 부담분 차감 후" />
+      <Stat label={`세금+보험료 비중 ${BASE}`} value={pct(H.burden2025, 1)} note={`${REF}년 ${pct(H.burden2015, 1)}에서 상승 (평균 월급 기준)`} tone="down" />
+    </div>
+
+    <section class="section">
+      <h2>같은 월급, 다른 잣대</h2>
+      <p class="section-desc">
+        {REF}년을 100으로 둔 지수입니다. 명목 월급과 실질 월급 사이의 간격이 물가가 가져간 몫이고, 실질과 세후 실질 사이의 간격이 누진세와 보험료 인상이 가져간 몫입니다.
+        오른쪽 음영 구간은 {estNote}입니다.
+      </p>
+      <Chart spec={idxSpec} table={idxTable} title={`평균 월급 지수 (${REF}=100)`} sub="1인 이상 사업체 전체 근로자 월평균 임금총액" />
+    </section>
+
+    <section class="section grid grid-2">
+      <Chart spec={lvlSpec} table={lvlTable} title={`실질 월급 (${BASE}년 원화 가치)`} sub="세전 / 세금·4대보험 차감 후" />
+      <div class="card insight">
+        <h3 class="card-title">실질임금이 멈췄던 3년</h3>
+        <p>
+          고물가가 덮친 {stagnant.join("·")}년, 평균 실질 월급은 {2021}년 수준({won(peak2021.real)})을 한 번도 넘지 못했습니다.{" "}
+          {BASE}년에야 {won(b.real)}으로 겨우 회복했습니다.
+        </p>
+        <p>
+          세후로 보면 더 뚜렷합니다. 세후 실질 월급은 {2021}년 {won(peak2021.netReal)}, {BASE}년 {won(b.netReal)}으로 4년 동안 사실상 제자리입니다.{" "}
+          명목 소득이 오르면 더 높은 세율 구간에 들어가는데(누진세), 과세표준 구간은 거의 그대로였기 때문입니다.
+        </p>
+        <p class="small muted">자가주거비포함 물가로 재면 {REF}→{BASE} 실질 상승은 {pct(H.realOwnHousingChange2015, 1, true)}입니다. 집값·임대료의 체감은 지역과 점유 형태(자가·전세·월세)에 따라 크게 다릅니다.</p>
+      </div>
+    </section>
+
+    <section class="section card" id="calc">
+      <h2 style="margin-top:0">그때 그 연봉, 지금은 얼마?</h2>
+      <p class="section-desc">연도와 그해 연봉을 넣으면 같은 구매력을 갖기 위해 지금 필요한 연봉을 세 가지 잣대로 계산합니다. 세후 비교는 그해와 {LAST}년 세법·보험료율을 각각 적용한 간이 계산입니다.</p>
+      <div class="controls">
+        <label class="field">연도
+          <select id="c-year"></select>
+        </label>
+        <label class="field">그해 연봉 (만원)
+          <input id="c-pay" type="number" inputmode="numeric" min="100" max="100000" step="100" value="3000" />
+        </label>
+      </div>
+      <div class="grid grid-4" id="c-out" style="margin-top:16px">
+        <div class="stat"><div class="stat-label">소비자물가 기준</div><div class="stat-value" id="o-cpi">–</div><div class="stat-note" id="n-cpi"></div></div>
+        <div class="stat"><div class="stat-label">생활물가 기준</div><div class="stat-value" id="o-life">–</div><div class="stat-note" id="n-life"></div></div>
+        <div class="stat"><div class="stat-label">평균 임금 대비 같은 위치</div><div class="stat-value" id="o-wage">–</div><div class="stat-note" id="n-wage"></div></div>
+        <div class="stat"><div class="stat-label">세후 구매력 유지에 필요한 세전 연봉</div><div class="stat-value" id="o-net">–</div><div class="stat-note" id="n-net"></div></div>
+      </div>
+      <p class="small muted" style="margin-top:12px" id="c-foot"></p>
+      <script type="application/json" id="calc-data" set:html={calcJson} />
+    </section>
+
+    <section class="section">
+      <h2>월급으로 살 수 있는 양은 어떻게 변했나</h2>
+      <p class="section-desc">
+        같은 비율의 평균 월급으로 그 품목을 {REF}년보다 몇 % 더(덜) 살 수 있는지입니다. (임금 상승률 ÷ 품목 가격 상승률) − 1.
+        {worstItem.name}은 가격이 {pct(worstItem.priceChange, 0, true)} 올라 구매력이 {pct(worstItem.powerChange, 1, true)}, {bestItem.name}은(는) {pct(bestItem.powerChange, 0, true)}입니다.
+        물가 전체(총지수)로는 {pct(cpiItem.powerChange, 1, true)}.
+      </p>
+      <div class="card">
+        <BarList items={itemBars} format="pct1" diverging />
+        <p class="small muted" style="margin-top:12px">
+          제외: {excluded.map((i) => `${i.name}(가격지수 ${pct(i.priceChange, 0, true)}, 무상보육·유아교육 지원 확대에 따른 정책 효과)`).join(", ")}. 가격지수 기반의 상대 비교이며 절대 가격(원)이 아닙니다.
+        </p>
+      </div>
+    </section>
+
+    <section class="section grid grid-2">
+      <div class="card">
+        <h3 class="card-title">산업별 실질 상용임금 변화</h3>
+        <p class="card-sub">{REF} → {BASE}, 소비자물가 기준</p>
+        <BarList items={indBars} format="pct" diverging />
+      </div>
+      <div class="card">
+        <h3 class="card-title">시도별 실질 상용임금 변화</h3>
+        <p class="card-sub">각 시도 소비자물가로 디플레이트</p>
+        <div class="seg" role="group" aria-label="비교 기간">
+          <button type="button" data-p="10" aria-pressed="true">{REF}→{BASE}</button>
+          <button type="button" data-p="5" aria-pressed="false">{BASE - 5}→{BASE}</button>
+        </div>
+        <div data-panel="10" style="margin-top:12px"><BarList items={reg10} format="pct" diverging /><p class="small muted" style="margin-top:8px">세종은 시도 임금·물가 통계가 2020년부터라 이 기간에서는 빠집니다.</p></div>
+        <div data-panel="5" style="margin-top:12px" hidden><BarList items={reg5} format="pct1" diverging /><p class="small muted" style="margin-top:8px">최근 5년 실질임금이 줄어든 곳: {neg5.join(", ") || "없음"}</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>2030년, 실질 월급은?</h2>
+      <p class="section-desc">
+        예측이 아닌 시나리오입니다. 명목 월급은 최근 5년 연평균 증가율({pct(H.wageCagr5, 1)})이 이어진다고 두고 물가만 바꿨습니다.
+        최근 5년 같은 고물가({pct(S.recent5.inflation, 1)})가 계속되면 2030년 세후 실질 월급은 {won(S.recent5.path[2030].net)}로 {BASE}년({won(b.netReal)})과 거의 같고,
+        물가가 목표치 2%로 안정되면 {won(S.target.path[2030].net)}입니다. 물가 1%p 남짓의 차이가 세후 월 {won(scenNetGap)}의 차이를 만듭니다.
+      </p>
+      <Chart spec={scenSpec} table={scenTable} title={`실질 월급 시나리오 (${BASE}년 원화, 세전)`} sub="점선: 물가 가정별 경로" />
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>방법론</h2>
+      <h3>1. 실질임금</h3>
+      <p>고용노동부 사업체노동력조사의 1인 이상 사업체 전체 근로자 월평균 임금총액({M.firstYear}년~)을 물가지수로 나눠 {BASE}년 원화 가치로 환산했습니다. 물가 잣대는 소비자물가지수(CPI), 자주 사는 품목만 모은 생활물가지수, 자가 거주자의 주거비까지 넣은 자가주거비포함지수 세 가지입니다.</p>
+      <div class="formula">실질 월급(t) = 명목 월급(t) × 물가지수({BASE}) ÷ 물가지수(t)</div>
+      <h3>2. 세후 월급 (간이 계산)</h3>
+      <p>연도별 소득세법(근로소득공제·세율 구간·근로소득세액공제·표준세액공제)과 국민연금·건강보험·장기요양·고용보험 근로자 부담 요율을 코드로 구현했습니다. {M.assumptions} 실제 원천징수액은 부양가족, 비과세 수당, 각종 공제에 따라 달라집니다.</p>
+      <h3>3. 품목별 구매력</h3>
+      <div class="formula">구매력 지수(t) = [임금(t) ÷ 임금({REF})] ÷ [품목 가격지수(t) ÷ 품목 가격지수({REF})] × 100</div>
+      <p>산업별은 상용근로자 임금총액을 전국 소비자물가로, 시도별은 e-지방지표 시도별 상용 월평균 임금을 각 시도 소비자물가로 나눴습니다.</p>
+      <h3>4. 2030 시나리오와 {LAST}년 잠정치</h3>
+      <p>명목 임금은 {BASE - 5}~{BASE}년 연평균 증가율을 유지한다고 두고, 물가는 한국은행 목표 2%, 최근 10년 평균({pct(H.cpiCagr10, 1)}), 최근 5년 평균({pct(H.cpiCagr5, 1)}) 세 가지로 가정했습니다. 세후는 {LAST}년 세법·요율을 고정해 명목소득이 오를수록 세 부담이 커지는 효과가 반영됩니다. {estNote}이며, 전년 같은 달 대비 증가율을 {BASE}년 연간값에 적용했습니다.</p>
+      <h3>한계</h3>
+      <ul>
+        <li>평균 임금은 고임금자와 산업 구성 변화의 영향을 받습니다. 중위 임금이 아닙니다.</li>
+        <li>세금 계산은 1인·최소 공제 가정이며, 연중 바뀐 요율과 국민연금 상한은 연 단위로 근사했습니다.</li>
+        <li>품목 구매력은 가격지수 기반의 상대값입니다. 주거비 체감은 지역과 점유 형태에 따라 크게 다릅니다.</li>
+      </ul>
+      <h3>데이터 출처</h3>
+      <ul>{M.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>
+
+<script>
+  type Calc = {
+    c: { cpi: Record<string, number>; living: Record<string, number>; wage: Record<string, number>; taxTable: Record<string, Record<string, number>> };
+    last: number;
+    base: number;
+  };
+  const D: Calc = JSON.parse(document.getElementById("calc-data")!.textContent || "{}");
+  const C = D.c;
+  const LAST = String(D.last);
+  const yearSel = document.getElementById("c-year") as HTMLSelectElement;
+  const payIn = document.getElementById("c-pay") as HTMLInputElement;
+  const years = Object.keys(C.cpi).map(Number).filter((y) => y < D.last).sort((a, b) => b - a);
+  for (const y of years) {
+    const o = document.createElement("option");
+    o.value = String(y);
+    o.textContent = `${y}년`;
+    if (y === 2015) o.selected = true;
+    yearSel.appendChild(o);
+  }
+  const nf = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 });
+  const man = (won: number) => `${nf.format(Math.round(won / 1e4))}만원`;
+
+  // 세후 월급표(월 200~1000만원 격자)를 선형 보간
+  const grid = Object.keys(C.taxTable).map(Number).sort((a, b) => a - b);
+  function netMonthly(grossMonthly: number, year: string): number | null {
+    const g = grossMonthly / 1e4;
+    const col = (m: number) => C.taxTable[String(m)]?.[year];
+    if (col(grid[0]) == null) return null;
+    const ratio = (m: number) => col(m)! / (m * 1e4);
+    if (g <= grid[0]) return grossMonthly * ratio(grid[0]);
+    if (g >= grid[grid.length - 1]) return grossMonthly * ratio(grid[grid.length - 1]);
+    for (let i = 0; i < grid.length - 1; i++) {
+      const a = grid[i], b = grid[i + 1];
+      if (g >= a && g <= b) {
+        const t = (g - a) / (b - a);
+        return grossMonthly * (ratio(a) * (1 - t) + ratio(b) * t);
+      }
+    }
+    return null;
+  }
+  function grossForNet(targetNet: number, year: string): number {
+    let lo = targetNet, hi = targetNet * 2.5;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      (netMonthly(mid, year) ?? 0) < targetNet ? (lo = mid) : (hi = mid);
+    }
+    return (lo + hi) / 2;
+  }
+  const set = (id: string, t: string) => ((document.getElementById(id) as HTMLElement).textContent = t);
+
+  function update() {
+    const y = yearSel.value;
+    const pay = Math.max(Number(payIn.value) || 0, 0) * 1e4;
+    if (!pay) return;
+    const cpi = (pay * C.cpi[LAST]) / C.cpi[y];
+    set("o-cpi", man(cpi));
+    set("n-cpi", `물가 ${((C.cpi[LAST] / C.cpi[y] - 1) * 100).toFixed(1)}% 상승`);
+    if (C.living[y]) {
+      set("o-life", man((pay * C.living[LAST]) / C.living[y]));
+      set("n-life", `장바구니 물가 ${((C.living[LAST] / C.living[y] - 1) * 100).toFixed(1)}% 상승`);
+    } else {
+      set("o-life", "–");
+      set("n-life", "생활물가지수는 1995년부터");
+    }
+    if (C.wage[y]) {
+      set("o-wage", man((pay * C.wage[LAST]) / C.wage[y]));
+      set("n-wage", `평균 월급 ${((C.wage[LAST] / C.wage[y] - 1) * 100).toFixed(1)}% 상승`);
+    } else {
+      set("o-wage", "–");
+      set("n-wage", "임금 통계는 2011년부터");
+    }
+    const netThen = netMonthly(pay / 12, y);
+    if (netThen != null) {
+      const needNet = (netThen * C.cpi[LAST]) / C.cpi[y];
+      const gross = grossForNet(needNet, LAST) * 12;
+      set("o-net", man(gross));
+      set("n-net", `그해 세후 월 ${man(netThen)} → 지금 세후 월 ${man(needNet)} 필요`);
+    } else {
+      set("o-net", "–");
+      set("n-net", "세후 계산은 2011년부터");
+    }
+    set("c-foot", `${y}년 연봉 ${man(pay)} 기준. ${LAST}년 값은 잠정치. 세후는 부양가족 없는 1인 근로자 간이 계산.`);
+  }
+  yearSel.addEventListener("change", update);
+  payIn.addEventListener("input", update);
+  update();
+
+  // 시도 기간 토글
+  const seg = document.querySelectorAll<HTMLButtonElement>(".seg button[data-p]");
+  seg.forEach((btn) =>
+    btn.addEventListener("click", () => {
+      seg.forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+      document.querySelectorAll<HTMLElement>("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== btn.dataset.p));
+    }),
+  );
+</script>

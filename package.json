@@ -1,0 +1,17 @@
+{
+  "name": "stats-euiyun",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "숫자 너머의 미래 — 공공 통계를 결합해 새로운 지표와 예측을 만드는 서비스",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "etl": "cd etl && uv run --python 3.12 python run_all.py",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "astro": "^7.4.12"
+  }
+}
