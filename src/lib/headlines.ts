@@ -8,6 +8,10 @@ import industry from "../data/industry.json";
 import commerce from "../data/commerce.json";
 import retire from "../data/retire.json";
 import me from "../data/me.json";
+import births from "../data/births.json";
+import univ from "../data/univ.json";
+import care from "../data/care.json";
+import track from "../data/track.json";
 import { compact, int, pct, won } from "./format";
 import { quantile } from "./me";
 
@@ -22,6 +26,10 @@ const cm = (commerce as any).meta.classCounts;
 const rt = (retire as any).headline;
 
 const sal = (me as any).salary;
+const bh = (births as any).headline;
+const uh = (univ as any).headline;
+const ch = (care as any).headline;
+const ts = (track as any).summary;
 
 export const HEADLINES: Record<string, { num: string; label: string }> = {
   me: { num: `${int(quantile(sal, 0.5))}만원`, label: `근로소득자 ${compact(sal.n)}명 연봉의 한가운데 (${sal.year}년)` },
@@ -32,5 +40,9 @@ export const HEADLINES: Record<string, { num: string; label: string }> = {
   housing: { num: `${seoul.current.burden}%`, label: "서울 84㎡ 구입 시 월소득 대비 상환액" },
   industry: { num: `${compact(ind.retire10y * 1000)}명`, label: `10년 안에 65세가 되는 취업자 (${pct(ind.retire10yShare)})` },
   commerce: { num: `${cm.oversupply}곳`, label: "점포는 늘고 소비인구는 20%+ 줄어드는 시군구" },
+  births: { num: `${(bh.births / 1e4).toFixed(1)}만명`, label: `${(births as any).meta.year}년 출생아 추정 (${pct(bh.change, 1, true)}, 합계출산율 ${bh.tfr})` },
+  univ: { num: `${Math.round((1 - uh.fill2040) * 10)}/10`, label: `2040년 비는 대학 입학 자리 (지금 ${compact(uh.cap)}개 기준)` },
+  care: { num: `+${compact(ch.bedsGap2045)}명`, label: "2045년까지 더 필요한 요양 정원 (75세 100명당 지금 수준 유지)" },
+  track: { num: pct(ts.pop1y, 1), label: `시군구 인구 추계 1년 뒤 평균 오차 (${ts.popEndH}년 뒤 ${pct(ts.popEnd, 1)})` },
   retire: { num: won(rt.gap65Male).replace(" 0만", ""), label: "65세 남성 은퇴 후 연금으로 못 채우는 생활비 총액" },
 };

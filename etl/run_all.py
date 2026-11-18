@@ -90,6 +90,31 @@ def me():
     write("me", build_me.build())
 
 
+@module
+def births():
+    import build_births
+    write("births", build_births.build())
+
+
+@module
+def univ():
+    import build_univ
+    write("univ", build_univ.build(population()))
+
+
+@module
+def care():
+    import build_care
+    write("care", build_care.build(population()))
+
+
+@module
+def track():
+    """예측 성적표: 다른 모듈의 백테스트·기록을 모으므로 마지막에 실행."""
+    import build_track
+    write("track", build_track.build(population()))
+
+
 def main():
     names = [a for a in sys.argv[1:] if not a.startswith("--")] or list(MODULES)
     for n in names:

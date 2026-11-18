@@ -1,0 +1,243 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import ChartSwitch from "../../components/ChartSwitch.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import KoreaMap from "../../components/KoreaMap.astro";
+import data from "../../data/births.json";
+import { pts, val } from "../../lib/series";
+import { int, compact, pct } from "../../lib/format";
+
+const d = data as any;
+const base = import.meta.env.BASE_URL;
+const h = d.headline;
+const { year, month: M, lastAnnual: LA, asof } = d.meta;
+const asofLabel = `${asof.slice(0, 4)}년 ${+asof.slice(5)}월`;
+const nextYear = year + 1;
+const man = (v: number) => `${(v / 1e4).toFixed(1)}만`;
+
+// 1) 월별 출생아: 최근 3년 + 올해 실측 + 남은 달 추정
+const mon = d.monthly.births;
+const fc = d.monthly.forecast;
+const mPts = (arr: (number | null)[]) => arr.map((v, i) => [i + 1, v] as [number, number | null]);
+const thisYear = mon[String(year)] as (number | null)[];
+const fcPts: [number, number | null][] = M < 12 ? [[M, thisYear[M - 1]], ...Object.entries(fc).map(([m, v]) => [+m, v as number] as [number, number])] : [];
+const monthlySpec = {
+  type: "line" as const, xFormat: "month" as const, xUnit: "월", yFormat: "man" as const, height: 320, zeroBased: false,
+  series: [
+    ...[year - 3, year - 2, year - 1].map((y, i) => ({ name: `${y}년`, color: `var(--neutral-series)`, data: mPts(mon[String(y)]), muted: true, width: 1.5, label: i === 2 })),
+    { name: `${year}년 (실측)`, color: "var(--series-1)", data: mPts(thisYear.slice(0, M)), width: 3, label: false },
+    ...(fcPts.length ? [{ name: `${year}년 (추정)`, color: "var(--series-1)", data: fcPts, dash: true, label: true }] : []),
+  ],
+};
+const monthlyTable = {
+  headers: ["월", ...[year - 2, year - 1, year].map(String)],
+  rows: Array.from({ length: 12 }, (_, i) => [`${i + 1}월`, int(mon[String(year - 2)][i]), int(mon[String(year - 1)][i]), i < M ? int(thisYear[i]) : `${int(fc[String(i + 1)])} (추정)`]),
+};
+// 누계 비교 (월별 전년 대비)
+const yoy = thisYear.slice(0, M).map((v, i) => (v != null && mon[String(year - 1)][i] ? v / mon[String(year - 1)][i] - 1 : null));
+const yoySpec = {
+  type: "column" as const, yFormat: "pctS" as const, height: 220,
+  categories: yoy.map((_, i) => `${i + 1}월`), values: yoy,
+  colors: yoy.map((v) => (v != null && v < 0 ? "var(--series-2)" : "var(--series-1)")),
+};
+
+// 2) 연간 출생아 + 올해·내년
+const ann = d.annual.births;
+const annualSpec = {
+  type: "line" as const, yFormat: "man" as const, height: 340, projStart: LA,
+  series: [
+    { name: "출생아 (확정)", color: "var(--series-1)", data: pts(ann, 1990), label: false },
+    { name: "나우캐스트·예측", color: "var(--series-1)", data: [[LA, ann[String(LA)]], [year, h.births], [nextYear, h.next]] as [number, number][], dash: true, label: true },
+  ],
+  bands: [{ name: "추정 범위 (과거 오차 10~90%)", color: "var(--series-1)", lower: [[LA, ann[String(LA)]], [year, h.lo], [nextYear, h.nextLo]] as [number, number][], upper: [[LA, ann[String(LA)]], [year, h.hi], [nextYear, h.nextHi]] as [number, number][] }],
+};
+const tfr = d.annual.tfr;
+const tfrSpec = {
+  type: "line" as const, yFormat: "dec2" as const, height: 340, projStart: LA, zeroBased: false,
+  series: [
+    { name: "합계출산율 (확정)", color: "var(--series-3)", data: pts(tfr, 1990), label: false },
+    { name: `${year} 나우캐스트`, color: "var(--series-3)", data: [[LA, tfr[String(LA)]], [year, h.tfr]] as [number, number][], dash: true, label: true },
+  ],
+  bands: [{ name: "추정 범위", color: "var(--series-3)", lower: [[LA, tfr[String(LA)]], [year, h.tfrLo]] as [number, number][], upper: [[LA, tfr[String(LA)]], [year, h.tfrHi]] as [number, number][] }],
+  hLines: [{ y: 2.1, label: "인구 유지 수준 2.1" }],
+};
+const annYears = [2000, 2010, 2015, 2020, 2023, 2024, LA];
+const annualTable = {
+  headers: ["연도", "출생아", "합계출산율", "혼인"],
+  rows: [
+    ...annYears.filter((y, i, a) => a.indexOf(y) === i).map((y) => [String(y), int(ann[String(y)]), tfr[String(y)]?.toFixed(3) ?? "–", int(d.annual.marriages[String(y)])]),
+    [`${year} (추정)`, `${int(h.births)} (${int(h.lo)}~${int(h.hi)})`, `${h.tfr} (${h.tfrLo}~${h.tfrHi})`, int(h.marriages)],
+    [`${nextYear} (예측)`, `${int(h.next)} (${int(h.nextLo)}~${int(h.nextHi)})`, "–", "–"],
+  ],
+};
+
+// 3) 혼인 → 출생 (1년 시차)
+const mar = d.annual.marriages;
+const scatterPts = Object.keys(ann).map(Number).filter((y) => y >= 1997 && y <= LA && mar[String(y - 1)] && mar[String(y - 2)]).map((y) => ({
+  x: mar[String(y - 1)] / mar[String(y - 2)] - 1,
+  y: ann[String(y)] / ann[String(y - 1)] - 1,
+  label: String(y),
+  note: `${y - 1}년 혼인 ${pct(mar[String(y - 1)] / mar[String(y - 2)] - 1, 1, true)} → ${y}년 출생 ${pct(ann[String(y)] / ann[String(y - 1)] - 1, 1, true)}`,
+  color: y >= 2015 ? "var(--series-1)" : "var(--neutral-series)",
+}));
+const scatterSpec = {
+  type: "scatter" as const, xFormat: "pct1S" as const, yFormat: "pct1S" as const, height: 340,
+  xLabel: "전년 혼인 건수 증감률", yLabel: "그해 출생아 증감률", xRef: 0, yRef: 0,
+  points: scatterPts, labels: ["2024", "2025", "2020", "2017"],
+  groups: [{ name: "2015년 이후", color: "var(--series-1)" }, { name: "1997~2014년", color: "var(--neutral-series)" }],
+};
+const marSpec = {
+  type: "line" as const, yFormat: "man" as const, height: 300,
+  series: [
+    { name: "혼인 건수", color: "var(--series-2)", data: pts(mar, 1995), label: true },
+    { name: `${year} 추정`, color: "var(--series-2)", data: [[LA, mar[String(LA)]], [year, h.marriages]] as [number, number][], dash: true },
+    { name: "출생아 수", color: "var(--series-1)", data: pts(ann, 1995), label: true },
+  ],
+};
+
+// 4) 백테스트: 몇 월까지 알면 얼마나 정확한가
+const bm = d.backtest.byMonth;
+const btSpec = {
+  type: "column" as const, yFormat: "pct1" as const, height: 240,
+  categories: Object.keys(bm).map((m) => `${m}월`),
+  values: Object.values(bm).map((v: any) => v.mae),
+  colors: Object.keys(bm).map((m) => (+m === M ? "var(--series-1)" : "var(--seq-300)")),
+};
+const detail = Object.entries(d.backtest.detail).filter(([y]) => +y >= LA - 14);
+const methodName: Record<string, string> = { season: "계절 비중법", trend: "추세법" };
+
+// 시도
+const sidos = d.sidos as any[];
+const sidoNames = Object.fromEntries(sidos.map((s) => [s.id, s.name]));
+const sidoMetrics = [
+  { key: "ytd", label: `1~${M}월 전년 대비`, format: "pct1S" as const, kind: "div" as const, breaks: [0, 0.05, 0.1, 0.15, 0.2], values: Object.fromEntries(sidos.map((s) => [s.id, s.ytdChange])), desc: `${year}년 1~${M}월 누계 출생아를 작년 같은 기간과 비교했습니다.` },
+  { key: "est", label: `${year}년 연간 추정 (전년 대비)`, format: "pct1S" as const, kind: "div" as const, breaks: [0, 0.05, 0.1, 0.15, 0.2], values: Object.fromEntries(sidos.map((s) => [s.id, s.estChange])), desc: "전국과 같은 방법으로 시도별 남은 달을 추정해 더했습니다. 작은 시도일수록 오차가 큽니다." },
+];
+const sidoBars = [...sidos].sort((a, b) => b.ytdChange - a.ytdChange).map((s) => ({ name: s.name, value: s.ytdChange }));
+const log = d.log as any[];
+---
+<Base title="올해 아기는 몇 명 태어날까?" active="births" description={`월별 출생·혼인 통계로 공식 연간 발표보다 먼저 추정한 ${year}년 출생아 수와 합계출산율. ${asofLabel} 자료 기준 ${year}년 출생아는 약 ${man(h.births)}명(${pct(h.change, 1, true)}), 합계출산율 약 ${h.tfr}명으로 추정됩니다.`}>
+  <div class="wrap">
+    <section class="hero hero-split">
+      <div>
+        <div class="eyebrow">올해 아기는 몇 명 태어날까? · 월별 출생 × 혼인 × 과거 오차</div>
+        <h1>{year}년 아기, 약 {man(h.births)}명이 태어납니다</h1>
+        <p class="lede">
+          통계청의 연간 출생 통계는 이듬해 2월에야 확정됩니다. 하지만 매달 나오는 출생아 수만으로도 올해 숫자를 꽤 정확히 짐작할 수 있습니다.
+          {asofLabel}까지의 월별 자료로 <strong>{year}년 출생아와 합계출산율을 미리 계산</strong>하고, 혼인 건수로 <strong>{nextYear}년 출생아</strong>까지 예측했습니다.
+        </p>
+        <p class="lede" style="font-size:16px">이 계산법은 1995년부터 해마다 "그해 {M}월까지만 알았다면" 조건으로 다시 돌려 봤습니다. 평균 오차는 <strong>{pct(h.mae, 1)}</strong>입니다.</p>
+      </div>
+      <Chart spec={annualSpec} title="출생아 수: 확정치와 나우캐스트" sub={`${LA}년까지 확정, ${year}년은 ${asofLabel} 자료 기준 추정, ${nextYear}년은 혼인 시차 모형 예측`} />
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label={`${year}년 출생아 (추정)`} value={man(h.births)} unit="명" note={`${pct(h.change, 1, true)} · 범위 ${man(h.lo)}~${man(h.hi)}`} tone={h.change >= 0 ? "up" : "down"} />
+      <Stat label={`${year}년 합계출산율 (추정)`} value={String(h.tfr)} unit="명" note={`${LA}년 ${h.tfrPrev} · 범위 ${h.tfrLo}~${h.tfrHi}`} tone={h.tfr >= h.tfrPrev ? "up" : "down"} />
+      <Stat label={`1~${M}월 누계`} value={compact(h.ytd)} unit="명" note={`작년 같은 기간 ${compact(h.ytdPrev)}명 (${pct(h.ytd / h.ytdPrev - 1, 1, true)})`} />
+      <Stat label={`${nextYear}년 출생아 (예측)`} value={man(h.next)} unit="명" note={`${pct(h.nextChange, 1, true)} · 범위 ${man(h.nextLo)}~${man(h.nextHi)}`} tone={h.nextChange >= 0 ? "up" : "down"} />
+    </div>
+
+    <section class="section">
+      <h2>{yoy.every((v) => v != null && v > 0) ? "올해는 매달 작년보다 많습니다" : "월별로 보면"}</h2>
+      <p class="section-desc">회색 선은 지난 3년, 파란 실선은 {year}년 실측, 점선은 남은 달 추정입니다. 출생은 1월에 가장 많고 연말로 갈수록 줄어드는 계절성이 강해서, 남은 달은 작년 같은 달에 최근 3개월의 증가율을 곱해 채웠습니다.</p>
+      <div class="grid grid-2">
+        <Chart spec={monthlySpec} table={monthlyTable} title="월별 출생아 수" sub={`${year - 3}~${year}년`} />
+        <Chart spec={yoySpec} title="전년 같은 달 대비 증감" sub={`${year}년 1~${M}월`} />
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>합계출산율도 함께 계산합니다</h2>
+      <p class="section-desc">합계출산율은 출생아 수를 가임기 여성 규모로 나눈 값입니다. 해마다 "출생아 ÷ 합계출산율" 비율(여성 인구 규모를 나타냄)이 천천히 움직이는 점을 이용해, 최근 3년 추세로 {year}년 값을 연장한 뒤 출생아 추정치를 나눴습니다. 이 단계만의 과거 오차는 평균 {pct(d.model.tfrDenErrMae, 1)}입니다.</p>
+      <ChartSwitch views={[{ label: "합계출산율", spec: tfrSpec }, { label: "혼인과 출생", spec: marSpec, note: "혼인이 늘면 1~2년 뒤 출생이 따라 늘어납니다" }]} table={annualTable} title="합계출산율·혼인 건수" sub="1990년 이후 확정치와 올해 추정" />
+    </section>
+
+    <section class="section grid grid-2">
+      <Chart spec={scatterSpec} title="작년 혼인이 늘면 올해 출생이 는다" sub="점 하나가 한 해. 오른쪽 위로 갈수록 혼인·출생이 함께 증가" />
+      <div class="card">
+        <h3 class="card-title">{nextYear}년 출생아 예측 모형</h3>
+        <p class="card-sub">혼인 후 첫째 출산까지 보통 1~2년이 걸립니다. 그래서 출생아 증가율을 전년·전전년 혼인 증가율로 설명합니다(1996~{LA}년, 최소제곱).</p>
+        <pre class="formula">출생 증가율(t) = {d.model.lagCoef[0]} + {d.model.lagCoef[1]} × 혼인 증가율(t−1) + {d.model.lagCoef[2]} × 혼인 증가율(t−2)</pre>
+        <p class="small">{year}년 혼인은 약 {man(h.marriages)}건({pct(h.marriagesChange, 1, true)})으로 추정되고, 이를 넣으면 {nextYear}년 출생아는 {pct(h.nextChange, 1, true)} 변한 <strong>약 {man(h.next)}명</strong>입니다.</p>
+        <p class="small muted">1년 앞 예측의 과거 평균 오차는 {pct(d.backtest.lagMae, 1)}로, "작년과 같다"고 볼 때({pct(d.backtest.naiveMae, 1)})보다 조금 낫습니다. 혼인 외에도 30대 초반 여성 인구, 정책, 경기 같은 요인이 있어 범위가 넓습니다.</p>
+      </div>
+    </section>
+
+    <section class="section" id="map">
+      <h2>시도별로 보면</h2>
+      <p class="section-desc">{year}년 1~{M}월 출생아는 17개 시도 중 {sidos.filter((s) => s.ytdChange > 0).length}곳에서 작년보다 많습니다. 증가율이 가장 높은 곳은 {sidoBars[0].name}({pct(sidoBars[0].value, 1, true)}), 가장 낮은 곳은 {sidoBars.at(-1)!.name}({pct(sidoBars.at(-1)!.value, 1, true)})입니다.</p>
+      <div class="grid grid-2">
+        <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} rank={false} compact title="시도별 출생아 증감" sub={`${asofLabel} 자료 기준`} />
+        <div class="card">
+          <h3 class="card-title">1~{M}월 누계, 전년 대비</h3>
+          <BarList items={sidoBars} format="pct1S" />
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-top:16px">
+        <table>
+          <thead><tr><th>시도</th><th class="num">1~{M}월 {year}</th><th class="num">1~{M}월 {year - 1}</th><th class="num">증감</th><th class="num">{year} 연간 추정</th><th class="num">{LA} 확정</th><th class="num">{LA} 합계출산율</th></tr></thead>
+          <tbody>
+            {sidos.map((s) => (
+              <tr><td>{s.name}</td><td class="num">{int(s.ytd)}</td><td class="num">{int(s.ytdPrev)}</td><td class="num">{pct(s.ytdChange, 1, true)}</td><td class="num">{int(s.est)}</td><td class="num">{int(s.prevYear)}</td><td class="num">{s.tfrPrev ?? "–"}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section grid grid-2" id="backtest">
+      <Chart spec={btSpec} title="몇 월까지 알면 얼마나 정확한가" sub={`과거 20년, 연간 출생아 추정의 평균 절대오차. 진한 막대가 지금(${M}월)`} />
+      <div class="card">
+        <h3 class="card-title">과거 검증: "{M}월까지만 알았다면"</h3>
+        <p class="card-sub">해마다 1~{M}월 자료만으로 같은 방법({methodName[d.backtest.byMonth[String(M)]?.method] ?? "–"})을 돌린 추정치와 확정치의 차이</p>
+        <div class="table-wrap" style="max-height:320px">
+          <table>
+            <thead><tr><th>연도</th><th class="num">추정</th><th class="num">확정</th><th class="num">오차</th></tr></thead>
+            <tbody>
+              {(d.backtest.pseudo as any[]).slice().reverse().map((r) => (
+                <tr><td>{r.year}</td><td class="num">{int(r.pred)}</td><td class="num">{int(r.actual)}</td><td class="num">{pct(r.err, 1, true)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p class="small muted" style="margin-top:10px">{M}월 기준 최대 오차는 {pct(bm[String(M)].max, 1)}. 범위(10~90%)는 이 오차 분포에서 나옵니다. 추정 기록은 갱신 때마다 <a href={`${base}track/`}>예측 성적표</a>에 쌓이고, 확정치가 나오면 채점됩니다.</p>
+      </div>
+    </section>
+
+    {log.length > 1 && (
+      <section class="section">
+        <h2>추정치는 어떻게 바뀌어 왔나</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>기준 자료</th><th class="num">대상 연도</th><th class="num">출생아 추정</th><th class="num">범위</th><th class="num">합계출산율</th><th class="num">확정치</th><th class="num">오차</th></tr></thead>
+            <tbody>{log.slice().reverse().map((e) => <tr><td>{e.asof}</td><td class="num">{e.year}</td><td class="num">{int(e.births)}</td><td class="num">{int(e.lo)}~{int(e.hi)}</td><td class="num">{e.tfr ?? "–"}</td><td class="num">{int(e.actual)}</td><td class="num">{e.err != null ? pct(e.err, 1, true) : "–"}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </section>
+    )}
+
+    <section class="section card method" id="method">
+      <h2>방법론</h2>
+      <h3>1. 올해 출생아: 누계 + 남은 달</h3>
+      <pre class="formula">계절 비중법: 연간 = 1~M월 누계 ÷ (최근 5년 1~M월이 연간에서 차지한 비중의 평균)
+추세법:     연간 = 1~M월 누계 + 작년 (M+1)~12월 × (최근 3개월 ÷ 작년 같은 3개월)</pre>
+      <p>두 방법을 1995년 이후 매년, 매월 기준으로 다시 계산해 최근 15년 오차가 작은 쪽을 고릅니다. 연초(1~3월)에는 계절 비중법이, 4월 이후에는 올해 흐름을 반영하는 추세법이 더 정확했습니다. 범위는 최근 20년 오차의 10~90% 구간입니다.</p>
+      <h3>2. 합계출산율</h3>
+      <pre class="formula">합계출산율(올해) = 출생아(올해 추정) ÷ D(올해),  D = 출생아 ÷ 합계출산율
+D(올해) = D(작년) × 최근 3년 평균 변화율</pre>
+      <h3>3. 내년 출생아</h3>
+      <p>연간 확정치(1996~{LA}년)로 출생 증가율을 전년·전전년 혼인 증가율에 회귀했습니다. 올해 혼인 건수도 출생과 같은 방법으로 추정해 넣습니다. 1년 앞 예측 오차는 해마다 그 전년까지 자료로만 모형을 다시 적합해 계산했습니다(2008~{LA}년).</p>
+      <h3>한계</h3>
+      <ul>
+        <li>월별 출생은 잠정치라 연간 확정 때 조금 바뀔 수 있습니다.</li>
+        <li>시도별 추정은 전국 방법을 그대로 적용했으며, 출생아가 적은 시도는 월별 변동이 커 오차가 더 큽니다.</li>
+        <li>내년 예측은 혼인만 반영합니다. 30대 초반 여성 인구 감소, 정책 변화, 경기 충격은 들어 있지 않습니다.</li>
+      </ul>
+      <h3>데이터 출처</h3>
+      <ul>{d.meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>

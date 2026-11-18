@@ -9,6 +9,9 @@ import housing from "../data/housing.json";
 import industry from "../data/industry.json";
 import commerce from "../data/commerce.json";
 import retire from "../data/retire.json";
+import births from "../data/births.json";
+import univ from "../data/univ.json";
+import care from "../data/care.json";
 import { compact, pct, won } from "../lib/format";
 import { HEADLINES, shrinkCount } from "../lib/headlines";
 import KoreaMap from "../components/KoreaMap.astro";
@@ -43,6 +46,9 @@ const sparks: Record<string, { actual: [number, number][]; proj?: [number, numbe
   housing: { actual: E(seoulHist, (v) => v.burden), color: "var(--series-2)", from: Object.keys(seoulHist)[0], to: "서울 부담률" },
   industry: { actual: E((industry as any).national.employment), proj: E((industry as any).national.supply.base), from: Object.keys((industry as any).national.employment)[0], to: "2045 노동공급" },
   commerce: { actual: E(cons.actual), proj: E(cons.mid), color: "var(--series-7)", from: Object.keys(cons.actual)[0], to: "2045 소비인구" },
+  births: { actual: E((births as any).annual.births).filter(([y]) => y >= 2005), proj: [[(births as any).meta.lastAnnual, (births as any).annual.births[String((births as any).meta.lastAnnual)]], [(births as any).meta.year, (births as any).headline.births], [(births as any).meta.year + 1, (births as any).headline.next]], color: "var(--series-1)", from: "2005", to: `${(births as any).meta.year + 1} 출생아` },
+  univ: { actual: E((univ as any).national.entrantsTotal).filter(([y]) => y >= 2005), proj: E((univ as any).national.demand.mid).filter(([y]) => y <= 2045), color: "var(--series-2)", from: "2005", to: "2045 입학 수요" },
+  care: { actual: [], proj: E((care as any).regions.find((r: any) => r.key === "00").old75), color: "var(--series-2)", from: String((care as any).meta.baseYear), to: "2045 75세 이상" },
   retire: { actual: E(life.male).filter(([y]) => y >= 1990), proj: E(lifeF.male).filter(([y]) => y <= 2050), color: "var(--series-3)", from: "1990", to: "2050 65세 기대여명" },
 };
 const cards = HEADLINES;

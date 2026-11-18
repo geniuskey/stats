@@ -56,6 +56,32 @@ RULES: dict[str, list[tuple[str, float, float]]] = {
         ("headline.pensionMean", 300_000, 2_000_000),
     ],
     "me": [("salary.pts", 10, 30), ("salary.n", 15e6, 30e6)],
+    "births": [
+        ("headline.births", 150_000, 450_000),
+        ("headline.tfr", 0.5, 1.6),
+        ("headline.next", 150_000, 450_000),
+        ("headline.mae", 0, 0.08),
+        ("sidos", 17, 17),
+        ("backtest.byMonth", 11, 11),
+    ],
+    "univ": [
+        ("sidos", 17, 17),
+        ("headline.cap", 300_000, 800_000),
+        ("meta.ratio", 0.7, 1.6),
+        ("headline.age18Now", 250_000, 700_000),
+    ],
+    "care": [
+        ("regions", 240, 250),
+        ("headline.beds", 100_000, 600_000),
+        ("headline.carers", 300_000, 1_500_000),
+        ("headline.ped", 1_000, 4_000),
+        ("headline.old75Now", 3e6, 7e6),
+    ],
+    "track": [
+        ("summary.pop1y", 0, 0.05),
+        ("popBacktest.groups.total", 3, 10),
+        ("ledger", 1, 5000),
+    ],
 }
 
 

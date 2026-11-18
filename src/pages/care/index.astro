@@ -1,0 +1,261 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import ChartSwitch from "../../components/ChartSwitch.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import KoreaMap from "../../components/KoreaMap.astro";
+import data from "../../data/care.json";
+import { pts, val } from "../../lib/series";
+import { int, compact, pct } from "../../lib/format";
+
+const d = data as any;
+const h = d.headline;
+const m = d.meta;
+const by = m.baseYear;
+const regions = d.regions as any[];
+const nat = regions.find((r) => r.key === "00");
+const sidos = regions.filter((r) => r.level === "sido");
+const sggs = regions.filter((r) => r.level === "sgg");
+const years = m.years as number[];
+const bedsX = (h.beds + h.bedsGap2045) / h.beds;
+const clinicLabel = (p: string) => (p ? `${p.slice(0, 4)}년 ${+p.slice(4)}분기` : "");
+
+// 의료 수요 vs 인구
+const idx = (o: any) => years.map((y) => [y, val(o, y)] as [number, number | null]);
+const popIdx = (r: any) => years.map((y) => [y, r.pop[String(y)] / r.pop[String(by)]] as [number, number]);
+const o75Idx = (r: any) => years.map((y) => [y, r.old75[String(y)] / r.old75[String(by)]] as [number, number]);
+const kidsIdx = (r: any) => years.map((y) => [y, r.kids[String(y)] / r.kids[String(by)]] as [number, number]);
+const demandSpec = {
+  type: "line" as const, yFormat: "dec2" as const, height: 340, zeroBased: false,
+  series: [
+    { name: "75세 이상 인구", color: "var(--series-2)", data: o75Idx(nat), label: true },
+    { name: "의료 수요 지수", color: "var(--series-1)", data: idx(nat.demandIdx), label: true, width: 3 },
+    { name: "총인구", color: "var(--neutral-series)", data: popIdx(nat), label: true },
+    { name: "0~9세", color: "var(--series-3)", data: kidsIdx(nat), label: true },
+  ],
+  hLines: [{ y: 1, label: `${by} = 1` }],
+};
+const costSpec = {
+  type: "column" as const, yFormat: "won" as const, height: 240,
+  categories: m.costLabels, values: m.costWeights,
+  colors: m.costLabels.map((_: string, i: number) => (i >= 7 ? "var(--series-2)" : "var(--series-1)")),
+};
+const demandTable = {
+  headers: ["연도", "총인구", "75세 이상", "0~9세", "의료 수요 지수"],
+  rows: years.map((y) => [String(y), int(nat.pop[String(y)]), int(nat.old75[String(y)]), int(nat.kids[String(y)]), (val(nat.demandIdx, y) ?? 0).toFixed(3)]),
+};
+
+// 요양 정원
+const bedsSpec = {
+  type: "column" as const, yFormat: "man" as const, height: 260,
+  categories: years.map(String),
+  values: years.map((y) => val(nat.bedsNeed, y)),
+  colors: years.map((y) => (y === by ? "var(--series-1)" : "var(--seq-300)")),
+};
+
+// 지도
+const sejong = sggs.find((r) => r.key.startsWith("36|"));
+const mapNames = Object.fromEntries(sggs.map((r) => [r.id, r.sido === "세종" ? r.name : `${r.sido} ${r.name}`]));
+const mapNotes = Object.fromEntries(sggs.map((r) => [r.id, `75세 이상 ${int(r.old75[String(by)])} → ${int(r.old75["2035"])}명 (2035)`]));
+const mapMetrics = [
+  { key: "dem", label: "의료 수요 변화", format: "pctS" as const, kind: "div" as const, breaks: [-0.1, 0, 0.1, 0.2, 0.3, 0.4],
+    desc: `연령별 1인당 진료비로 가중한 의료 수요의 ${by}년 대비 변화. 인구가 줄어도 고령화로 수요가 느는 곳이 많습니다. ▶ 로 재생.`,
+    frames: { labels: years.slice(1), values: years.slice(1).map((y) => Object.fromEntries(sggs.map((r) => [r.id, r.demandIdx ? val(r.demandIdx, y)! - 1 : null]))), start: years.length - 2 } },
+  { key: "o75", label: "75세 이상 변화", format: "pctS" as const, kind: "seq" as const, breaks: [0.25, 0.5, 0.75, 1, 1.25],
+    desc: `${by}년 대비 75세 이상 인구 증가율. 지금 요양 시설·인력이 그대로라면 이만큼 부족해집니다.`,
+    frames: { labels: years.slice(1), values: years.slice(1).map((y) => Object.fromEntries(sggs.map((r) => [r.id, r.old75[String(y)] / r.old75[String(by)] - 1]))), start: 1 } },
+  { key: "beds", label: "75세 100명당 요양 정원", format: "dec1" as const, kind: "seq" as const, breaks: [2, 4, 6, 8, 10, 14],
+    desc: "노인의료복지시설(요양원·공동생활가정) 정원 ÷ 75세 이상 × 100. 정원이 그대로일 때 연도별 값입니다.",
+    frames: { labels: years, values: years.map((y) => Object.fromEntries(sggs.map((r) => [r.id, r.beds != null && r.old75[String(y)] ? (r.beds / r.old75[String(y)]) * 100 : null]))), start: 0 } },
+  { key: "ped", label: "소아과 1곳당 0~9세", format: "int" as const, kind: "seq" as const, breaks: [500, 800, 1100, 1500, 2000, 3000],
+    desc: "소아청소년과 의원 1곳이 맡는 0~9세 아동 수(의원이 없는 곳은 회색). 아이가 줄면 이 값이 작아져 의원 경영이 어려워집니다.",
+    frames: { labels: years, values: years.map((y) => Object.fromEntries(sggs.map((r) => [r.id, r.kidsPerPed?.[String(y)] ?? null]))), start: 0 } },
+];
+
+// 소아과·산부인과
+const zeroPed = sggs.filter((r) => r.ped === 0);
+const zeroObg = sggs.filter((r) => r.obg === 0);
+const zeroBoth = sggs.filter((r) => r.ped === 0 && r.obg === 0);
+const pedBars = sidos.filter((r) => r.ped).map((r) => ({ name: r.short, value: r.kidsPerPed[String(by)] })).sort((a, b) => b.value - a.value);
+const kidsCh = nat.kids["2035"] / nat.kids[String(by)] - 1;
+
+// 표
+const rows = sggs.map((r) => ({
+  id: r.id, name: `${r.sido} ${r.name}`.replace("세종 세종특별자치시", "세종특별자치시"),
+  o75: r.old75[String(by)], o75_35: r.old75["2035"], o75ch: r.old75["2035"] / r.old75[String(by)] - 1,
+  beds: r.beds, per100: r.bedsPer100, gap: r.bedsGap2035, dem: r.demandIdx ? r.demandIdx["2045"] - 1 : null,
+  docs: r.docsPer1000, ped: r.ped, obg: r.obg,
+}));
+const demBars = (key: "top" | "bottom") => {
+  const s = [...sggs].filter((r) => r.demandIdx).sort((a, b) => b.demandIdx["2045"] - a.demandIdx["2045"]);
+  return (key === "top" ? s.slice(0, 10) : s.slice(-10).reverse()).map((r) => ({ name: `${r.sido} ${r.name}`, value: r.demandIdx["2045"] - 1 }));
+};
+---
+<Base title="우리 동네 의료·돌봄" active="care" description={`시군구 인구 추계와 요양시설·요양보호사·의사·소아과 통계를 결합한 의료·돌봄 수요 전망. 75세 이상은 ${by}년 ${compact(h.old75Now)}명에서 2045년 ${compact(h.old75_2045)}명으로 늘어, 지금 수준을 유지하려면 요양 정원이 ${bedsX.toFixed(1)}배 필요합니다.`}>
+  <div class="wrap">
+    <section class="hero hero-split">
+      <div>
+        <div class="eyebrow">우리 동네 의료·돌봄 · 연령별 인구 × 요양시설 × 의료인력 × 진료비</div>
+        <h1>2045년, 요양원 자리는 지금의 {bedsX.toFixed(1)}배가 필요합니다</h1>
+        <p class="lede">
+          인구는 2045년까지 {pct(-h.pop2045, 0)} 줄지만 75세 이상은 <strong>{compact(h.old75Now)}명에서 {compact(h.old75_2045)}명</strong>으로 늘어납니다.
+          시군구 229곳의 연령별 인구 추계에 요양 정원·요양보호사·의사·소아과 통계와 연령별 진료비를 결합해, 동네마다 어떤 돌봄이 얼마나 모자라게 될지 계산했습니다.
+        </p>
+      </div>
+      <ChartSwitch views={[{ label: "수요 지수", spec: demandSpec }]} table={demandTable} title={`인구는 줄어도 의료 수요는 는다 (${by} = 1)`} sub="의료 수요 지수 = 연령별 1인당 진료비 × 연령별 인구 (전국, 중위 추계)" />
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label="75세 이상" value={`${compact(h.old75Now)} → ${compact(h.old75_2035)}`} unit="명" note={`${by} → 2035 · 2045년 ${compact(h.old75_2045)}`} tone="up" />
+      <Stat label="2035년까지 더 필요한 요양 정원" value={`+${compact(h.bedsGap2035)}`} unit="명" note={`지금 ${compact(h.beds)}명 · 75세 100명당 ${h.bedsPer100}명 유지 시`} tone="down" />
+      <Stat label="더 필요한 요양보호사 (2035)" value={`+${compact(h.carersGap2035)}`} unit="명" note={`지금 ${compact(h.carers)}명 (장기요양기관 종사)`} tone="down" />
+      <Stat label="의료 수요 (2045)" value={pct(h.demand2045 - 1, 0, true)} note={`인구는 ${pct(h.pop2045, 0, true)} · 시군구 ${h.demandUp2045}곳에서 증가`} tone="up" />
+    </div>
+
+    <section class="section grid grid-2">
+      <Chart spec={costSpec} title="나이가 들수록 진료비는 가파르게 는다" sub={`연령대별 1인당 연간 건강보험 진료비 (${m.costYear}년, 전국)`} />
+      <div class="card">
+        <h3 class="card-title">의료 수요 지수란</h3>
+        <p class="small">80세 이상 1명은 연간 진료비가 10대의 약 {Math.round(m.costWeights[8] / m.costWeights[1])}배입니다. 그래서 같은 인구라도 나이 구성이 바뀌면 병원이 감당할 일의 양이 달라집니다.</p>
+        <pre class="formula">의료 수요(t) = Σ 연령대 1인당 진료비 × 연령대 인구(t)
+지수(t) = 의료 수요(t) ÷ 의료 수요({by})</pre>
+        <p class="small">진료비 단가는 {m.costYear}년 값으로 고정했으므로 물가·의료기술 변화가 아니라 <strong>인구 구조 변화만의 효과</strong>입니다. 전국 의료 수요는 2035년 {pct(h.demand2035 - 1, 0, true)}, 2045년 {pct(h.demand2045 - 1, 0, true)}입니다. 같은 기간 시군구 {h.popDown2045}곳은 인구가 줄지만, 그중 많은 곳에서 의료 수요는 오히려 늘어납니다.</p>
+      </div>
+    </section>
+
+    <section class="section" id="map">
+      <h2>지도로 보는 우리 동네</h2>
+      <p class="section-desc">지표를 바꿔 보세요. 시도를 누르면 확대됩니다. 요양 정원은 {m.ltcYear}년, 의원 수는 {clinicLabel(m.clinicPeriod)} 기준입니다.</p>
+      <KoreaMap metrics={mapMetrics} names={mapNames} notes={mapNotes} title="시군구 의료·돌봄 지도" sub="중위 인구 추계" />
+    </section>
+
+    <section class="section grid grid-2">
+      <div class="card">
+        <h3 class="card-title">의료 수요가 가장 많이 느는 곳 (2045)</h3>
+        <p class="card-sub">{by}년 대비, 의사 수가 그대로라면 의사 1명당 부담도 이만큼 늘어납니다</p>
+        <BarList items={demBars("top")} format="pctS" />
+      </div>
+      <div class="card">
+        <h3 class="card-title">의료 수요가 가장 적게 늘거나 줄어드는 곳</h3>
+        <p class="card-sub">인구 감소가 고령화 효과보다 큰 곳</p>
+        <BarList items={demBars("bottom")} format="pctS" diverging />
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>요양: 시설과 사람이 함께 부족해진다</h2>
+      <p class="section-desc">지금 전국 노인의료복지시설 정원은 75세 이상 100명당 {h.bedsPer100}명입니다. 이 비율을 유지하려면 정원이 2035년 {compact(nat.bedsNeed["2035"])}명, 2045년 {compact(nat.bedsNeed["2045"])}명이어야 합니다. 요양보호사도 같은 비율로 2035년까지 {compact(h.carersGap2035)}명이 더 필요합니다.</p>
+      <div class="grid grid-2">
+        <Chart spec={bedsSpec} title="지금 수준을 유지하는 데 필요한 요양 정원" sub={`75세 이상 100명당 ${h.bedsPer100}명 기준 (전국)`} />
+        <div class="card">
+          <h3 class="card-title">2015년 이후 정원은 얼마나 늘었나</h3>
+          <p class="small">노인의료복지시설 정원은 2015년 {compact(nat.beds2015)}명에서 {m.ltcYear}년 {compact(h.beds)}명으로 {pct(h.beds / nat.beds2015 - 1, 0, true)} 늘었습니다. 연평균 약 {compact((h.beds - nat.beds2015) / (m.ltcYear - 2015))}명씩입니다.</p>
+          <p class="small">이 속도가 그대로라면 2035년 정원은 약 {compact(h.beds + ((h.beds - nat.beds2015) / (m.ltcYear - 2015)) * (2035 - m.ltcYear))}명으로, 필요량({compact(nat.bedsNeed["2035"])}명)에 <strong>{pct(1 - (h.beds + ((h.beds - nat.beds2015) / (m.ltcYear - 2015)) * (2035 - m.ltcYear)) / nat.bedsNeed["2035"], 0)}</strong> 못 미칩니다.</p>
+          <p class="small muted">시설 대신 재가(방문요양·주야간보호) 서비스가 늘면 필요한 정원은 줄어듭니다. 이 계산은 "지금의 돌봄 방식이 그대로라면"입니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>아이 쪽 의료: 소아과와 산부인과</h2>
+      <p class="section-desc">반대편에서는 아이가 줄어 진료 공백이 생깁니다. 지금 시군구 {h.sggCount}곳 중 <strong>{zeroPed.length}곳에는 소아청소년과 의원이, {zeroObg.length}곳에는 산부인과 의원이 없습니다</strong>(둘 다 없는 곳 {zeroBoth.length}곳). 전국 소아과 의원은 2016년 {int(h.ped2016)}곳에서 {int(h.ped)}곳으로 {pct(h.ped / h.ped2016 - 1, 1, true)}, 0~9세는 2035년까지 {pct(kidsCh, 0, true)} 변합니다.</p>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title">시도별 소아과 1곳당 0~9세 ({by})</h3>
+          <p class="card-sub">값이 클수록 의원이 부족하고, 작을수록 의원 수입이 줄어 문을 닫을 압력이 커집니다</p>
+          <BarList items={pedBars} format="int" />
+        </div>
+        <div class="card">
+          <h3 class="card-title">소아청소년과 의원이 없는 시군구</h3>
+          <p class="card-sub">{clinicLabel(m.clinicPeriod)} 기준 · 이 지역 아이들은 다른 시군구로 진료를 받으러 갑니다 (병원급·보건소 소아 진료 제외)</p>
+          <p class="small">{zeroPed.map((r) => `${r.sido} ${r.name}`).join(" · ")}</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>시군구 전체 목록</h2>
+      <p class="section-desc">열 제목을 누르면 정렬됩니다. 요양 정원 공백은 지금의 75세 100명당 정원을 2035년에도 유지할 때 더 필요한 정원입니다.</p>
+      <div class="controls"><input type="search" id="tbl-filter" placeholder="표에서 찾기" aria-label="표 필터" /></div>
+      <div class="table-wrap" style="max-height:560px">
+        <table id="sgg-table">
+          <thead>
+            <tr>
+              <th><button class="sort" data-k="name">지역</button></th>
+              <th class="num"><button class="sort" data-k="o75">75세+ {by}</button></th>
+              <th class="num"><button class="sort" data-k="o75ch">75세+ 2035 변화</button></th>
+              <th class="num"><button class="sort" data-k="per100">요양 정원/75세 100명</button></th>
+              <th class="num"><button class="sort" data-k="gap">정원 공백 2035</button></th>
+              <th class="num"><button class="sort" data-k="dem">의료 수요 2045</button></th>
+              <th class="num"><button class="sort" data-k="docs">인구 천명당 의사</button></th>
+              <th class="num"><button class="sort" data-k="ped">소아과</button></th>
+              <th class="num"><button class="sort" data-k="obg">산부인과</button></th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...rows].sort((a, b) => (b.dem ?? -9) - (a.dem ?? -9)).map((r) => (
+              <tr data-name={r.name} data-o75={r.o75} data-o75ch={r.o75ch} data-per100={r.per100 ?? ""} data-gap={r.gap ?? ""} data-dem={r.dem ?? ""} data-docs={r.docs ?? ""} data-ped={r.ped} data-obg={r.obg}>
+                <td>{r.name}</td>
+                <td class="num">{int(r.o75)}</td>
+                <td class="num">{pct(r.o75ch, 0, true)}</td>
+                <td class="num">{r.per100?.toFixed(1) ?? "–"}</td>
+                <td class="num">{int(r.gap)}</td>
+                <td class="num">{pct(r.dem, 0, true)}</td>
+                <td class="num">{r.docs?.toFixed(1) ?? "–"}</td>
+                <td class="num">{r.ped}</td>
+                <td class="num">{r.obg}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>방법론</h2>
+      <h3>1. 미래 연령별 인구</h3>
+      <p>이 사이트의 시군구 인구 추계(중위, 코호트 변화율법)를 씁니다. 75세 이상·0~9세·20~44세 여성(기준연도 여성 비중 고정)을 연도별로 뽑았습니다.</p>
+      <h3>2. 의료 수요 지수</h3>
+      <pre class="formula">1인당 진료비(연령대) = 전국 건강보험 진료비(연령대, {m.costYear}) ÷ 주민등록 인구(연령대)
+의료 수요 지수(지역, t) = Σ 1인당 진료비 × 인구(지역, 연령대, t) ÷ 같은 값({by})</pre>
+      <p>지역별 진료 행태 차이(예: 같은 나이라도 지역마다 병원 이용이 다름)는 넣지 않고 전국 단가를 썼습니다. 인구 구조 변화만의 효과를 비교하기 위해서입니다.</p>
+      <h3>3. 요양·의료 자원</h3>
+      <pre class="formula">요양 정원 공백(t) = 75세 이상(t) × [지금 정원 ÷ 지금 75세 이상] − 지금 정원
+소아과 1곳당 아동(t) = 0~9세(t) ÷ 지금 소아청소년과 의원 수</pre>
+      <p>각 기관 통계의 시군구 이름(옛 마산·진해시, 일반구, 붙여 쓴 "수원시장안구" 등)을 2025년 말 시·군·자치구 229곳으로 맞췄습니다. 시군구 합계는 시도 합계와 일치함을 확인했습니다.</p>
+      <h3>한계</h3>
+      <ul>
+        <li>시설·인력·의원 수는 지금 값으로 고정한 "아무것도 바뀌지 않으면"의 계산입니다. 실제로는 시장과 정책이 반응합니다.</li>
+        <li>요양 수요는 75세 이상 인구로만 근사했습니다. 장기요양 등급 인정률 변화와 재가 서비스 확대는 반영하지 않았습니다.</li>
+        <li>소아과·산부인과는 의원급만 셉니다. 병원·종합병원의 소아·분만 진료는 포함되지 않습니다.</li>
+      </ul>
+      <h3>데이터 출처</h3>
+      <ul>{m.sources.map((s: string) => <li>{s}</li>)}</ul>
+    </section>
+  </div>
+</Base>
+<script>
+  const table = document.getElementById("sgg-table") as HTMLTableElement;
+  const tbody = table.tBodies[0];
+  let dir = 1, lastK = "dem";
+  table.querySelectorAll<HTMLButtonElement>("button.sort").forEach((b) =>
+    b.addEventListener("click", () => {
+      const k = b.dataset.k!;
+      dir = k === lastK ? -dir : -1;
+      lastK = k;
+      const rows = [...tbody.rows];
+      rows.sort((a, c) => {
+        const x = a.dataset[k] ?? "", y = c.dataset[k] ?? "";
+        const nx = x === "" ? -Infinity : Number(x), ny = y === "" ? -Infinity : Number(y);
+        return (k === "name" ? x.localeCompare(y, "ko") : nx - ny) * dir;
+      });
+      rows.forEach((r) => tbody.appendChild(r));
+    }),
+  );
+  const f = document.getElementById("tbl-filter") as HTMLInputElement;
+  f.addEventListener("input", () => {
+    const q = f.value.trim();
+    [...tbody.rows].forEach((r) => (r.hidden = !!q && !(r.dataset.name ?? "").includes(q)));
+  });
+</script>

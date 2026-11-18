@@ -15,7 +15,7 @@ export function tween(ms: number, fn: (k: number) => void, done?: () => void, ea
   let raf = 0;
   const t0 = performance.now();
   const step = (now: number) => {
-    const t = Math.min(1, (now - t0) / ms);
+    const t = Math.min(1, Math.max(0, (now - t0) / ms)); // 첫 rAF 시각이 t0보다 앞설 수 있다
     fn(ease(t));
     if (t < 1) raf = requestAnimationFrame(step);
     else done?.();

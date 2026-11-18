@@ -239,7 +239,7 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
   const first = Math.ceil(x0 / step) * step;
   for (let x = first; x <= x1; x += step) {
     const tx = el("text", { x: X(x), y: H - 8, "text-anchor": "middle" }, svg);
-    tx.textContent = spec.xFormat === "month" ? String(x) : String(x);
+    tx.textContent = spec.xFormat === "month" ? `${x}월` : String(x);
   }
   el("line", { x1: m.l, x2: m.l + pw, y1: m.t + ph, y2: m.t + ph, class: "axis-line" }, svg);
 

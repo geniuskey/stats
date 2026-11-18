@@ -1,0 +1,180 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import data from "../../data/track.json";
+import { int, pct } from "../../lib/format";
+
+const d = data as any;
+const base = import.meta.env.BASE_URL;
+const s = d.summary;
+const pb = d.popBacktest;
+const hs = Object.keys(pb.groups.total).map(Number);
+
+const lineOf = (g: any, key = "mae") => hs.map((h) => [pb.base + h, g[String(h)][key]] as [number, number]);
+const popSpec = {
+  type: "line" as const, yFormat: "pct1" as const, height: 320, xUnit: "년",
+  series: [
+    { name: "총인구", color: "var(--series-1)", data: lineOf(pb.groups.total), label: true, width: 3 },
+    { name: "65세 이상", color: "var(--series-2)", data: lineOf(pb.groups.old), label: true },
+    { name: "0~9세", color: "var(--series-3)", data: lineOf(pb.groups.kids), label: true },
+    { name: `비교: ${pb.base}년 인구 그대로`, color: "var(--neutral-series)", data: lineOf(pb.naive), dash: true, label: true },
+  ],
+};
+const popTable = {
+  headers: ["예측 연도", "총인구 평균 오차", "중앙값", "오차 2% 이내", "65세 이상", "0~9세", "비교(그대로)"],
+  rows: hs.map((h) => [
+    `${pb.base + h} (${h}년 뒤)`, pct(pb.groups.total[h].mae, 1), pct(pb.groups.total[h].median, 1), pct(pb.groups.total[h].within2, 0),
+    pct(pb.groups.old[h].mae, 1), pct(pb.groups.kids[h].mae, 1), pct(pb.naive[h].mae, 1),
+  ]),
+};
+const b = d.births;
+const bm = b.byMonth;
+const btSpec = {
+  type: "column" as const, yFormat: "pct1" as const, height: 240,
+  categories: Object.keys(bm).map((m) => `${m}월`), values: Object.values(bm).map((v: any) => v.mae),
+};
+const ledger = d.ledger as any[];
+const graded = ledger.filter((e) => e.actual != null);
+const pending = ledger.filter((e) => e.actual == null);
+const fmtV = (e: any, v: number | null | undefined) => (v == null ? "–" : e.digits ? v.toFixed(e.digits) : int(v));
+const modTitle: Record<string, string> = { births: "출생", korea: "인구", school: "학교", univ: "대학" };
+const modHref: Record<string, string> = { births: "births/", korea: "korea/", school: "school/", univ: "univ/" };
+const off = d.official as any[];
+---
+<Base title="예측 성적표" active="track" description={`이 사이트의 예측이 얼마나 맞았는지 공개합니다. 시군구 인구 추계 1년 뒤 평균 오차 ${pct(s.pop1y, 1)}, ${s.popEndH}년 뒤 ${pct(s.popEnd, 1)}, 출생아 나우캐스트(8월 기준) ${pct(s.births8m, 1)}.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">예측 성적표 · 과거 검증 × 실시간 장부</div>
+      <h1>예측은 틀립니다. 얼마나 틀리는지 공개합니다.</h1>
+      <p class="lede">
+        이 사이트의 숫자는 대부분 미래에 대한 추계입니다. 그래서 두 가지 방법으로 스스로를 채점합니다.
+        <strong>과거 검증</strong>은 과거 시점의 자료만 가지고 같은 계산을 다시 돌려 그 뒤 실제와 비교하는 것이고,
+        <strong>실시간 장부</strong>는 자료를 갱신할 때마다 아직 오지 않은 해의 예측을 적어 두었다가 실측이 나오면 자동으로 채점하는 것입니다. 장부는 <a href="https://github.com/geniuskey/stats/commits/main/src/data/track.json">git 이력</a>에 남아 나중에 고칠 수 없습니다.
+      </p>
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label="시군구 인구, 1년 뒤" value={pct(s.pop1y, 1)} note={`평균 절대오차 (${pb.groups.total["1"].n}개 시군구)`} />
+      <Stat label={`시군구 인구, ${s.popEndH}년 뒤`} value={pct(s.popEnd, 1)} note={`"그대로" 가정 ${pct(s.popNaiveEnd, 1)}`} />
+      <Stat label="초등학생, 6년 뒤" value={pct(s.school6y, 1)} note="시군구 평균 절대오차" />
+      <Stat label="올해 출생아, 8월 기준" value={pct(s.births8m, 1)} note={`내년 출생아 ${pct(s.lag, 1)} (그대로 ${pct(s.lagNaive, 1)})`} />
+    </div>
+
+    <section class="section">
+      <h2>실시간 장부</h2>
+      <p class="section-desc">
+        지금까지 {ledger.length}건을 적었고, 이 중 {graded.length}건이 채점됐습니다{s.withRange ? ` (범위 안에 든 것 ${s.hits}/${s.withRange}건)` : ""}.
+        {graded.length === 0 && " 장부는 이번에 처음 시작했습니다. 첫 채점은 연말 인구와 연간 출생 통계가 확정되는 내년 초입니다."}
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>예측 대상</th><th>근거 자료</th><th>적은 날</th><th class="num">예측</th><th class="num">범위</th><th class="num">실측</th><th class="num">오차</th></tr></thead>
+          <tbody>
+            {[...pending, ...graded.slice().reverse()].map((e) => (
+              <tr>
+                <td><a href={`${base}${modHref[e.module] ?? ""}`}>{modTitle[e.module] ?? e.module}</a> · {e.label}</td>
+                <td>{e.basis}</td>
+                <td>{e.made}</td>
+                <td class="num">{fmtV(e, e.pred)}</td>
+                <td class="num">{e.lo != null && e.lo !== e.hi ? `${fmtV(e, e.lo)}~${fmtV(e, e.hi)}` : "–"}</td>
+                <td class="num">{e.actual != null ? fmtV(e, e.actual) : "채점 대기"}</td>
+                <td class="num">{e.err != null ? `${pct(e.err, 1, true)}${e.hit === true ? " ✓" : e.hit === false ? " ✗" : ""}` : "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>인구 추계 엔진: {pb.base}년에서 출발했다면</h2>
+      <p class="section-desc">우리 동네·학교·상권·의료·대학 모듈이 모두 쓰는 시군구 인구 추계 엔진을 {pb.base}년 말 인구만 가지고 돌려, {pb.base + 1}~{pb.end}년 실제 주민등록 인구와 비교했습니다. 코로나19와 신도시 입주가 겹친 시기라 쉬운 시험은 아닙니다.</p>
+      <div class="grid grid-2">
+        <Chart spec={popSpec} table={popTable} title="예측 기간별 시군구 평균 오차" sub={`|예측 ÷ 실제 − 1|의 ${pb.groups.total["1"].n}개 시군구 평균`} />
+        <div class="card">
+          <h3 class="card-title">무엇이 맞고 무엇이 틀렸나</h3>
+          <ul class="small">
+            <li><strong>65세 이상은 잘 맞습니다</strong> ({pb.end}년 오차 {pct(pb.groups.old[String(pb.end - pb.base)].mae, 1)}). 이미 태어난 사람들이 나이 드는 것이라 사망과 이동만 맞히면 됩니다.</li>
+            <li><strong>0~9세는 크게 틀립니다</strong> ({pct(pb.groups.kids[String(pb.end - pb.base)].mae, 1)}). 이 시험은 출산율을 {pb.base}년 수준에 고정했는데 실제 출생은 2023년까지 더 줄었다가 반등했습니다. 그래서 실제 추계는 출산율 시나리오를 범위로 보여 줍니다.</li>
+            <li><strong>총인구</strong>는 {pb.end - pb.base}년 뒤 오차가 {pct(pb.groups.total[String(pb.end - pb.base)].mae, 1)}로, 그대로 가정({pct(pb.naive[String(pb.end - pb.base)].mae, 1)})보다 작습니다.</li>
+          </ul>
+          <h3 class="card-title" style="margin-top:16px">가장 크게 틀린 곳</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>시군구</th><th class="num">{pb.end} 예측</th><th class="num">실제</th><th class="num">오차</th></tr></thead>
+              <tbody>{pb.worst.slice(0, 6).map((r: any) => <tr><td>{r.name}</td><td class="num">{int(r.pred)}</td><td class="num">{int(r.actual)}</td><td class="num">{pct(r.err, 1, true)}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <p class="small muted" style="margin-top:8px">대부분 대규모 택지 입주나 개발이 끝나 인구 흐름이 갑자기 바뀐 곳입니다. 코호트 변화율법은 과거 추세를 연장하므로 이런 전환점을 미리 알 수 없습니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>모듈별 과거 검증</h2>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title"><a href={`${base}school/`}>학교</a>: 시군구 초등학생</h3>
+          <p class="card-sub">{d.cards[0]?.what}</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>예측 기간</th><th class="num">평균 오차</th><th class="num">중앙값</th></tr></thead>
+              <tbody>{Object.keys(d.cards[0].mae).map((h) => <tr><td>{h}년 뒤</td><td class="num">{pct(d.cards[0].mae[h], 1)}</td><td class="num">{pct(d.cards[0].median[h], 1)}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3 class="card-title"><a href={`${base}births/`}>출생</a>: 몇 월까지 알면 얼마나 정확한가</h3>
+          <p class="card-sub">1995년 이후 해마다 그해 M월까지 자료로 연간 출생아 추정, 최근 20년 평균 오차</p>
+          <Chart spec={btSpec} />
+        </div>
+        <div class="card">
+          <h3 class="card-title"><a href={`${base}births/`}>출생</a>: 내년 출생아 (혼인 시차 모형)</h3>
+          <p class="card-sub">해마다 전년까지 자료로만 모형을 적합해 1년 앞을 예측. 평균 오차 {pct(b.lagMae, 1)}, "작년과 같다" {pct(b.naiveMae, 1)}</p>
+          <div class="table-wrap" style="max-height:300px">
+            <table>
+              <thead><tr><th>연도</th><th class="num">예측</th><th class="num">실제</th><th class="num">오차</th><th class="num">그대로</th></tr></thead>
+              <tbody>{(b.lag as any[]).slice().reverse().map((r) => <tr><td>{r.year}</td><td class="num">{int(r.pred)}</td><td class="num">{int(r.actual)}</td><td class="num">{pct(r.err, 1, true)}</td><td class="num">{pct(r.naiveErr, 1, true)}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3 class="card-title"><a href={`${base}univ/`}>대학</a>: 줄어드는 학생이 어디서 빠지나</h3>
+          <p class="card-sub">탄력성 모형으로 시도별 입학자를 배분했을 때 시도 평균 오차</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>추정 → 예측</th><th class="num">전국 변화</th><th class="num">이 모형</th><th class="num">모두 같은 비율</th></tr></thead>
+              <tbody>{(d.univ as any[]).map((u) => <tr><td>{u.fitEnd} → {u.target}</td><td class="num">{pct(u.natChange, 1, true)}</td><td class="num">{pct(u.mae, 1)}</td><td class="num">{pct(u.naiveMae, 1)}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {off?.length > 0 && (
+      <section class="section">
+        <h2>참고: 공식 추계도 틀립니다</h2>
+        <p class="section-desc">통계청 장래인구추계(2022년 기준)가 내놓은 출생아 수와 실제. 이 사이트의 인구 추계는 공식 시나리오의 변화 방향만 빌리고 출발점은 최신 실제 출생 수준에 맞춥니다.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>연도</th><th class="num">실제</th><th class="num">공식 저위</th><th class="num">공식 중위</th><th class="num">공식 고위</th><th class="num">중위 오차</th></tr></thead>
+            <tbody>{off.map((r) => <tr><td>{r.year}</td><td class="num">{int(r.actual)}</td><td class="num">{int(r.low)}</td><td class="num">{int(r.mid)}</td><td class="num">{int(r.high)}</td><td class="num">{pct(r.errMid, 1, true)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </section>
+    )}
+
+    <section class="section card method" id="method">
+      <h2>채점 방법</h2>
+      <ul>
+        <li><strong>오차</strong> = 예측 ÷ 실제 − 1. 평균은 부호를 뗀 절대오차의 평균입니다.</li>
+        <li><strong>과거 검증</strong>은 계산 시점 이후의 자료를 쓰지 않습니다. 다만 방법 자체는 지금 정한 것이라, 그 시점에 실제로 이렇게 예측했다는 뜻은 아닙니다. 이 한계를 메우는 것이 실시간 장부입니다.</li>
+        <li><strong>실시간 장부</strong>: 자료를 갱신할 때 근거 자료가 새로 나왔으면 새 줄을 적습니다(같은 근거로는 한 번만). 실측은 출생(인구동향 연간 확정), 인구(주민등록 연말), 초등학생(교육기본통계), 대학 입학자(교육기본통계)가 나오는 대로 채웁니다.</li>
+        <li>범위가 있는 예측은 실측이 범위 안이면 ✓, 밖이면 ✗로 표시합니다.</li>
+      </ul>
+      <h3>데이터 출처</h3>
+      <ul>{d.meta.sources.map((x: string) => <li>{x}</li>)}</ul>
+    </section>
+  </div>
+</Base>
