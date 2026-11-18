@@ -13,3 +13,10 @@ export const SERVICES = [
   { slug: "retire", title: "은퇴 후 대한민국", short: "은퇴", desc: "은퇴 후 생활비와 자금 시나리오", combo: ["기대수명", "연금", "물가", "가계지출"] },
   { slug: "track", title: "예측 성적표", short: "성적표", desc: "이 사이트의 예측이 얼마나 맞았는지: 과거 검증과 실시간 채점", combo: ["백테스트", "실시간 장부", "공식 추계 비교"] },
 ] as const;
+
+// 상단 메뉴 묶음 (성적표는 방법론 옆 고정 링크)
+export const NAV_GROUPS = [
+  { title: "인구와 지역", slugs: ["korea", "births", "dongne", "commerce"] },
+  { title: "교육·의료", slugs: ["school", "univ", "care"] },
+  { title: "살림과 일", slugs: ["me", "wage", "housing", "retire", "industry"] },
+] as const;

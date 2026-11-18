@@ -1,6 +1,6 @@
 ---
 import "../styles/global.css";
-import { SERVICES } from "../lib/nav";
+import { SERVICES, NAV_GROUPS } from "../lib/nav";
 import { ogKey } from "../lib/og";
 import updated from "../data/updated.json";
 interface Props {
@@ -70,10 +70,32 @@ const ld = title === "홈"
           <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="13" width="4" height="9" rx="1.5" fill="var(--series-1)"></rect><rect x="10" y="8" width="4" height="14" rx="1.5" fill="var(--series-1)" opacity="0.7"></rect><path d="M17 3 L22 3 L22 8" fill="none" stroke="var(--series-2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M14 11 L22 3" fill="none" stroke="var(--series-2)" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3 2.4"></path></svg>
           숫자 너머
         </a>
-        <nav class="nav" aria-label="서비스">
-          {SERVICES.map((s) => <a href={`${base}${s.slug}/`} aria-current={active === s.slug ? "page" : undefined}>{s.short}</a>)}
-          <a href={`${base}methodology/`} aria-current={active === "methodology" ? "page" : undefined}>방법론</a>
+        <nav class="nav" id="site-nav" aria-label="서비스">
+          {NAV_GROUPS.map((g) => {
+            const items = g.slugs.map((sl) => SERVICES.find((s) => s.slug === sl)!);
+            const here = items.some((s) => s.slug === active);
+            return (
+              <details class="nav-group" data-nav-group>
+                <summary class={here ? "is-here" : undefined}>{g.title}<svg class="nav-caret" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg></summary>
+                <div class="nav-panel">
+                  {items.map((s) => (
+                    <a href={`${base}${s.slug}/`} aria-current={active === s.slug ? "page" : undefined}>
+                      <span class="nav-item-title">{s.title}</span>
+                      <span class="nav-item-desc">{s.desc}</span>
+                    </a>
+                  ))}
+                </div>
+              </details>
+            );
+          })}
+          <span class="nav-sep" aria-hidden="true"></span>
+          <a class="nav-link" href={`${base}track/`} aria-current={active === "track" ? "page" : undefined}>성적표</a>
+          <a class="nav-link" href={`${base}methodology/`} aria-current={active === "methodology" ? "page" : undefined}>방법론</a>
         </nav>
+        <button class="menu-btn" type="button" aria-controls="site-nav" aria-expanded="false" id="menu-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+          메뉴
+        </button>
         <button class="theme-btn" type="button" aria-label="다크 모드 전환" id="theme-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
         </button>
@@ -104,6 +126,39 @@ const ld = title === "홈"
         try {
           localStorage.setItem("theme", root.dataset.theme);
         } catch (e) {}
+      });
+      // 상단 메뉴: 묶음은 하나만 열고, 바깥을 누르거나 Esc면 닫는다. 좁은 화면은 '메뉴' 버튼으로 전체를 펼친다.
+      const header = document.querySelector<HTMLElement>(".site-header")!;
+      const groups = [...document.querySelectorAll<HTMLDetailsElement>("[data-nav-group]")];
+      const menuBtn = document.getElementById("menu-btn")!;
+      const narrow = matchMedia("(max-width: 860px)");
+      const closeGroups = (except?: HTMLDetailsElement) => groups.forEach((g) => g !== except && (g.open = false));
+      const setMenu = (on: boolean) => {
+        header.classList.toggle("menu-open", on);
+        menuBtn.setAttribute("aria-expanded", String(on));
+        groups.forEach((g) => (g.open = on));
+      };
+      groups.forEach((g) => {
+        g.addEventListener("toggle", () => {
+          if (g.open && !narrow.matches) closeGroups(g);
+        });
+        g.querySelector("summary")!.addEventListener("click", (e) => {
+          if (narrow.matches) e.preventDefault(); // 모바일 패널에서는 묶음을 항상 펼쳐 둔다
+        });
+      });
+      menuBtn.addEventListener("click", () => setMenu(!header.classList.contains("menu-open")));
+      narrow.addEventListener("change", () => setMenu(false));
+      document.addEventListener("click", (e) => {
+        if (!header.contains(e.target as Node)) {
+          closeGroups();
+          if (header.classList.contains("menu-open")) setMenu(false);
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          closeGroups();
+          setMenu(false);
+        }
       });
       autoMount();
       autoMountMaps();
