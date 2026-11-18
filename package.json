@@ -9,6 +9,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "etl": "cd etl && uv run --python 3.12 python run_all.py",
+    "validate": "python3 etl/validate.py",
     "check": "astro check"
   },
   "dependencies": {

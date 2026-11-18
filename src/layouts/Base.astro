@@ -2,6 +2,7 @@
 import "../styles/global.css";
 import { SERVICES } from "../lib/nav";
 import { ogKey } from "../lib/og";
+import updated from "../data/updated.json";
 interface Props {
   title: string;
   description?: string;
@@ -87,6 +88,7 @@ const ld = title === "홈"
           데이터: 통계청 KOSIS 국가통계포털 OpenAPI(행정안전부, 교육부, 고용노동부, 한국부동산원, 한국은행 등 작성기관 자료). 공공누리 제1유형 출처표시.
           이 사이트의 추계·지표는 공공 통계를 결합해 독자적으로 계산한 값이며 국가승인통계가 아닙니다.
         </p>
+        <p>자료 갱신 <time datetime={updated.updated}>{updated.updated}</time> · 매월 2회 KOSIS 최신 자료를 받아 검증한 뒤 반영합니다.</p>
         <p><a href={`${base}methodology/`}>방법론과 한계</a> · <a href="https://github.com/geniuskey/stats">소스 코드</a></p>
       </div>
     </footer>

@@ -23,6 +23,7 @@ etl/            Python(표준 라이브러리만) — KOSIS OpenAPI 수집·결�
   pop.py        소지역 인구추계 엔진 (Hamilton-Perry + 출산율 시나리오)
   build_*.py    서비스별 데이터 생성 → src/data/*.json
   run_all.py    전체 실행
+  validate.py   생성 데이터 검증 (범위 규칙 + 직전 버전과 비교)
   geo/          시군구·시도 경계 → src/data/geo.json (SVG 경로, 한 번만 실행)
 src/            Astro 정적 사이트 (SVG 차트·지도 자체 구현, 외부 차트 라이브러리 없음)
 docs/modules/   서비스별 방법론
@@ -49,9 +50,10 @@ docs/modules/   서비스별 방법론
 echo "KOSIS_API_KEY=발급받은키" > .env    # https://kosis.kr/openapi/
 npm install
 npm run etl          # 데이터 생성 (uv 필요, 또는: cd etl && python3 run_all.py)
+npm run validate     # 생성 결과를 git HEAD와 비교해 검증
 npm run dev
 ```
 
-배포: `main`에 푸시하면 GitHub Actions가 빌드해 GitHub Pages(stats.euiyun.com)에 배포합니다. 매월 2회 KOSIS 데이터를 자동으로 다시 받아 재계산합니다(저장소 Secret `KOSIS_API_KEY` 필요).
+배포: `main`에 푸시하면 GitHub Actions가 빌드해 GitHub Pages(stats.euiyun.com)에 배포합니다. 매월 2회 KOSIS 데이터를 자동으로 다시 받아 재계산합니다(저장소 Secret `KOSIS_API_KEY` 필요). 재계산 결과는 `etl/validate.py`가 지역 수·핵심 지표 범위·직전 버전 대비 변화를 확인하고, 하나라도 어긋나면 커밋·배포하지 않고 실패로 끝납니다(사이트는 직전 데이터 유지). 정상적인 큰 변화(기준연도 교체 등)라면 Actions에서 `refresh`와 `skip_validation`을 켜고 수동 실행합니다.
 
 데이터 출처: 통계청 KOSIS 국가통계포털(공공누리 제1유형). 이 사이트의 결합 지표·추계는 국가승인통계가 아닙니다.
