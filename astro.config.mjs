@@ -8,5 +8,5 @@ export default defineConfig({
   outDir: process.env.OUT_DIR || "./dist",
   cacheDir: process.env.CACHE_DIR || "./node_modules/.astro",
   build: { format: "directory" },
-  integrations: [sitemap({ lastmod: new Date() })],
+  integrations: [sitemap()],
 });

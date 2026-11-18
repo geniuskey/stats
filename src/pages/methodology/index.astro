@@ -4,8 +4,11 @@ import { SERVICES } from "../../lib/nav";
 const docs = import.meta.glob("../../../docs/modules/*.md", { eager: true }) as Record<string, any>;
 const bySlug = Object.fromEntries(Object.entries(docs).map(([p, m]) => [p.split("/").pop()!.replace(".md", ""), m]));
 const base = import.meta.env.BASE_URL;
+// 모듈 문서는 GitHub 에서 단독으로 읽히도록 # 제목을 쓰지만, 이 페이지 안에서는 섹션이므로 한 단계씩 내린다(# → h2)
+const demote = (html: string) => html.replace(/<(\/?)h([1-5])\b/g, (_, slash, n) => `<${slash}h${+n + 1}`);
+const html = Object.fromEntries(await Promise.all(Object.entries(bySlug).map(async ([k, m]) => [k, demote(await m.compiledContent())])));
 ---
-<Base title="방법론과 한계" active="methodology" description="숫자 너머의 데이터 수집, 결합, 추계 방법과 한계">
+<Base title="방법론과 한계" active="methodology" description="숫자 너머의 모든 지표가 어떻게 계산되는지 공개합니다. KOSIS OpenAPI 자동 수집, 시군구 지역 표준화, 코호트 요인법 인구 추계, 과거 데이터 검증 오차와 서비스별 한계.">
   <div class="wrap">
     <section class="hero">
       <div class="eyebrow">방법론</div>
@@ -29,7 +32,7 @@ const base = import.meta.env.BASE_URL;
     {SERVICES.map((s) => bySlug[s.slug] && (
       <section class="section card method" id={s.slug}>
         <div class="eyebrow"><a href={`${base}${s.slug}/`}>{s.title} →</a></div>
-        {(() => { const C = bySlug[s.slug].Content; return <C />; })()}
+        <Fragment set:html={html[s.slug]} />
       </section>
     ))}
   </div>

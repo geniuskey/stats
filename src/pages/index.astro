@@ -47,7 +47,7 @@ const sparks: Record<string, { actual: [number, number][]; proj?: [number, numbe
 };
 const cards = HEADLINES;
 ---
-<Base title="홈">
+<Base title="홈" description="통계청 KOSIS 공공 통계를 결합해 시군구 인구 추계, 학령인구와 학교 전망, 실질임금, 주택구입 부담, 상권 활력, 은퇴 자금까지 기존에 없던 지표와 2050년 미래를 계산합니다.">
   <div class="wrap">
     <section class="hero hero-split home-hero">
       <div>
@@ -69,6 +69,7 @@ const cards = HEADLINES;
       </div>
     </section>
 
+    <h2 class="sr-only">서비스</h2>
     <section class="grid grid-2" style="margin-top:8px">
       {SERVICES.map((s) => {
         const sp = sparks[s.slug];
@@ -86,6 +87,7 @@ const cards = HEADLINES;
       })}
     </section>
 
+    <h2 class="sr-only">이렇게 만듭니다</h2>
     <section class="section grid grid-3 how">
       <div class="card reveal">
         <h3 class="card-title">결합</h3>
