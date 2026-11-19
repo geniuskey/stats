@@ -6,6 +6,8 @@ import BarList from "../../components/BarList.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
 import geo from "../../data/geo.json";
 import data from "../../data/housing.json";
+import sggData from "../../data/housing_sgg.json";
+import { dongneNames } from "../../lib/dongneMap";
 import { int, compact, won } from "../../lib/format";
 
 const D = data as any;
@@ -126,6 +128,67 @@ const rateMap = [
 const G = geo as any;
 const calcShapes = Object.entries(G.sido).map(([id, v]: any) => ({ id, d: v.d }));
 
+// ---- 시군구 (국토부 실거래가)
+const S = sggData as any;
+const SR = S.regions as Record<string, any>;
+const SN = S.national;
+const sm = S.meta;
+const ymLabel = (ym: string) => `${ym.slice(0, 4)}년 ${+ym.slice(4)}월`;
+const periodLabel = `${ymLabel(sm.period[0])}~${ymLabel(sm.period[1])}`;
+const sggNames = dongneNames();
+const sggVal = (k: string, f: (v: number) => number = (v) => v) =>
+  Object.fromEntries(Object.entries(SR).map(([id, r]) => [id, r[k] == null ? null : f(r[k])]));
+const sggList = Object.entries(SR).filter(([, r]) => r.burden != null).map(([id, r]) => ({ id, name: sggNames[id], ...r }));
+const byBurden = [...sggList].sort((a, b) => b.burden - a.burden);
+const over30 = sggList.filter((r) => r.burden >= 30).length;
+const under10 = sggList.filter((r) => r.burden < 10).length;
+const sggNotes = Object.fromEntries(Object.entries(SR).map(([id, r]) => [id, r.price84 ? `84㎡ 중위 ${(r.price84 / 1e4).toFixed(1)}억 · 매매 ${int(r.nTrade)}건` : `매매 ${int(r.nTrade)}건 (표본 부족)`]));
+const buyMap = [
+  { key: "burden", label: "주택구입 부담률", format: "pct" as const, kind: "seq" as const, breaks: [0.05, 0.1, 0.15, 0.2, 0.3, 0.45, 0.6], higherIsBetter: false,
+    desc: `84㎡ 중위가격의 ${A.ltv * 100}%를 금리 ${sm.rate.toFixed(2)}%·${A.termYears}년으로 갚을 때 월 상환액 ÷ 시도 가구 월소득.`, values: sggVal("burden", (v) => v / 100) },
+  { key: "pir", label: "PIR", format: "dec1" as const, kind: "seq" as const, breaks: [2, 3, 4, 6, 8, 12, 20], higherIsBetter: false,
+    desc: "84㎡ 중위가격이 시도 가구 연소득의 몇 배인지 (년).", values: sggVal("pir") },
+  { key: "price84", label: "84㎡ 가격", format: "eok" as const, kind: "seq" as const, breaks: [1, 2, 3, 5, 7, 10, 15], higherIsBetter: false,
+    desc: `전용 ${sm.assumptions.areaRange[0]}~${sm.assumptions.areaRange[1]}㎡ 중개거래의 ㎡당 가격 중앙값 × 84㎡ (억원).`, values: sggVal("price84", (v) => v / 1e4) },
+  { key: "volChg", label: "거래량 변화", format: "pctS" as const, kind: "div" as const, breaks: [-0.3, -0.15, -0.05, 0.05, 0.15, 0.3],
+    desc: `매매 건수(해제 제외), ${ymLabel(sm.prevPeriod[0])}~${ymLabel(sm.prevPeriod[1])} 대비.`, values: sggVal("volChg") },
+];
+const rentMap = [
+  { key: "jeonseRatio", label: "전세가율", format: "pct" as const, kind: "seq" as const, breaks: [0.5, 0.6, 0.7, 0.75, 0.8, 0.85], higherIsBetter: false,
+    desc: "같은 단지 안에서 전세 보증금 ÷ 매매가(㎡당 중앙값)의 단지별 중앙값. 높을수록 집값이 조금만 내려도 보증금을 돌려받기 어렵습니다.", values: sggVal("jeonseRatio", (v) => v / 100) },
+  { key: "renewUp", label: "재계약 인상률", format: "pct1S" as const, kind: "div" as const, breaks: [-0.02, -0.001, 0.001, 0.02, 0.04, 0.05],
+    desc: "전세 → 전세 갱신 계약의 보증금 인상률 중앙값. 갱신요구권을 쓰면 5%까지만 올릴 수 있습니다.", values: sggVal("renewUp") },
+  { key: "renewDown", label: "보증금을 내린 재계약", format: "pct" as const, kind: "seq" as const, breaks: [0.01, 0.02, 0.05, 0.1, 0.2, 0.3], higherIsBetter: false,
+    desc: "전세 갱신 계약 중 보증금을 종전보다 낮춘 비율. 역전세의 신호입니다.", values: sggVal("renewDown") },
+  { key: "rrShare", label: "갱신요구권 사용", format: "pct" as const, kind: "seq" as const, breaks: [0.2, 0.3, 0.35, 0.4, 0.45, 0.5],
+    desc: "갱신 계약 중 세입자가 계약갱신요구권을 쓴 비율.", values: sggVal("rrShare") },
+  { key: "wolseShare", label: "월세 비중", format: "pct" as const, kind: "seq" as const, breaks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+    desc: "아파트 전월세 계약 중 월세(보증부 월세 포함) 비율.", values: sggVal("wolseShare") },
+];
+// 월별 추이: 신고 기한이 지나지 않은 달은 뺀다
+const SM = S.monthly;
+const provisional = new Set(sm.monthsProvisional as string[]);
+const ymX = (ym: string) => +ym.slice(0, 4) * 12 + (+ym.slice(4) - 1);
+const monthPts = (k: string) => (SM.months as string[]).map((ym, i) => [ymX(ym), provisional.has(ym) ? null : SM[k][i]] as [number, number | null]).filter((p) => p[1] != null);
+const rentTrendSpec = {
+  type: "line" as const, xFormat: "ym" as const, yFormat: "pct" as const, zeroBased: true, height: 300, legend: true,
+  series: [
+    { name: "보증금을 내린 재계약", color: "var(--series-1)", data: monthPts("renewDown"), label: true },
+    { name: "갱신요구권 사용", color: "var(--series-2)", data: monthPts("rrShare"), label: true },
+    { name: "월세 비중", color: "var(--series-3)", data: monthPts("wolseShare"), label: true },
+  ],
+};
+const tradesSpec = {
+  type: "line" as const, xFormat: "ym" as const, yFormat: "int" as const, zeroBased: true, height: 260,
+  series: [{ name: "아파트 매매 거래", color: "var(--series-1)", data: monthPts("trades"), fill: true }],
+};
+const downPeak = (SM.months as string[]).map((ym, i) => ({ ym, v: SM.renewDown[i] as number | null })).filter((x) => x.v != null && !provisional.has(x.ym)).sort((a, b) => b.v! - a.v!)[0];
+const monthTable = (k: string, f: (v: number) => string) => ({
+  headers: ["월", "전국"],
+  rows: (SM.months as string[]).filter((ym) => !provisional.has(ym)).map((ym) => [ymLabel(ym), SM[k][SM.months.indexOf(ym)] == null ? "–" : f(SM[k][SM.months.indexOf(ym)])]),
+});
+const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${(v * 100).toFixed(d)}%`);
+
 ---
 <Base title="집값을 감당할 수 있을까?" active="housing" description={`소득·주택가격·금리·대출을 결합한 지역별 주택구입 부담률. 서울에서 국민평형 아파트를 사면 월소득의 ${p1(seoul.current.burden)}를 대출 상환에 씁니다.`}>
   <div class="wrap">
@@ -189,6 +252,44 @@ const calcShapes = Object.entries(G.sido).map(([id, v]: any) => ({ id, d: v.d })
           </div>
           <p class="small muted" style="margin-top:10px">도심권: 종로·중구·용산 / 동북권: 성동·광진·동대문·중랑·성북·강북·도봉·노원 / 동남권: 서초·강남·송파·강동 / 서북권: 은평·서대문·마포 / 서남권: 양천·강서·구로·금천·영등포·동작·관악</p>
         </div>
+      </div>
+    </section>
+
+    <section class="section" id="sgg">
+      <h2>시군구로 내려가 보면</h2>
+      <p class="section-desc">
+        국토교통부 아파트 매매 실거래 {int(SN.nTrade)}건({periodLabel})으로 229개 시군구의 국민평형 가격을 다시 계산했습니다.
+        같은 금리·시도 소득을 적용해도 부담률이 30%를 넘는 시군구가 {over30}곳, 10%도 안 되는 곳이 {under10}곳입니다.
+        가장 높은 {byBurden[0].name}는 {p1(byBurden[0].burden)}입니다.
+      </p>
+      <KoreaMap metrics={buyMap} names={sggNames} notes={sggNotes} title="시군구 집값 부담" sub={`${periodLabel} 실거래 · 소득은 시도 평균`} />
+      <p class="small muted" style="margin-top:8px">
+        여기서는 거래 한 건 한 건의 중앙값을 써서, 위 시도 지도(한국부동산원 평균가격)보다 값이 낮게 나옵니다. 비싼 단지 몇 곳이 평균을 끌어올리는 효과가 빠지기 때문입니다.
+        소득은 시군구 자료가 없어 시도 평균을 썼으므로, 같은 시도 안의 차이는 집값 차이입니다. 매매가 {sm.assumptions.minN}건 미만인 곳은 비워 두었습니다.
+      </p>
+      <div style="margin-top:16px">
+        <Chart spec={tradesSpec} title="월별 아파트 매매 거래량" sub={`전국, 해제된 계약 제외 · 신고 기한(30일)이 지나지 않은 최근 달은 뺐습니다`} table={monthTable("trades", (v) => int(v))} />
+      </div>
+    </section>
+
+    <section class="section" id="renewal">
+      <h2>전세 재계약, 보증금은 얼마나 올랐나</h2>
+      <p class="section-desc">
+        2021년 전월세 신고제 이후 실거래에는 갱신 계약 여부, 종전 보증금, 갱신요구권 사용 여부가 함께 기록됩니다.
+        최근 12개월 전세 재계약 {int(SN.nRenew)}건의 보증금 인상률 중앙값은 {pctTxt(SN.renewUp, 1)}입니다.
+        {downPeak && <>역전세가 한창이던 {ymLabel(downPeak.ym)}에는 재계약의 {pctTxt(downPeak.v)}가 보증금을 <strong>내렸습니다</strong>.</>}
+      </p>
+      <div class="grid grid-4">
+        <Stat label="재계약 보증금 인상률 (중앙값)" value={(SN.renewUp * 100).toFixed(1)} unit="%" note={`5% 넘게 올린 계약 ${pctTxt(SN.renewOver5)}`} />
+        <Stat label="보증금을 내린 재계약" value={(SN.renewDown * 100).toFixed(1)} unit="%" note={downPeak ? `정점 ${ymLabel(downPeak.ym)} ${pctTxt(downPeak.v)}` : undefined} />
+        <Stat label="갱신요구권 사용 비율" value={(SN.rrShare * 100).toFixed(0)} unit="%" note="갱신 계약 중" />
+        <Stat label="아파트 전월세 중 월세" value={(SN.wolseShare * 100).toFixed(0)} unit="%" note={`전세가율 ${SN.jeonseRatio.toFixed(0)}% (같은 단지 기준)`} />
+      </div>
+      <div style="margin-top:16px">
+        <Chart spec={rentTrendSpec} title="역전세가 지나간 자리" sub="전국 아파트 전월세 계약, 월별" table={monthTable("renewDown", (v) => pctTxt(v, 1))} />
+      </div>
+      <div style="margin-top:16px">
+        <KoreaMap metrics={rentMap} names={sggNames} title="시군구 전월세 지도" sub={`${periodLabel} 실거래`} />
       </div>
     </section>
 
@@ -325,8 +426,11 @@ PIR = {A.area}㎡ 가격 ÷ 가구 연소득
       <p>실거래 평균가격은 그달 어떤 단지·면적이 거래됐는지에 따라 크게 흔들리므로 12개월 평균을 씁니다. 가계금융복지조사의 소득은 조사 전년도 소득이라 1년 앞당겨 맞췄고, 아직 발표되지 않은 {meta.lastIncomeYear + 1}년 이후 소득은 지역별 최근 3년 연평균 증가율로 연장한 추정치입니다. 금리는 전국 단일 값을 모든 지역에 적용합니다.</p>
       <h3>3. 2030 시나리오</h3>
       <p>집값 3가지(연 −2%, 횡보, {fy}년 이후 지역별 연평균 상승률 지속)와 금리 3가지(−1%p, 유지, +1%p, 2년에 걸쳐 이동)를 조합한 9개 경로를 계산합니다. 미래 집값을 맞히려는 예측이 아니라 조건별 부담 수준을 보여주는 시뮬레이션입니다.</p>
+      <h3>4. 시군구 지표 (국토교통부 실거래가)</h3>
+      <p>국토교통부 아파트 매매·전월세 실거래 자료를 시군구별로 모았습니다({periodLabel}, 신고 기한 30일이 지난 달까지). 84㎡ 가격은 전용 {sm.assumptions.areaRange[0]}~{sm.assumptions.areaRange[1]}㎡ 중개거래(해제·직거래 제외)의 ㎡당 가격 중앙값에 84를 곱했습니다. 부담률·PIR은 위와 같은 식에 시도 가구소득을 넣었습니다. 전세가율은 단지 구성 차이를 없애려고 같은 단지 안에서 전세 보증금과 매매가를 비교한 뒤 단지별 비율의 중앙값을 썼습니다. 재계약 인상률은 종전·이번 계약이 모두 전세인 갱신 계약만 씁니다. 2026년 새로 생긴 전남광주통합특별시 코드와 인천의 새 구(제물포·영종·서해·검단)는 법정동 기준으로 2025년 시군구 경계에 다시 나눴습니다.</p>
       <h3>한계</h3>
       <ul>
+        <li>시군구 부담률은 시도 평균 소득을 써서, 같은 시도 안 소득 차이(예: 강남구와 노원구)는 반영되지 않습니다.</li>
         <li>평균 가구소득 기준이라 무주택 실수요자의 실제 부담은 이보다 클 수 있습니다.</li>
         <li>LTV {A.ltv * 100}%는 단순 가정이며 실제 대출 규제(LTV·DSR)와 개인 조건은 다릅니다.</li>
         <li>거래가 급감한 해(예: 2022년)에는 실거래 평균이 거래 구성 변화로 왜곡됩니다.</li>
@@ -334,7 +438,7 @@ PIR = {A.area}㎡ 가격 ÷ 가구 연소득
       </ul>
       {meta.notes.length > 0 && <ul class="small muted">{meta.notes.map((n: string) => <li>{n}</li>)}</ul>}
       <h3>데이터 출처</h3>
-      <ul>{meta.sources.map((s: string) => <li>{s}</li>)}</ul>
+      <ul>{[...meta.sources, ...sm.sources.slice(0, 2)].map((s: string) => <li>{s}</li>)}</ul>
     </section>
   </div>
 </Base>

@@ -55,6 +55,15 @@ def housing():
 
 
 @module
+def housing_sgg():
+    """국토부 실거래가 결합(시군구). 원자료(data/molit)는 로컬에만 있어 CI에서는 건너뛰고 기존 결과를 유지."""
+    import build_housing_sgg
+    r = build_housing_sgg.build()
+    if r is not None:
+        write("housing_sgg", r)
+
+
+@module
 def industry():
     import build_industry
     write("industry", build_industry.build())

@@ -49,6 +49,8 @@ RULES: dict[str, list[tuple[str, float, float]]] = {
     "school": [("regions", 235, 260), ("backtest.n", 200, 260)],
     "wage": [("regions", 17, 17), ("national", 10, 40), ("industries", 10, 25)],
     "housing": [("regions", 18, 20), ("seoulZones", 5, 5)],
+    "housing_sgg": [("regions", 220, 240), ("national.burden", 5, 60), ("national.jeonseRatio", 40, 100),
+                    ("national.renewUp", -0.1, 0.1), ("national.wolseShare", 0.2, 0.8), ("monthly.months", 24, 120)],
     "industry": [("industries", 20, 30), ("summary.retire10yShare", 0.1, 0.7)],
     "retire": [
         ("headline.lifeExp65Male", 15, 25),

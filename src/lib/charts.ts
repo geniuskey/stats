@@ -33,7 +33,8 @@ export interface LineSpec {
   yMax?: number;
   zeroBased?: boolean;
   height?: number;
-  xFormat?: "year" | "month";
+  /** ym: x = 연*12 + (월-1). 눈금은 해마다 1월, 툴팁은 "2026.03" */
+  xFormat?: "year" | "month" | "ym";
   markers?: { x: number; label: string }[];
   hLines?: { y: number; label: string }[];
   legend?: boolean;
@@ -235,11 +236,12 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
   // x ticks
   const span = x1 - x0;
   const maxTicks = Math.max(2, Math.floor(pw / 64));
-  let step = [1, 2, 5, 10, 20, 25, 50].find((s) => span / s <= maxTicks) ?? 50;
+  const ym = spec.xFormat === "ym";
+  let step = ym ? ([12, 24, 36, 60].find((s) => span / s <= maxTicks) ?? 60) : ([1, 2, 5, 10, 20, 25, 50].find((s) => span / s <= maxTicks) ?? 50);
   const first = Math.ceil(x0 / step) * step;
   for (let x = first; x <= x1; x += step) {
     const tx = el("text", { x: X(x), y: H - 8, "text-anchor": "middle" }, svg);
-    tx.textContent = spec.xFormat === "month" ? `${x}월` : String(x);
+    tx.textContent = spec.xFormat === "month" ? `${x}월` : ym ? String(Math.floor(x / 12)) : String(x);
   }
   el("line", { x1: m.l, x2: m.l + pw, y1: m.t + ph, y2: m.t + ph, class: "axis-line" }, svg);
 
@@ -325,7 +327,8 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
     tt.innerHTML = "";
     const title = document.createElement("div");
     title.className = "tt-title";
-    title.textContent = `${x}${spec.xUnit ?? "년"}${spec.projStart != null && x > spec.projStart ? " (추계)" : ""}`;
+    const xLabel = spec.xFormat === "ym" ? `${Math.floor(x / 12)}.${String((x % 12) + 1).padStart(2, "0")}` : `${x}${spec.xUnit ?? "년"}`;
+    title.textContent = `${xLabel}${spec.projStart != null && x > spec.projStart ? " (추계)" : ""}`;
     tt.appendChild(title);
     let ty = m.t;
     spec.series.forEach((s, i) => {
