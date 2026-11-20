@@ -128,9 +128,16 @@ def build():
     unmapped = defaultdict(int)
     nat_month = {}
     months_all = sorted(set(tm) & set(rm))
+    # 연도별 실적(시군구): 12달이 다 있는 해만
+    years = [y for y in sorted({ym[:4] for ym in complete}) if all(f"{y}{m:02d}" in complete for m in range(1, 13))]
+    y_price = defaultdict(lambda: defaultdict(list))
+    y_sale_c = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    y_jeonse_c = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    y_renew = defaultdict(lambda: defaultdict(list))
 
     for ym in months_all:
         in_win, in_prev = ym in win, ym in prev
+        Y = ym[:4] if ym[:4] in years else None
         m_trades = 0
         m_renew: list[float] = []
         m_rr = [0, 0]
@@ -139,11 +146,19 @@ def build():
             if t.get("cdealType") == "O":
                 continue
             m_trades += 1
-            if not (in_win or in_prev):
+            if not (in_win or in_prev or Y):
                 continue
             rid = to_id(t["_lawd"], t.get("umdNm", ""))
             if rid is None:
                 unmapped[t["_lawd"]] += 1
+                continue
+            if Y and t.get("dealingGbn") != "직거래":
+                a, p = num(t.get("excluUseAr")), num(t.get("dealAmount"))
+                if a and p and AREA_MIN <= a <= AREA_MAX:
+                    y_price[Y][rid].append(p / a)
+                    if t.get("aptSeq"):
+                        y_sale_c[Y][rid][t["aptSeq"]].append(p / a)
+            if not (in_win or in_prev):
                 continue
             vol[rid][0 if in_win else 1] += 1
             if in_win and t.get("dealingGbn") != "직거래":
@@ -167,11 +182,19 @@ def build():
                 if is_jeonse and pd and pd > 0 and pm == 0:
                     ratio = dep / pd
                     m_renew.append(ratio - 1)
-            if not in_win:
+            if not (in_win or Y):
                 continue
             rid = to_id(r["_lawd"], r.get("umdNm", ""))
             if rid is None:
                 unmapped[r["_lawd"]] += 1
+                continue
+            if Y:
+                if ratio is not None:
+                    y_renew[Y][rid].append(ratio - 1)
+                a = num(r.get("excluUseAr"))
+                if is_jeonse and a and AREA_MIN <= a <= AREA_MAX and dep > 0 and r.get("aptSeq"):
+                    y_jeonse_c[Y][rid][r["aptSeq"]].append(dep / a)
+            if not in_win:
                 continue
             wolse[rid][0] += not is_jeonse
             wolse[rid][1] += 1
@@ -235,6 +258,30 @@ def build():
     nat = metrics(allv(price), [sum(v[0] for v in vol.values()), sum(v[1] for v in vol.values())],
                   allv(ratios), allv(renew), [sum(v[0] for v in rr.values()), sum(v[1] for v in rr.values())],
                   [sum(v[0] for v in wolse.values()), sum(v[1] for v in wolse.values())], hreg["00"]["current"]["income"])
+    # 연도별 (실적): 84㎡ 가격·부담률(그해 시도 소득·금리)·전세가율·재계약 인상률. 마지막 칸은 최근 12개월
+    yearly = {"years": [int(y) for y in years], "recent": [win[0], win[-1]], "price84": {}, "burden": {}, "jeonseRatio": {}, "renewUp": {}}
+    for reg in regions:
+        rid, sd = reg["id"], reg["sidoCode"]
+        cols = {k: [] for k in ("price84", "burden", "jeonseRatio", "renewUp")}
+        for Y in years + ["recent"]:
+            if Y == "recent":
+                pr, rn = price[rid], renew[rid]
+                rat = ratios.get(rid, [])
+                inc, rt = hreg.get(sd, {}).get("current", {}).get("income"), rate
+            else:
+                pr, rn = y_price[Y][rid], y_renew[Y][rid]
+                sc, jc = y_sale_c[Y][rid], y_jeonse_c[Y][rid]
+                rat = [median(jc[k]) / median(v) for k, v in sc.items() if k in jc]
+                h = hreg.get(sd, {}).get("hist", {}).get(Y, {})
+                inc, rt = h.get("income"), hreg["00"].get("hist", {}).get(Y, {}).get("rate")
+            p84 = median(pr) * area if len(pr) >= MIN_N else None
+            cols["price84"].append(round(p84) if p84 else None)
+            cols["burden"].append(round(payment(p84 * ltv, rt, term) / (inc / 12) * 100, 1) if p84 and inc and rt else None)
+            cols["jeonseRatio"].append(round(median(rat) * 100, 1) if len(rat) >= MIN_COMPLEX else None)
+            cols["renewUp"].append(round(median(rn), 4) if len(rn) >= MIN_N else None)
+        for k, v in cols.items():
+            yearly[k][rid] = v
+
     have = [k for k, v in out_regions.items() if "burden" in v]
     print(f"  기간 {win[0]}~{win[-1]} · 부담률 있는 시군구 {len(have)}/{len(regions)} · 전국 84㎡ {nat.get('price84')}만원")
 
@@ -254,6 +301,7 @@ def build():
         },
         "national": nat,
         "regions": out_regions,
+        "yearly": yearly,
         "monthly": {"months": months_all, **{k: [nat_month[ym][k] for ym in months_all] for k in ("trades", "renewUp", "renewDown", "rrShare", "wolseShare")}},
     }
 

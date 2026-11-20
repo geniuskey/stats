@@ -159,11 +159,12 @@ def scan_month(args):
                     cap_out_y += y
             if not detail:
                 continue
-            ci, co = row[i_in], row[i_out]
-            dong_in[ci] += n
-            dong_out[co] += n
-            if ci not in dong_name:
-                dong_name[ci] = " ".join(row[j] for j in i_ind_full)
+            if detail == "full":
+                ci, co = row[i_in], row[i_out]
+                dong_in[ci] += n
+                dong_out[co] += n
+                if ci not in dong_name:
+                    dong_name[ci] = " ".join(row[j] for j in i_ind_full)
             if a == b:
                 continue
             flow[(b, a)] += n
@@ -172,6 +173,8 @@ def scan_month(args):
                 fa = flow_age[(b, a)] = [0] * len(AGE_GROUPS)
             for gi, (_, lo, hi) in enumerate(AGE_GROUPS):
                 fa[gi] += sum(ages[lo:min(hi, MAX_AGE) + 1])
+            if detail != "full":
+                continue
             ri, ro = reg_age_in[a], reg_age_out[b]
             for k, v in enumerate(ages):
                 if v:
@@ -190,29 +193,41 @@ def scan_month(args):
                "capIn": cap_in, "capOut": cap_out, "capInY": cap_in_y, "capOutY": cap_out_y,
                "unmapped": dict(unmapped), "regNet": dict(reg_net)}
     det = None
-    if detail:
+    if detail == "flow":
+        det = {"flow": dict(flow), "flowAge": flow_age}
+    elif detail:
         det = {"flow": dict(flow), "flowAge": flow_age, "ageIn": dict(reg_age_in), "ageOut": dict(reg_age_out),
                "capAge": cap_age, "seoulAge": seoul_age,
                "dongIn": dict(dong_in), "dongOut": dict(dong_out), "dongName": dong_name}
     return summary, det
 
 
-FLOWS_OUT = ROOT / "public" / "data" / "move_flows.json"
+FLOWS_DIR = ROOT / "public" / "data"
 MIN_PAIR = 10  # 12개월 이동이 이보다 적은 시군구 쌍은 지도에서 뺀다
 
 
-def write_flows(flow: Counter, flow_age: dict, win: list[str]) -> None:
-    """지도 흐름용 시군구 쌍 집계(12개월): [출발 index, 도착 index, 전체, 연령대별...]. 원자료가 아니라 연간 합계."""
+def write_flows(flow: Counter, flow_age: dict, win: list[str], name: str = "move_flows.json") -> dict:
+    """지도 흐름용 시군구 쌍 집계(12개월): [출발 index, 도착 index, 전체, 연령대별...]. 원자료가 아니라 연간 합계.
+    net: 시군구별 [전체, 연령대별...] 순이동 (쌍을 거르기 전 전체 합)."""
+    out_path = FLOWS_DIR / name
+    net: dict[str, list[int]] = defaultdict(lambda: [0] * (1 + len(AGE_GROUPS)))
+    for (s, t), n in flow.items():
+        v = [n, *flow_age.get((s, t), [0] * len(AGE_GROUPS))]
+        for i, x in enumerate(v):
+            net[t][i] += x
+            net[s][i] -= x
     ids = sorted({x for k in flow for x in k})
     ix = {r: i for i, r in enumerate(ids)}
     rows = [[ix[s], ix[t], n, *flow_age.get((s, t), [0] * len(AGE_GROUPS))]
             for (s, t), n in sorted(flow.items(), key=lambda x: -x[1]) if n >= MIN_PAIR]
-    FLOWS_OUT.parent.mkdir(parents=True, exist_ok=True)
-    FLOWS_OUT.write_text(json.dumps({
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps({
         "period": [win[0], win[-1]], "ids": ids, "groups": ["all", *[k for k, _, _ in AGE_GROUPS]],
         "ages": {k: [lo, hi] for k, lo, hi in AGE_GROUPS}, "minPair": MIN_PAIR, "rows": rows,
+        "net": dict(net),
     }, separators=(",", ":")))
-    print(f"  → {FLOWS_OUT.relative_to(ROOT)} ({len(rows):,}쌍, {FLOWS_OUT.stat().st_size // 1024} KB)")
+    print(f"  → {out_path.relative_to(ROOT)} ({len(rows):,}쌍, {out_path.stat().st_size // 1024} KB)")
+    return {"period": [win[0], win[-1]], "file": name}
 
 
 def build():
@@ -237,7 +252,9 @@ def build():
     pop = {r["id"]: r["series"]["low"][str(base_year)]["total"] for r in regs}
     names = {r["id"]: (r["sido"], r["name"]) for r in regs}
 
-    jobs = [(ym, ym in win) for ym in months]
+    # 흐름은 달력 연도(12달이 다 있는 해)별로도: 최근 12개월이 아닌 달은 흐름만 센다
+    flow_years = [y for y in sorted({ym[:4] for ym in months}) if all(f"{y}{m:02d}" in months for m in range(1, 13))]
+    jobs = [(ym, "full" if ym in win else ("flow" if ym[:4] in flow_years else "")) for ym in months]
     with ProcessPoolExecutor() as ex:
         results = list(ex.map(scan_month, jobs))
 
@@ -261,7 +278,7 @@ def build():
     dong_out: Counter = Counter()
     dong_name: dict[str, str] = {}
     for s, d in results:
-        if d is None:
+        if d is None or s["ym"] not in win:
             continue
         flow.update(d["flow"])
         for k, arr in d["flowAge"].items():
@@ -360,7 +377,7 @@ def build():
         p = sum(pop[i] for i in ids)
         monthly[g] = [round(sum(s["regNet"].get(i, 0) for i in ids) / p * 1000, 2) for s, _ in results]
 
-    wres = [s for s, d in results if d is not None]
+    wres = [s for s, _ in results if s["ym"] in win]
     nat = {
         "total": sum(s["total"] for s in wres),
         "interSgg": sum(s["interSgg"] for s in wres),
@@ -379,7 +396,19 @@ def build():
         s["pop"] += r["pop"]
     sido_out = {k: {**v, "rate": r1(v["net"] / v["pop"] * 1000)} for k, v in sido.items()}
 
-    write_flows(flow, flow_age, win)
+    flow_windows = []
+    for y in flow_years:
+        fy, fay = Counter(), {}
+        for s, d in results:
+            if d is None or s["ym"][:4] != y:
+                continue
+            fy.update(d["flow"])
+            for k, arr in d["flowAge"].items():
+                t = fay.setdefault(k, [0] * len(AGE_GROUPS))
+                for gi, v in enumerate(arr):
+                    t[gi] += v
+        flow_windows.append({"key": y, "label": f"{y}년", **write_flows(fy, fay, [f"{y}01", f"{y}12"], f"move_flows_{y}.json")})
+    flow_windows.append({"key": "recent", "label": "최근 1년", **write_flows(flow, flow_age, win)})
 
     return {
         "meta": {
@@ -400,6 +429,7 @@ def build():
         "capAge": cap_age,
         "seoulAge": seoul_age,
         "monthly": monthly,
+        "flowWindows": flow_windows,
         "basicIncome": {**bi, "otherGun": len(other_gun),
                         "rate12": {g: round(sum(regions[i]["net"] for i in ids) / sum(pop[i] for i in ids) * 1000, 1) for g, ids in groups.items()},
                         "net12": {g: sum(regions[i]["net"] for i in ids) for g, ids in groups.items()}},

@@ -4,6 +4,7 @@ import school from "../data/school.json";
 import care from "../data/care.json";
 import commerce from "../data/commerce.json";
 import housing from "../data/housing.json";
+import housingSgg from "../data/housing_sgg.json";
 import type { Fmt } from "./format";
 import type { ScaleKind } from "./scale";
 
@@ -23,6 +24,7 @@ export interface TimeMetric {
   start: number; // 처음 보여 줄 연도
   scen: ScenDim[]; // 비어 있으면 시나리오 없음
   unit?: string;
+  yearLabels?: Record<number, string>; // 연도 대신 보여 줄 이름 (예: 최근 12개월)
 }
 
 const DN = dongne as any;
@@ -46,6 +48,11 @@ const scYears = range(2015, SC.meta.projEnd);
 const cmYears = range(2015, 2045);
 const caYears = Object.keys(CA.regions[0].old75).map(Number);
 const hsYears = [...Object.keys(HS.regions.find((r: any) => r.id === "11").hist).map(Number), 2027, 2028, 2029, 2030];
+const HY = (housingSgg as any).yearly;
+const hyYears: number[] = [...HY.years, HY.years[HY.years.length - 1] + 1];
+const hyLabels = { [hyYears[hyYears.length - 1]]: "최근 1년" };
+const hyRecent = `${HY.recent[0].slice(0, 4)}.${HY.recent[0].slice(4)}~${HY.recent[1].slice(0, 4)}.${HY.recent[1].slice(4)}`;
+const NO_PROJ = 9999;
 const hsLast = Math.max(...Object.keys(HS.regions.find((r: any) => r.id === "11").hist).map(Number));
 
 export const TIME_METRICS: TimeMetric[] = [
@@ -63,6 +70,14 @@ export const TIME_METRICS: TimeMetric[] = [
     desc: "돌봄 수요의 중심인 75세 이상 인구. 5년 간격 추계(중위).", level: "sgg", years: caYears, projFrom: caYears[0] + 1, start: caYears[caYears.length - 1], scen: [] },
   { key: "t_cons", group: "학교·돌봄·상권", label: `소비인구 (${by}=100)`, format: "int", kind: "div", mid: 100, breaks: [60, 75, 90, 97, 103, 110, 125],
     desc: "연령별 소비 수준으로 가중한 인구. 동네 상권이 기댈 수요입니다.", level: "sgg", years: cmYears, projFrom: by + 1, start: 2045, scen: [POP_SCEN] },
+  { key: "t_hburden", group: "집값", label: "주택구입 부담률", format: "pct", kind: "seq", breaks: [0.05, 0.1, 0.15, 0.2, 0.3, 0.45, 0.6],
+    desc: `84㎡ 중위가격의 대출 월 상환액 ÷ 시도 평균 가구 월소득 (그해 금리·소득). 국토부 실거래, 마지막 칸은 최근 1년(${hyRecent}).`, level: "sgg", years: hyYears, projFrom: NO_PROJ, start: hyYears[hyYears.length - 1], scen: [], yearLabels: hyLabels },
+  { key: "t_hprice", group: "집값", label: "84㎡ 가격", format: "eok", kind: "seq", breaks: [1, 2, 3, 5, 7, 10, 15],
+    desc: `아파트 ㎡당 중위가격 × 84㎡ (억원), 중개거래·전용 40~135㎡. 마지막 칸은 최근 1년(${hyRecent}).`, level: "sgg", years: hyYears, projFrom: NO_PROJ, start: hyYears[hyYears.length - 1], scen: [], yearLabels: hyLabels },
+  { key: "t_hjeonse", group: "집값", label: "전세가율", format: "pct", kind: "seq", breaks: [0.5, 0.6, 0.7, 0.75, 0.8, 0.85],
+    desc: "같은 단지 안 전세 보증금 ÷ 매매가의 단지별 중앙값. 높을수록 집값이 조금만 내려도 보증금을 돌려받기 어렵습니다.", level: "sgg", years: hyYears, projFrom: NO_PROJ, start: hyYears[hyYears.length - 1], scen: [], yearLabels: hyLabels },
+  { key: "t_hrenew", group: "집값", label: "전세 재계약 인상률", format: "pct1S", kind: "div", breaks: [-0.02, -0.001, 0.001, 0.02, 0.04, 0.05],
+    desc: "전세 갱신 계약의 보증금 인상률 중앙값. 2023년 역전세 때는 내린 곳이 많았습니다.", level: "sgg", years: hyYears, projFrom: NO_PROJ, start: hyYears[hyYears.length - 1], scen: [], yearLabels: hyLabels },
   { key: "t_burden", group: "집값", label: "부담률 전망 (시도)", format: "pct", kind: "seq", breaks: [0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5],
     desc: "84㎡ 평균가의 대출 월 상환액 ÷ 가구 월소득 (시도 단위). 2027년부터는 집값·금리 조건부 시나리오.", level: "sido", years: hsYears, projFrom: hsLast + 1, start: hsLast,
     scen: [
@@ -112,6 +127,12 @@ export function buildFrames() {
         const b = val(by), v = val(y);
         return b && v != null ? (v / b) * 100 : null;
       }); break;
+      case "t_hburden": case "t_hprice": case "t_hjeonse": case "t_hrenew": {
+        const k = { t_hburden: "burden", t_hprice: "price84", t_hjeonse: "jeonseRatio", t_hrenew: "renewUp" }[m.key]!;
+        const div = { burden: 100, price84: 1e4, jeonseRatio: 100, renewUp: 1 }[k]!;
+        series(m, (id, y) => { const v = HY[k][id]?.[hyYears.indexOf(y)]; return v == null ? null : v / div; });
+        break;
+      }
       case "t_burden": series(m, (id, y, s) => {
         const r = hs[id]; if (!r) return null;
         if (r.hist[y]) return r.hist[y].burden / 100;
