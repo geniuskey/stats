@@ -858,7 +858,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   //  - 화살촉·흐르는 점 = 순이동 방향, 점 하나 = UNIT명
   //  - 색 = 고른 지역 기준 순유입(파랑)·순유출(주황)
   const NICE = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
-  const W_MAX = 26, W_MIN = 2;
+  const W_MAX = 12, W_MIN = 1;
   let scale = { max: 1, unit: 100 };
   const rescale = () => {
     const nets = arcs.map(netOf).sort((a, b) => b - a);
@@ -922,20 +922,21 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
         }
         geoms.push({ a, pts, nrm, w: ow });
         const col = colorOfArc(a);
-        const path = (shrink = 0) => {
+        // 양 끝을 지역 중심에서 조금 떼어 여러 선이 한 점에 뭉치지 않게
+        const cut = Math.min(SAMPLES / 4, Math.max(1, Math.round((9 / d) * SAMPLES)));
+        const i0 = cut, iEnd = SAMPLES - cut;
+        const path = (from: number, to: number) => {
           cx.beginPath();
-          const last = SAMPLES - shrink;
-          for (let i = 0; i <= last; i++) i ? cx.lineTo(pts[i][0], pts[i][1]) : cx.moveTo(pts[i][0], pts[i][1]);
+          for (let i = from; i <= to; i++) i > from ? cx.lineTo(pts[i][0], pts[i][1]) : cx.moveTo(pts[i][0], pts[i][1]);
         };
         cx.lineCap = "round"; cx.lineJoin = "round";
-        path(); cx.strokeStyle = rgba(colors.halo, 0.7); cx.lineWidth = ow + 2.5; cx.stroke();
-        path(); cx.strokeStyle = rgba(col, 0.22); cx.lineWidth = ow; cx.stroke();
+        path(i0, iEnd); cx.strokeStyle = rgba(col, 0.16); cx.lineWidth = ow; cx.stroke();
         if (iw > 0) {
           cx.lineCap = "butt";
-          path(1); cx.strokeStyle = rgba(col, 0.92); cx.lineWidth = iw; cx.stroke();
+          path(i0, iEnd - 1); cx.strokeStyle = rgba(col, 0.85); cx.lineWidth = iw; cx.stroke();
           // 화살촉: 순이동 방향
-          const [ex, ey] = pts[SAMPLES], [bx, by] = pts[SAMPLES - 1];
-          const ang = Math.atan2(ey - by, ex - bx), ah = Math.max(7, iw * 0.9 + 5), sw = Math.max(0.5, Math.min(0.75, iw / ah));
+          const [ex, ey] = pts[iEnd], [bx, by] = pts[iEnd - 1];
+          const ang = Math.atan2(ey - by, ex - bx), ah = Math.max(6, iw * 1.2 + 4), sw = Math.max(0.45, Math.min(0.7, iw / ah));
           cx.beginPath();
           cx.moveTo(ex, ey);
           cx.lineTo(ex - ah * Math.cos(ang - sw), ey - ah * Math.sin(ang - sw));
@@ -946,14 +947,13 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
             const k = Math.min(150, Math.max(1, Math.round(net / scale.unit)));
             const dur = Math.max(2.6, d / 70);
             for (let j = 0; j < k; j++) {
-              const t = (sec / dur + j / k + hash(j + net) * 0.15) % 0.97;
-              const fi = t * SAMPLES, i0 = Math.floor(fi), f = fi - i0, i1 = Math.min(SAMPLES, i0 + 1);
-              const lat = (hash(j * 7.13 + a.a.length) - 0.5) * iw * 0.7;
-              const x = pts[i0][0] + (pts[i1][0] - pts[i0][0]) * f + nrm[i0][0] * lat;
-              const y = pts[i0][1] + (pts[i1][1] - pts[i0][1]) * f + nrm[i0][1] * lat;
-              cx.beginPath(); cx.arc(x, y, 2.3, 0, Math.PI * 2);
-              cx.fillStyle = colors.halo; cx.fill();
-              cx.strokeStyle = rgba(colors.ink, 0.65); cx.lineWidth = 1; cx.stroke();
+              const t = (sec / dur + j / k + hash(j + net) * 0.15) % 1;
+              const fi = i0 + t * (iEnd - 1 - i0), k0 = Math.floor(fi), f = fi - k0, k1 = Math.min(SAMPLES, k0 + 1);
+              const lat = (hash(j * 7.13 + a.a.length) - 0.5) * iw * 0.5;
+              const x = pts[k0][0] + (pts[k1][0] - pts[k0][0]) * f + nrm[k0][0] * lat;
+              const y = pts[k0][1] + (pts[k1][1] - pts[k0][1]) * f + nrm[k0][1] * lat;
+              cx.beginPath(); cx.arc(x, y, Math.max(1.4, Math.min(2.2, iw * 0.45)), 0, Math.PI * 2);
+              cx.fillStyle = rgba(colors.halo, 0.95); cx.fill();
             }
           }
         }
@@ -965,7 +965,10 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       }
       cx.font = "700 12px Pretendard, 'Apple SD Gothic Neo', sans-serif";
       cx.textAlign = "center"; cx.textBaseline = "middle";
-      for (const [x, y, t, col] of labels) {
+      const placed: [number, number][] = [];
+      for (const [x, y, t, col] of labels.sort((p, q) => Math.abs(parseInt(q[2].replace(/[^0-9]/g, ""))) - Math.abs(parseInt(p[2].replace(/[^0-9]/g, ""))))) {
+        if (placed.some(([px, py]) => Math.abs(px - x) < 40 && Math.abs(py - y) < 15)) continue; // 겹치는 숫자는 큰 것만
+        placed.push([x, y]);
         cx.lineWidth = 3.5; cx.strokeStyle = colors.halo; cx.strokeText(t, x, y);
         cx.fillStyle = selected ? col : colors.ink; cx.fillText(t, x, y);
       }
