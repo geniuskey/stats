@@ -5,6 +5,7 @@ import dongne from "../../data/dongne.json";
 import housingSgg from "../../data/housing_sgg.json";
 import move from "../../data/move.json";
 import { makeBins, type ScaleKind } from "../../lib/scale";
+import { TIME_METRICS, SGG_IDS, SIDO_IDS, type TimeMetric } from "../../lib/mapFrames";
 import type { Fmt } from "../../lib/format";
 
 const base = import.meta.env.BASE_URL;
@@ -24,7 +25,8 @@ const fromRegs = (f: (r: any) => any) => Object.fromEntries(regs.map((r) => [r.i
 const fromObj = (o: Record<string, any>, k: string, div = 1) =>
   Object.fromEntries(regs.map((r) => [r.id, o[r.id]?.[k] == null ? null : r4(o[r.id][k] / div)]));
 
-interface M { key: string; label: string; format: Fmt; kind: ScaleKind; breaks: number[]; mid?: number; desc: string; values: Record<string, number | null> }
+interface M { key: string; label: string; format: Fmt; kind: ScaleKind; breaks: number[]; mid?: number; desc: string; values?: Record<string, number | null>; time?: boolean; level?: string }
+const tm = (key: string): M => ({ ...(TIME_METRICS.find((m) => m.key === key) as TimeMetric), time: true });
 const groups: { title: string; src: string; metrics: M[] }[] = [
   {
     title: "이사 흐름", src: `행안부 전입신고 ${ymLabel(mm.period[0])}~${ymLabel(mm.period[1])}`,
@@ -44,17 +46,16 @@ const groups: { title: string; src: string; metrics: M[] }[] = [
     ],
   },
   {
-    title: "인구", src: `${by}년 주민등록, 추계는 중위`,
+    title: "인구 전망", src: `2015~${end} · ▶로 재생`,
     metrics: [
-      { key: "ch", label: `인구 변화 ${by}→${end}`, format: "pctS", kind: "div", breaks: [-0.3, -0.2, -0.1, -0.05, 0.05, 0.1, 0.2],
-        desc: `${by}년 대비 ${end}년 인구 변화율 (중위 추계).`, values: fromRegs((r) => r.series.mid[end].total / r.series.mid[by].total - 1) },
-      { key: "old", label: "65세 이상 비중", format: "pct", kind: "seq", breaks: [0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45],
-        desc: `${by}년 주민 중 65세 이상 비율.`, values: fromRegs((r) => r.series.mid[by].oldShare) },
-      { key: "ext", label: "소멸위험지수", format: "dec2", kind: "div", mid: 0.5, breaks: [0.2, 0.35, 0.5, 0.75, 1.0, 1.5],
-        desc: "20~39세 여성 ÷ 65세 이상. 0.5 미만이면 소멸위험, 0.2 미만이면 고위험.", values: fromRegs((r) => r.series.mid[by].extinction) },
+      tm("t_pop"), tm("t_old"), tm("t_kid"), tm("t_ext"),
       { key: "idx", label: "지속가능성 지수", format: "dec1", kind: "div", mid: 50, breaks: [30, 40, 45, 50, 55, 60, 70],
         desc: "인구 전망·청년 이동·소멸위험·일자리·빈집을 합친 지수. 50 = 시군구 평균.", values: fromRegs((r) => r.m.index) },
     ],
+  },
+  {
+    title: "학교·돌봄·상권", src: `~${end} 추계`,
+    metrics: [tm("t_school"), tm("t_old75"), tm("t_cons")],
   },
   {
     title: "집값", src: `국토부 실거래 ${ymLabel(hm.period[0])}~${ymLabel(hm.period[1])}`,
@@ -69,6 +70,7 @@ const groups: { title: string; src: string; metrics: M[] }[] = [
         desc: "전세 갱신 계약의 보증금 인상률 중앙값.", values: fromObj(HS, "renewUp") },
       { key: "wolseShare", label: "월세 비중", format: "pct", kind: "seq", breaks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
         desc: "아파트 전월세 계약 중 월세(보증부 월세 포함) 비율.", values: fromObj(HS, "wolseShare") },
+      tm("t_burden"),
     ],
   },
 ];
@@ -78,6 +80,7 @@ const payload = {
   geoSido: `${base}geo/sido.json`,
   geoPts: `${base}geo/sgg_pts.json`,
   flows: `${base}data/move_flows.json`,
+  frames: `${base}map/frames.json`,
   flowPeriod: `${ymLabel(mm.period[0])}~${ymLabel(mm.period[1])}`,
   sidoNames: Object.fromEntries(regs.map((r) => [r.sidoCode, r.sido])),
   moveNet: Object.fromEntries(Object.entries(MV).map(([id, r]: any) => [id, { all: r.net, kids: r.kids, youth: r.youth, mid: r.mid, pre: r.pre, old: r.old }])),
@@ -107,6 +110,14 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       <div id="mp-map" class="map-canvas" role="region" aria-label="대한민국 지도"></div>
       <canvas id="mp-arcs" class="map-arcs" aria-hidden="true"></canvas>
       <div class="map-tip" id="mp-tip" hidden></div>
+      <div class="map-year" id="mp-year" hidden aria-live="polite"><b></b><span></span></div>
+      <div class="map-time" id="mp-time" hidden>
+        <div class="row1">
+          <button type="button" id="mp-play" class="play" aria-label="재생">▶</button>
+          <div class="track"><input type="range" id="mp-range" min="0" max="0" step="1" aria-label="연도" /><div class="ticks" id="mp-ticks"></div></div>
+        </div>
+        <div class="scen" id="mp-scen"></div>
+      </div>
     </div>
   </div>
   <script type="application/json" id="mp-data" set:html={json} />
@@ -180,7 +191,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   :global(.map-legend .row) { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
   :global(.map-legend i) { width: 18px; height: 12px; border-radius: 3px; display: inline-block; }
   :global(.map-legend .title) { font-weight: 600; color: var(--text-primary); font-size: 13px; margin-bottom: 2px; }
-  .map-detail { border-top: 1px solid var(--border, rgba(127, 127, 127, 0.2)); padding-top: 12px; }
+  .map-detail { border: 1px solid var(--border, rgba(127, 127, 127, 0.25)); border-radius: 12px; padding: 12px; background: var(--surface-1); }
   :global(.map-detail h3) { margin: 0 0 8px; font-size: 16px; }
   :global(.map-detail table) { width: 100%; font-size: 13px; border-collapse: collapse; }
   :global(.map-detail td) { padding: 3px 0; }
@@ -202,6 +213,28 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   }
   :global(.map-tip b) { display: block; }
   :global(.maplibregl-ctrl-attrib) { font-size: 11px; }
+  .map-year { position: absolute; left: 16px; top: 12px; z-index: 3; pointer-events: none; line-height: 1; text-shadow: 0 0 6px var(--surface-1), 0 0 2px var(--surface-1); }
+  :global(.map-year b) { display: block; font-size: 44px; font-weight: 800; letter-spacing: -0.02em; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  :global(.map-year span) { display: block; margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  :global(.map-year.proj b) { color: var(--series-2); }
+  .map-time {
+    position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 3;
+    width: min(560px, calc(100% - 32px)); box-sizing: border-box;
+    background: color-mix(in oklab, var(--surface-1) 92%, transparent); backdrop-filter: blur(6px);
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); border-radius: 14px; padding: 10px 14px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.14); display: grid; gap: 8px;
+  }
+  .map-time .row1 { display: flex; align-items: center; gap: 12px; }
+  .map-time .play { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 0; background: var(--text-primary); color: var(--surface-1); font-size: 14px; cursor: pointer; }
+  .map-time .track { flex: 1; position: relative; padding-bottom: 14px; }
+  .map-time input[type="range"] { width: 100%; margin: 0; accent-color: var(--series-2); }
+  :global(.map-time .ticks) { position: absolute; left: 0; right: 0; bottom: 0; height: 12px; font-size: 11px; color: var(--text-muted); }
+  :global(.map-time .ticks span) { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  :global(.map-time .ticks span.proj) { color: var(--series-2); font-weight: 600; }
+  :global(.map-time .scen) { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: var(--text-secondary); }
+  :global(.map-time .scen .mp-chips button) { font-size: 12px; padding: 3px 9px; }
+  :global(.mp-spark) { width: 100%; height: auto; display: block; margin: 6px 0 4px; overflow: visible; }
+  :global(.mp-spark text) { font-size: 10px; fill: var(--text-muted); }
   .map-arcs { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
   .map-flow { display: grid; gap: 12px; }
   :global(.map-flow h3) { margin: 0; font-size: 16px; }
@@ -215,6 +248,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   :global(.map-flow label.toggle) { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
   :global(.map-flow .hint) { margin: 0; font-size: 13px; color: var(--text-muted); }
   @media (max-width: 760px) {
+    .map-year { top: 8px; left: 10px; }
+    :global(.map-year b) { font-size: 30px; }
+    .map-time { bottom: 30px; padding: 8px 10px; }
     .map-page { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
     .map-side { order: 2; border-right: 0; max-height: none; }
     .map-wrap { order: 1; height: 62vh; }
@@ -295,6 +331,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const tip = document.getElementById("mp-tip")!;
   const flowEl = document.getElementById("mp-flow")!;
   groupsEl.firstElementChild?.after(flowEl); // 흐름 패널은 나이 버튼 바로 아래
+  document.querySelector(".map-search")!.after(detailEl); // 고른 지역의 추이는 맨 위에
 
   const renderLegend = () => {
     legendEl.innerHTML = `<div class="title">${cur.label}</div>`;
@@ -315,13 +352,62 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     flowEl.hidden = true;
     if (!id) { detailEl.hidden = true; return; }
     const r = D.regions[id];
-    const rows = groups.map((g) =>
+    const cell = (m: any) => {
+      const v = valOf(m, id);
+      return `${show(m, v)}${m.time ? ` <span class="small muted">${yearOf(m)}</span>` : ""}`;
+    };
+    const rows = groups.filter((g) => !g.metrics.some((m) => FLOW_G[m.key])).map((g) =>
       `<tr><td colspan="2" class="small muted" style="padding-top:8px">${g.title}</td></tr>` +
-      g.metrics.map((m) => `<tr class="${m.key === cur.key ? "on" : ""}"><td>${m.label}</td><td class="num">${show(m, m.values[id])}</td></tr>`).join(""),
+      g.metrics.map((m) => `<tr class="${m.key === cur.key ? "on" : ""}"><td>${m.label}</td><td class="num">${cell(m)}</td></tr>`).join(""),
     ).join("");
-    detailEl.innerHTML = `<h3>${r.n}</h3><p class="small muted" style="margin:0 0 6px">인구 ${int(r.pop)}명</p><table>${rows}</table>
+    const title = cur.level === "sido" ? `${D.sidoNames[id.slice(0, 2)]} <span class="small muted">(시도 지표)</span>` : r.n;
+    detailEl.innerHTML = `<h3>${title}</h3>${cur.time ? sparkHtml(cur, id) : ""}<p class="small muted" style="margin:0 0 6px">인구 ${int(r.pop)}명 · ${r.n}</p><table>${rows}</table>
       <div class="links"><a href="${D.base}dongne/${id}/">동네 전망 →</a><a href="${D.base}housing/#sgg">집값 →</a><a href="${D.base}move/#map">이사 →</a></div>`;
     detailEl.hidden = false;
+  };
+
+  // 지역의 연도별 추이: 실적 실선, 추계 점선, 시나리오 범위는 띠, 지금 보는 연도는 점
+  const sparkHtml = (m: any, id: string) => {
+    const W = 280, H = 96, L = 4, Rr = 40, T = 10, B = 18;
+    const main = seriesOf(m, id, scenKey(m));
+    const keys = allScenKeys(m);
+    const others = keys.length > 1 ? keys.map((k) => seriesOf(m, id, k)) : [];
+    const ys = [...main, ...others.flat()].map((p) => p[1]).filter((v): v is number => v != null);
+    if (!ys.length) return "";
+    let lo = Math.min(...ys), hi = Math.max(...ys);
+    if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+    const y0 = m.years[0], y1 = m.years[m.years.length - 1];
+    const X = (y: number) => L + ((y - y0) / (y1 - y0 || 1)) * (W - L - Rr);
+    const Y = (v: number) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const path = (pts: [number, number | null][]) => pts.filter((p) => p[1] != null).map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]!).toFixed(1)}`).join("");
+    const past = main.filter((p) => p[0] < m.projFrom), fut = main.filter((p) => p[0] >= m.projFrom - 1 && p[0] >= (past.length ? past[past.length - 1][0] : 0));
+    let band = "";
+    if (others.length) {
+      const fy = m.years.filter((y: number) => y >= m.projFrom);
+      const mins = fy.map((y: number) => Math.min(...others.map((s) => s.find((p) => p[0] === y)?.[1] ?? Infinity)));
+      const maxs = fy.map((y: number) => Math.max(...others.map((s) => s.find((p) => p[0] === y)?.[1] ?? -Infinity)));
+      if (fy.length && isFinite(mins[0])) {
+        const lastPast = past[past.length - 1];
+        const top = fy.map((y: number, i: number) => `${X(y).toFixed(1)},${Y(maxs[i]).toFixed(1)}`);
+        const bot = fy.map((y: number, i: number) => `${X(y).toFixed(1)},${Y(mins[i]).toFixed(1)}`).reverse();
+        const start = lastPast?.[1] != null ? [`${X(lastPast[0]).toFixed(1)},${Y(lastPast[1]).toFixed(1)}`] : [];
+        band = `<polygon points="${[...start, ...top, ...bot].join(" ")}" fill="${resolve("var(--series-2)")}" opacity="0.15"/>`;
+      }
+    }
+    const cy = yearOf(m), cv = main.find((p) => p[0] === cy)?.[1];
+    const c1 = resolve("var(--text-primary)"), c2 = resolve("var(--series-2)");
+    const last = main[main.length - 1];
+    return `<svg class="mp-spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="${m.label} 연도별 추이">
+      ${band}
+      <line x1="${X(m.projFrom - 0.5)}" x2="${X(m.projFrom - 0.5)}" y1="${T}" y2="${H - B}" stroke="${c1}" stroke-opacity="0.15"/>
+      <path d="${path(past)}" fill="none" stroke="${c1}" stroke-width="2"/>
+      <path d="${path(fut)}" fill="none" stroke="${c2}" stroke-width="2" stroke-dasharray="4 3"/>
+      ${cv != null ? `<circle cx="${X(cy)}" cy="${Y(cv)}" r="4.5" fill="${cy >= m.projFrom ? c2 : c1}" stroke="${resolve("var(--surface-1)")}" stroke-width="2"/>` : ""}
+      ${last[1] != null ? `<text x="${X(last[0]) + 6}" y="${Y(last[1]) + 3}">${show(m, last[1])}</text>` : ""}
+      <text x="${L}" y="${H - 4}">${y0}</text><text x="${X(m.projFrom)}" y="${H - 4}" text-anchor="middle" fill="${c2}">추계→</text><text x="${W - Rr}" y="${H - 4}" text-anchor="end">${y1}</text>
+    </svg>
+    <p class="small" style="margin:0 0 4px"><strong>${cy}년 ${show(m, cv)}</strong>${others.length ? ` · 띠는 시나리오 범위` : ""}</p>`;
   };
 
   // ---- 지도
@@ -344,7 +430,38 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const ATTR = '경계 통계청 SGIS, <a href="https://github.com/vuski/admdongkor" target="_blank" rel="noopener">vuski/admdongkor</a> (CC BY 4.0)' + (D.key ? ' · 검색 <a href="https://www.vworld.kr" target="_blank" rel="noopener">브이월드</a>' : "");
   const KO = ["coalesce", ["get", "name:ko"], ["get", "name"]];
   const styleCache: Record<string, any> = {};
-  const [geo, sidoGeo] = await Promise.all([fetch(D.geo).then((r) => r.json()), fetch(D.geoSido).then((r) => r.json())]);
+  const [geo, sidoGeo, FR] = await Promise.all([fetch(D.geo).then((r) => r.json()), fetch(D.geoSido).then((r) => r.json()), fetch(D.frames).then((r) => r.json())]);
+
+  // ---- 연도·시나리오: 시간 지표는 (연도, 시나리오)마다 값이 다르다
+  const yearSel: Record<string, number> = {};
+  const scenSel: Record<string, string> = {};
+  const scenKey = (m: any) => (m.scen?.length ? m.scen.map((d: any) => scenSel[d.id] ?? d.def).join("|") : "_");
+  const yearOf = (m: any) => yearSel[m.key] ?? m.start;
+  const rowOf = (m: any, y: number, sk = scenKey(m)) => {
+    const f = FR.metrics[m.key];
+    if (y < m.projFrom) return f.actual[m.years.filter((x: number) => x < m.projFrom).indexOf(y)];
+    return f.proj[sk]?.[m.years.filter((x: number) => x >= m.projFrom).indexOf(y)];
+  };
+  const vcache = new Map<string, Record<string, number | null>>();
+  const vals = (m: any): Record<string, number | null> => {
+    if (!m.time) return m.values;
+    const k = `${m.key}:${yearOf(m)}:${scenKey(m)}`;
+    let v = vcache.get(k);
+    if (!v) {
+      const ids: string[] = m.level === "sido" ? FR.sido : FR.sgg, row = rowOf(m, yearOf(m)) ?? [];
+      v = Object.fromEntries(ids.map((id, i) => [id, row[i] ?? null]));
+      vcache.set(k, v);
+    }
+    return v;
+  };
+  /** 시군구 id 기준 값 (시도 지표는 그 시도의 값) */
+  const valOf = (m: any, id: string) => (m.level === "sido" ? vals(m)[id.slice(0, 2)] : vals(m)[id]);
+  /** 한 지역의 연도별 값: [연도, 값][] (시나리오 키 지정) */
+  const seriesOf = (m: any, id: string, sk: string) => {
+    const ids: string[] = m.level === "sido" ? FR.sido : FR.sgg, i = ids.indexOf(m.level === "sido" ? id.slice(0, 2) : id);
+    return m.years.map((y: number) => [y, rowOf(m, y, sk)?.[i] ?? null] as [number, number | null]);
+  };
+  const allScenKeys = (m: any): string[] => (m.scen?.length ? m.scen.reduce((acc: string[], d: any) => acc.flatMap((a) => d.options.map((o: any) => (a ? `${a}|${o.v}` : o.v))), [""]) : ["_"]);
   const lineColor = () => (isDark() ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.9)");
 
   const fillOpacity = () => (isFlow()
@@ -355,7 +472,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const colors = cur.bins.map((b) => resolve(b.color));
     const none = resolve(NODATA);
     for (const id of Object.keys(D.regions)) {
-      const i = binIdx(cur.bins, cur.values[id]);
+      const i = binIdx(cur.bins, valOf(cur, id));
       expr.push(id, i < 0 ? none : colors[i]);
     }
     expr.push(none);
@@ -427,9 +544,12 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     if (!map.getLayer("sgg-fill")) return;
     map.setPaintProperty("sgg-fill", "fill-color", fillColor());
     map.setPaintProperty("sgg-fill", "fill-opacity", fillOpacity());
+    map.setPaintProperty("sgg-line", "line-opacity", cur.level === "sido" ? 0 : 1);
+    map.setPaintProperty("sido-line", "line-width", cur.level === "sido" ? ["interpolate", ["linear"], ["zoom"], 6, 1.4, 10, 2.4] : ["interpolate", ["linear"], ["zoom"], 6, 0.8, 10, 1.8]);
   };
 
   function setMetric(key: string) {
+    stopPlay();
     cur = byKey[key];
     const u = new URL(location.href);
     u.searchParams.set("m", key);
@@ -437,6 +557,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     renderLegend();
     paint();
     renderDetail(selected);
+    renderTime();
     updateArcs();
   }
 
@@ -588,7 +709,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     } else {
       const { ins, outs } = partners(id);
       const net = D.moveNet[id]?.[g] ?? 0;
-      const rate = cur.values[id];
+      const rate = valOf(cur, id);
       flowEl.innerHTML = `
         <h3>${D.regions[id].n}</h3>
         <p class="sum">${gl} 순이동 <strong>${net > 0 ? "+" : ""}${fmtN(net)}명</strong>${rate != null ? ` (인구 1천 명당 ${rate > 0 ? "+" : ""}${rate.toFixed(1)})` : ""} · ${D.flowPeriod}</p>
@@ -609,10 +730,11 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       return `${head}${sn}에서 옴 ${fmtN(ba)}명 · ${sn}로 감 ${fmtN(ab)}명 <span style="opacity:.7">(${G_LABEL[FLOW_G[cur.key]]})</span>`;
     }
     if (isFlow()) {
-      const g = FLOW_G[cur.key], net = D.moveNet[id]?.[g] ?? 0, v = cur.values[id];
+      const g = FLOW_G[cur.key], net = D.moveNet[id]?.[g] ?? 0, v = valOf(cur, id);
       return `${head}${G_LABEL[g]} 순이동 ${net > 0 ? "+" : ""}${fmtN(net)}명${v != null ? ` <span style="opacity:.7">(1천 명당 ${v > 0 ? "+" : ""}${v.toFixed(1)})</span>` : ""}`;
     }
-    return `${head}${cur.label} ${show(cur, cur.values[id])}`;
+    if (cur.level === "sido") return `<b>${D.sidoNames[id.slice(0, 2)]}</b>${cur.label} ${show(cur, valOf(cur, id))}${cur.time ? ` <span style="opacity:.7">${yearOf(cur)}</span>` : ""}`;
+    return `${head}${cur.label} ${show(cur, valOf(cur, id))}${cur.time ? ` <span style="opacity:.7">${yearOf(cur)}</span>` : ""}`;
   };
 
   const IN_C = "var(--series-1)";
@@ -675,6 +797,59 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
+
+
+  // ---- 연도 슬라이더·재생·시나리오
+  const timeEl = document.getElementById("mp-time")!;
+  const yearEl = document.getElementById("mp-year")!;
+  const rangeEl = document.getElementById("mp-range") as HTMLInputElement;
+  const playEl = document.getElementById("mp-play") as HTMLButtonElement;
+  const ticksEl = document.getElementById("mp-ticks")!;
+  const scenEl = document.getElementById("mp-scen")!;
+  let playTimer = 0;
+  function stopPlay() { clearInterval(playTimer); playTimer = 0; playEl.textContent = "▶"; playEl.setAttribute("aria-label", "재생"); }
+  const setYear = (y: number) => {
+    yearSel[cur.key] = y;
+    paint();
+    renderTime();
+    renderDetail(selected);
+  };
+  function renderTime() {
+    if (!cur.time) { timeEl.hidden = true; yearEl.hidden = true; return; }
+    const ys: number[] = cur.years, y = yearOf(cur), i = ys.indexOf(y);
+    timeEl.hidden = false; yearEl.hidden = false;
+    rangeEl.max = String(ys.length - 1);
+    rangeEl.value = String(i);
+    const pf = ys.findIndex((x) => x >= cur.projFrom);
+    const pct = (k: number) => (ys.length > 1 ? (k / (ys.length - 1)) * 100 : 0);
+    rangeEl.style.background = "";
+    const marks = [0, pf, ys.length - 1].filter((k, j, a) => k >= 0 && a.indexOf(k) === j);
+    ticksEl.innerHTML = marks.map((k) => `<span class="${k === pf ? "proj" : ""}" style="left:${pct(k)}%">${ys[k]}${k === pf ? " 추계" : ""}</span>`).join("");
+    const proj = y >= cur.projFrom;
+    yearEl.classList.toggle("proj", proj);
+    const scenTxt = cur.scen?.length ? cur.scen.map((d: any) => `${d.label} ${d.options.find((o: any) => o.v === (scenSel[d.id] ?? d.def))?.label}`).join(" · ") : "";
+    yearEl.querySelector("b")!.textContent = String(y);
+    yearEl.querySelector("span")!.textContent = `${cur.label} · ${proj ? `추계${scenTxt ? ` (${scenTxt})` : ""}` : "실적"}`;
+    scenEl.innerHTML = (cur.scen ?? []).map((d: any) => `<span>${d.label}</span><div class="mp-chips" role="group" aria-label="${d.label} 시나리오">${d.options.map((o: any) => `<button type="button" data-dim="${d.id}" data-v="${o.v}" aria-pressed="${(scenSel[d.id] ?? d.def) === o.v}">${o.label}</button>`).join("")}</div>`).join("");
+    scenEl.hidden = !cur.scen?.length;
+    scenEl.querySelectorAll<HTMLElement>("button[data-dim]").forEach((b) => b.addEventListener("click", () => {
+      scenSel[b.dataset.dim!] = b.dataset.v!;
+      paint(); renderTime(); renderDetail(selected);
+    }));
+  }
+  rangeEl.addEventListener("input", () => { stopPlay(); setYear(cur.years[+rangeEl.value]); });
+  playEl.addEventListener("click", () => {
+    if (playTimer) { stopPlay(); return; }
+    const ys: number[] = cur.years;
+    if (yearOf(cur) >= ys[ys.length - 1]) setYear(ys[0]);
+    playEl.textContent = "❚❚"; playEl.setAttribute("aria-label", "멈춤");
+    playTimer = window.setInterval(() => {
+      const i = ys.indexOf(yearOf(cur));
+      if (i >= ys.length - 1) { stopPlay(); return; }
+      setYear(ys[i + 1]);
+    }, ys.length > 12 ? 380 : 700);
+  });
+  renderTime();
 
   // 테마가 바뀌면 바탕 지도 스타일째 바꾼다 (선택 상태는 다시 칠한다)
   const retheme = async () => {
