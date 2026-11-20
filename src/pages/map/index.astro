@@ -48,8 +48,8 @@ const groups: { title: string; src: string; metrics: M[] }[] = [
   {
     title: "전국 타임랩스", src: `${ymLabel((move as any).monthly.months[0])}~${ymLabel(mm.last)} · 달마다`,
     metrics: [
-      { key: "lapse", label: "▶ 전국 이사 재생", format: "dec1", kind: "div", breaks: [-10, -5, -2, 2, 5, 10],
-        desc: "매달 시군구를 넘는 이사를 점으로 날립니다. 색은 나이 묶음.", values: fromObj(MV, "rate") },
+      { key: "lapse", label: "▶ 4년, 사람들이 모인 곳", format: "dec1", kind: "div", breaks: [-10, -5, -2, 2, 5, 10],
+        desc: "▶를 누르면 2022년 10월부터 달마다 순이동이 쌓입니다.", values: fromObj(MV, "rate") },
     ],
   },
   {
@@ -922,26 +922,35 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   }
 
 
-  // ---- 전국 이동 타임랩스: 매달 시군구를 넘는 이사를 점(1점 = unit명)으로 출발지 → 도착지에 날린다
+  // ---- 전국 이동 타임랩스 (순이동)
+  //  점 = 두 시군구가 주고받은 걸 서로 빼고 남은 만큼만(1점 = unit명), 원 = 2022.10부터 쌓인 시군구 순이동(파랑 +, 빨강 −)
   const MONTH_MS = 1500;
-  const LG = ["young", "family", "senior"];
-  const LG_LABEL = ["20~34세 청년", "아이 동반 가족 (0~14·35~49세)", "50세 이상"];
-  const LG_VARS = ["var(--series-1)", "var(--series-4)", "var(--series-8)"];
+  const LG_LABEL = ["전체", "20~34세", "아이 동반 가족", "50세 이상"];
+  const LG_DESC = ["모든 나이", "20~34세 청년", "0~14세·35~49세", "50세 이상"];
+  const LG_VARS = ["var(--text-primary)", "var(--series-1)", "var(--series-4)", "var(--series-8)"];
+  let lapseGroup = 0;
   let L: any = null;
   let lapseLoading: Promise<void> | null = null;
   let lapseMonth = 0;
+  let monthStart = 0, monthDur = MONTH_MS;
   let lapseColors: string[] = [];
-  type Dot = { x0: number; y0: number; x1: number; y1: number; t0: number; dur: number; g: number; bend: number };
-  let dots: Dot[][] = [[], [], []]; // 나이 묶음별 (그리기 한 번에 한 색)
-  const clearDots = () => { dots = [[], [], []]; };
-  const anyDots = (now: number) => dots.some((arr) => arr.some((d) => now < d.t0 + d.dur));
+  type Dot = { x0: number; y0: number; x1: number; y1: number; t0: number; dur: number; bend: number };
+  let dots: Dot[] = [];
+  const clearDots = () => { dots = []; };
+  const anyDots = (now: number) => dots.some((d) => now < d.t0 + d.dur);
   const toM = (lng: number, lat: number): [number, number] => [(lng + 180) / 360, (1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2];
-  let jit: Record<string, [number, number, number]> = {}; // id → [mx, my, 흩뿌림 반경(메르카토르)]
+  let jit: Record<string, [number, number, number]> = {};
+  let cum: Float64Array[][] = []; // [묶음][지역] → 달까지 누적 순이동
+  let cumMax: number[] = [];
+  let bigMap = new Map<string, number>();
+  const decode = (ch: string) => { if (ch === "0") return 0; const c = ch.charCodeAt(0); return c >= 97 ? c - 96 : -(c - 64); };
   const loadLapse = () => (lapseLoading ??= (async () => {
     const [l] = await Promise.all([fetch(D.lapse).then((r) => r.json()), loadPts()]);
     L = l;
     lapseMonth = L.months.length - 1;
-    // 시군구마다 대표점과 흩뿌림 반경(경계 상자 짧은 변의 1/4)
+    bigMap = new Map(L.big.map((b: number[]) => [`${b[0]},${b[1]},${b[2]}`, b[3]]));
+    cum = L.net.map((g: number[][]) => g.map((row) => { const c = new Float64Array(row.length); let s = 0; row.forEach((v, i) => (c[i] = s += v)); return c; }));
+    cumMax = cum.map((g) => Math.max(1, ...g.map((c) => Math.max(...Array.from(c).map(Math.abs)))));
     const bb: Record<string, number[]> = {};
     for (const f of geo.features) {
       const b = (bb[f.properties.id] ??= [180, 90, -180, -90]);
@@ -951,96 +960,134 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     jit = Object.fromEntries(Object.entries(P).map(([id, c]) => {
       const b = bb[id] ?? [c[0], c[1], c[0], c[1]];
       const [mx, my] = toM(c[0], c[1]);
-      const r = Math.min(b[2] - b[0], (b[3] - b[1]) * 1.25) / 360 / 4;
-      return [id, [mx, my, Math.max(r, 0.00002)]];
+      return [id, [mx, my, Math.max(Math.min(b[2] - b[0], (b[3] - b[1]) * 1.25) / 360 / 5, 0.00002)]];
     }));
   })());
-  const B36 = "0123456789abcdefghijklmnopqrstuvwxyz";
   function spawnMonth(i: number, start: number) {
     if (!L) return;
-    const sc = (k: number) => { const x = Math.sin(k * 78.233 + start) * 43758.5453; return x - Math.floor(x); };
+    const sc = (k: number) => { const x = Math.sin(k * 78.233 + start * 0.001) * 43758.5453; return x - Math.floor(x); };
     let n = 0;
     for (let p = 0; p < L.pairs.length; p++) {
-      const A = jit[L.ids[L.pairs[p][0]]], B = jit[L.ids[L.pairs[p][1]]];
+      const c = decode(L.dots[p][lapseGroup][i]) || bigMap.get(`${p},${lapseGroup},${i}`) || 0;
+      if (!c) continue;
+      const ia = L.ids[L.pairs[p][0]], ib = L.ids[L.pairs[p][1]];
+      const A = jit[c > 0 ? ia : ib], B = jit[c > 0 ? ib : ia];
       if (!A || !B) continue;
-      for (let g = 0; g < 3; g++) {
-        const c = B36.indexOf(L.dots[p][g][i]);
-        for (let j = 0; j < c; j++) {
-          n++;
-          const a1 = sc(n) * 6.283, r1 = Math.sqrt(sc(n + 0.3)) * A[2], a2 = sc(n + 0.6) * 6.283, r2 = Math.sqrt(sc(n + 0.9)) * B[2];
-          const x0 = A[0] + Math.cos(a1) * r1, y0 = A[1] + Math.sin(a1) * r1, x1 = B[0] + Math.cos(a2) * r2, y1 = B[1] + Math.sin(a2) * r2;
-          const dist = Math.hypot(x1 - x0, y1 - y0);
-          dots[g].push({ x0, y0, x1, y1, g, t0: start + sc(n + 1.7) * MONTH_MS, dur: Math.min(2600, Math.max(700, 600 + dist * 150000)), bend: (sc(n + 2.3) - 0.5) * 0.3 });
-        }
+      for (let j = 0; j < Math.abs(c); j++) {
+        n++;
+        const a1 = sc(n) * 6.283, r1 = Math.sqrt(sc(n + 0.3)) * A[2], a2 = sc(n + 0.6) * 6.283, r2 = Math.sqrt(sc(n + 0.9)) * B[2];
+        const x0 = A[0] + Math.cos(a1) * r1, y0 = A[1] + Math.sin(a1) * r1, x1 = B[0] + Math.cos(a2) * r2, y1 = B[1] + Math.sin(a2) * r2;
+        const dist = Math.hypot(x1 - x0, y1 - y0);
+        dots.push({ x0, y0, x1, y1, t0: start + sc(n + 1.7) * monthDur * 0.8, dur: Math.min(2800, Math.max(900, 700 + dist * 160000)), bend: (sc(n + 2.3) - 0.5) * 0.25 });
       }
     }
   }
-  const monthCount = (i: number) => {
-    const c = [0, 0, 0];
-    if (!L) return c;
-    for (const row of L.dots) for (let g = 0; g < 3; g++) c[g] += B36.indexOf(row[g][i]);
-    return c.map((x) => x * L.unit);
-  };
   const ymTxt = (ym: string) => `${ym.slice(0, 4)}.${ym.slice(4)}`;
   const captionOf = (ym: string) => D.lapseCaptions[ym] ?? (ym.endsWith("02") ? D.lapseCaptions["02"] : "");
+  const man = (v: number) => (Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(1)}만` : fmtN(v));
+  // 지금 보여 줄 누적값 (달 안에서 부드럽게)
+  const cumNow = (r: number, now: number) => {
+    const c = cum[lapseGroup][r], i = lapseMonth;
+    const prev = i > 0 ? c[i - 1] : 0, prog = Math.max(0, Math.min(1, (now - monthStart) / monthDur));
+    return prev + (c[i] - prev) * prog;
+  };
   function drawLapse(now: number) {
+    if (!L) return;
     const RA = [126, 35], RB = [129.5, 38];
     const a = map.project(RA), b = map.project(RB), ma = toM(RA[0], RA[1]), mb = toM(RB[0], RB[1]);
     const sx = (b.x - a.x) / (mb[0] - ma[0]), sy = (b.y - a.y) / (mb[1] - ma[1]);
     const ox = a.x - ma[0] * sx, oy = a.y - ma[1] * sy;
-    const sz = Math.max(2, Math.min(3.4, map.getZoom() * 0.42)), hs = sz / 2;
-    cx.globalAlpha = 0.78;
-    // 적은 묶음부터 그린다: 위에 덮이는 색이 그 순간 가장 많이 움직이는 묶음이 되게
-    const order = [0, 1, 2].sort((p, q) => dots[p].length - dots[q].length);
-    for (const g of order) {
-      const arr = dots[g];
-      cx.fillStyle = lapseColors[g];
-      let w = 0;
-      for (let i = 0; i < arr.length; i++) {
-        const d = arr[i];
-        const u = (now - d.t0) / d.dur;
-        if (u > 1.15) continue; // 끝난 점은 버린다
-        arr[w++] = d;
-        if (u < 0) continue;
-        const e = u >= 1 ? 1 : u < 0.5 ? 2 * u * u : 1 - (2 - 2 * u) * (2 - 2 * u) / 2;
-        const dx = d.x1 - d.x0, dy = d.y1 - d.y0, k = 4 * e * (1 - e) * d.bend;
-        const x = ox + (d.x0 + dx * e - dy * k) * sx, y = oy + (d.y0 + dy * e + dx * k) * sy;
-        const s2 = u >= 1 ? sz * (1 - (u - 1) / 0.15) : sz;
-        cx.fillRect(x - hs, y - hs, s2, s2);
-      }
-      arr.length = w;
+    const z = map.getZoom(), RMAX = 34 * Math.pow(2, (z - 6.2) / 2);
+    // 누적 원
+    const circ: [number, number, number, number, string][] = [];
+    for (let r = 0; r < L.ids.length; r++) {
+      const j = jit[L.ids[r]];
+      if (!j) continue;
+      const v = cumNow(r, now);
+      if (!v) continue;
+      const rad = RMAX * Math.sqrt(Math.abs(v) / cumMax[lapseGroup]);
+      if (rad < 1.2) continue;
+      circ.push([ox + j[0] * sx, oy + j[1] * sy, rad, v, L.ids[r]]);
     }
-    cx.globalAlpha = 1;
+    circ.sort((p, q) => q[2] - p[2]);
+    for (const [x, y, rad, v] of circ) {
+      const col = v > 0 ? colors.in : colors.out;
+      cx.beginPath(); cx.arc(x, y, rad, 0, 6.283);
+      cx.fillStyle = rgba(col, 0.22); cx.fill();
+      cx.strokeStyle = rgba(col, 0.85); cx.lineWidth = 1.2; cx.stroke();
+    }
+    // 점
+    const sz = Math.max(2.2, Math.min(3.6, z * 0.45)), hs = sz / 2;
+    cx.fillStyle = rgba(colors.ink, 0.82); // 점은 한 색: 파랑·빨강은 원(얻음·잃음)에 쓴다
+    let w = 0;
+    for (let i = 0; i < dots.length; i++) {
+      const d = dots[i], u = (now - d.t0) / d.dur;
+      if (u > 1.1) continue;
+      dots[w++] = d;
+      if (u < 0) continue;
+      const e = u >= 1 ? 1 : u < 0.5 ? 2 * u * u : 1 - (2 - 2 * u) * (2 - 2 * u) / 2;
+      const dx = d.x1 - d.x0, dy = d.y1 - d.y0, k = 4 * e * (1 - e) * d.bend;
+      const s2 = u >= 1 ? sz * (1 - (u - 1) / 0.1) : sz;
+      cx.fillRect(ox + (d.x0 + dx * e - dy * k) * sx - hs, oy + (d.y0 + dy * e + dx * k) * sy - hs, s2, s2);
+    }
+    dots.length = w;
+    // 이름표: 누적이 가장 큰 곳 위아래 4곳씩
+    const pos = circ.filter((c) => c[3] > 0).slice(0, 4), neg = circ.filter((c) => c[3] < 0).slice(0, 4);
+    cx.font = "700 12px Pretendard, 'Apple SD Gothic Neo', sans-serif";
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    const placed: [number, number, number][] = [];
+    for (const [x, y, rad, v, id] of [...pos, ...neg].sort((p, q) => Math.abs(q[3]) - Math.abs(p[3]))) {
+      const t = `${(D.regions[id]?.n ?? id).split(" ").pop()} ${v > 0 ? "+" : "−"}${man(Math.abs(Math.round(v)))}`;
+      const tw = cx.measureText(t).width;
+      let ty = y - rad - 9;
+      // 겹치면 원 아래로, 그래도 겹치면 생략
+      const hit = (yy: number) => placed.some(([px, py, pw]) => Math.abs(px - x) < (pw + tw) / 2 + 4 && Math.abs(py - yy) < 15);
+      if (hit(ty)) { ty = y + rad + 10; if (hit(ty)) continue; }
+      placed.push([x, ty, tw]);
+      cx.lineWidth = 3.5; cx.strokeStyle = colors.halo; cx.strokeText(t, x, ty);
+      cx.fillStyle = v > 0 ? colors.in : colors.out; cx.fillText(t, x, ty);
+    }
   }
   function renderLapse() {
     flowEl.hidden = false;
     detailEl.hidden = true;
     if (!L) { flowEl.innerHTML = `<p class="hint">이동 자료를 불러오는 중…</p>`; return; }
-    const ym = L.months[lapseMonth], idx = D.monthly.months.indexOf(ym);
-    const cnt = monthCount(lapseMonth), cap = D.monthly.capNet[idx], tot = D.monthly.interSgg[idx];
-    const vals: number[] = D.monthly.capNet, mx = Math.max(...vals.map(Math.abs), 1);
-    const W = 280, H = 60, bw = W / vals.length;
-    const bars = vals.map((v, i) => `<rect x="${(i * bw).toFixed(1)}" y="${v >= 0 ? H / 2 - (v / mx) * (H / 2 - 2) : H / 2}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${Math.max(0.5, (Math.abs(v) / mx) * (H / 2 - 2))}" fill="${D.monthly.months[i] === ym ? colors.ink : v >= 0 ? colors.in : colors.out}" opacity="${D.monthly.months[i] === ym ? 1 : 0.55}"/>`).join("");
-    const cap0 = captionOf(ym);
+    const ym = L.months[lapseMonth], idx = D.monthly.months.indexOf(ym), cap0 = captionOf(ym);
+    const rows = L.ids.map((id: string, r: number) => [id, cum[lapseGroup][r][lapseMonth]] as [string, number]).sort((p: any, q: any) => q[1] - p[1]);
+    const top = rows.slice(0, 5), bot = rows.slice(-5).reverse();
+    const mx = Math.max(1, ...[...top, ...bot].map((r: any) => Math.abs(r[1])));
+    const li = (r: [string, number]) => `<div class="fly-row" data-id="${r[0]}"><span class="nm">${D.regions[r[0]]?.n ?? r[0]}</span><span class="l">${r[1] < 0 ? `<span style="width:${(-r[1] / mx) * 100}%;background:${colors.out}"></span>` : ""}</span><span class="r">${r[1] > 0 ? `<span style="width:${(r[1] / mx) * 100}%;background:${colors.in}"></span>` : ""}</span><span class="v" style="color:${r[1] >= 0 ? colors.in : colors.out}">${r[1] > 0 ? "+" : r[1] < 0 ? "−" : ""}${man(Math.abs(r[1]))}</span></div>`;
+    const capNet = D.monthly.capNet[idx];
     flowEl.innerHTML = `
-      <h3>${ymTxt(ym)} 전국 이사</h3>
-      <p class="sum">시군구를 넘은 이사 <strong>${fmtN(tot)}명</strong> · 수도권 순유입 <strong style="color:${cap >= 0 ? colors.in : colors.out}">${signed(cap)}명</strong></p>
-      <div class="lapse-legend">${LG_LABEL.map((l, i) => `<div><i style="background:${lapseColors[i]}"></i><span>${l}</span><b>${fmtN(cnt[i])}</b></div>`).join("")}</div>
+      <h3>${ymTxt(ym)}까지, 사람들이 모인 곳</h3>
+      <div class="mp-chips" role="group" aria-label="나이">${LG_LABEL.map((l, g) => `<button type="button" data-lg="${g}" aria-pressed="${g === lapseGroup}">${l}</button>`).join("")}</div>
       ${cap0 ? `<p class="lapse-cap">${cap0}</p>` : ""}
-      <div><h4>수도권 순유입, 달마다 (명)</h4><svg class="mp-spark" viewBox="0 0 ${W} ${H}"><line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="${colors.ink}" stroke-opacity=".2"/>${bars}</svg>
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted)"><span>${ymTxt(L.months[0])}</span><span>${ymTxt(L.months[L.months.length - 1])}</span></div></div>
-      <p class="hint">점 하나 = ${fmtN(L.unit)}명. 연평균 ${L.minYear}명 이상 오간 시군구 쌍(시군구를 넘는 이사의 ${Math.round(L.coverage * 100)}%)만 그리고, 15~19세는 뺐습니다. 출발·도착 위치는 시군구 안에 흩뿌린 것으로 실제 주소가 아닙니다.</p>`;
+      <p class="sum">원은 ${ymTxt(L.months[0])}부터 쌓인 순이동(<span style="color:${colors.in}">파랑 +</span> · <span style="color:${colors.out}">빨강 −</span>), 점(<span style="display:inline-block;width:6px;height:6px;background:${colors.ink};vertical-align:1px"></span>)은 이달 두 시군구가 주고받은 걸 서로 빼고 남은 이사(점 하나 = ${fmtN(L.unit)}명)입니다.${lapseGroup === 0 && capNet != null ? ` 이달 수도권 순유입 <strong style="color:${capNet >= 0 ? colors.in : colors.out}">${signed(capNet)}명</strong>.` : ""}</p>
+      <div class="fly">
+        <div class="fly-head"><span>${LG_DESC[lapseGroup]} · 누적</span><span class="l" style="color:${colors.out}">← 잃음</span><span class="r" style="color:${colors.in}">얻음 →</span><span class="v">명</span></div>
+        ${top.map(li).join("")}<div style="height:6px"></div>${bot.map(li).join("")}
+      </div>
+      <p class="hint">점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍만, 위치는 시군구 안에 흩뿌린 것입니다. 원·목록은 모든 쌍의 정확한 합계입니다.</p>`;
+    flowEl.querySelectorAll<HTMLElement>("[data-lg]").forEach((el) => el.addEventListener("click", () => {
+      lapseGroup = +el.dataset.lg!;
+      clearDots();
+      spawnMonth(lapseMonth, performance.now());
+      renderTime(); renderLapse();
+    }));
+    flowEl.querySelectorAll<HTMLElement>(".fly-row[data-id]").forEach((el) => el.addEventListener("click", () => {
+      const c = P[el.dataset.id!]; if (c) map.flyTo({ center: c, zoom: Math.max(map.getZoom(), 9), speed: 1.4 });
+    }));
   }
   async function enterLapse() {
     await loadLapse();
     lapseColors = LG_VARS.map(resolve);
     clearDots();
-    spawnMonth(lapseMonth, performance.now());
-    renderTime();
-    renderLapse();
+    setLapseMonth(lapseMonth, performance.now());
   }
   const setLapseMonth = (i: number, start = performance.now()) => {
     lapseMonth = i;
+    monthStart = start;
+    monthDur = captionOf(L.months[i]) ? MONTH_MS * 2.6 : MONTH_MS; // 자막이 있는 달은 천천히
     spawnMonth(i, start);
     renderTime();
     renderLapse();
@@ -1052,7 +1099,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     geoms = [];
     if (isLapse()) {
       drawLapse(now);
-      if (!playTimer && L && !anyDots(now)) spawnMonth(lapseMonth, now + 200); // 멈춰 있으면 그 달을 되풀이
+      if (!playTimer && L && !anyDots(now)) spawnMonth(lapseMonth, now + 200); // 멈춰 있으면 그 달 점을 되풀이 (원은 그대로)
     }
     if (arcs.length) {
       const sec = now / 1000;
@@ -1167,7 +1214,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const ticksEl = document.getElementById("mp-ticks")!;
   const scenEl = document.getElementById("mp-scen")!;
   let playTimer = 0;
-  function stopPlay() { clearInterval(playTimer); playTimer = 0; playEl.textContent = "▶"; playEl.setAttribute("aria-label", "재생"); }
+  function stopPlay() { clearInterval(playTimer); clearTimeout(playTimer); playTimer = 0; playEl.textContent = "▶"; playEl.setAttribute("aria-label", "재생"); }
   const setYear = (y: number) => {
     yearSel[cur.key] = y;
     paint();
@@ -1192,7 +1239,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       ticksEl.innerHTML = ms.map((m, k) => (k === 0 || k === n - 1 || (m.endsWith("01") && k > n * 0.1 && k < n * 0.9)) ? `<span style="left:${(k / (n - 1)) * 100}%">${k === 0 || k === n - 1 ? ymTxt(m) : m.slice(0, 4)}</span>` : "").join("");
       yearEl.classList.remove("proj");
       yearEl.querySelector("b")!.textContent = ymTxt(ms[lapseMonth]);
-      yearEl.querySelector("span")!.textContent = `전국 이사 · 점 하나 = ${fmtN(L.unit)}명`;
+      yearEl.querySelector("span")!.textContent = `전국 순이동 · ${LG_DESC[lapseGroup]} · 점 하나 = ${fmtN(L.unit)}명`;
       return;
     }
     if (isFlow() && FW.length > 1) {
@@ -1238,13 +1285,13 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     if (isLapse() && L) {
       if (lapseMonth >= L.months.length - 1) { clearDots(); lapseMonth = 0; }
       playEl.textContent = "❚❚"; playEl.setAttribute("aria-label", "멈춤");
-      let next = performance.now();
-      setLapseMonth(lapseMonth, next);
-      playTimer = window.setInterval(() => {
+      setLapseMonth(lapseMonth, performance.now());
+      const step = () => {
         if (lapseMonth >= L.months.length - 1) { stopPlay(); return; }
-        next += MONTH_MS;
-        setLapseMonth(lapseMonth + 1, Math.max(next, performance.now()));
-      }, MONTH_MS);
+        setLapseMonth(lapseMonth + 1, performance.now());
+        playTimer = window.setTimeout(step, monthDur);
+      };
+      playTimer = window.setTimeout(step, monthDur);
       return;
     }
     if (isFlow()) {
