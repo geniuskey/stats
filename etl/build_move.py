@@ -111,6 +111,7 @@ def scan_month(args):
         reg_net: Counter = Counter()             # 시군구 순이동 (이 달)
         # 상세 (창 안의 달만)
         flow: Counter = Counter()                 # (from_id, to_id) → 인원 (다른 시군구 사이)
+        flow_age: dict = {}                       # (from_id, to_id) → 연령대별 인원 (AGE_GROUPS 순서)
         reg_age_in = defaultdict(lambda: [0] * (MAX_AGE + 1))
         reg_age_out = defaultdict(lambda: [0] * (MAX_AGE + 1))
         cap_age = [0] * (MAX_AGE + 1)             # 수도권 순유입(연령별)
@@ -166,6 +167,11 @@ def scan_month(args):
             if a == b:
                 continue
             flow[(b, a)] += n
+            fa = flow_age.get((b, a))
+            if fa is None:
+                fa = flow_age[(b, a)] = [0] * len(AGE_GROUPS)
+            for gi, (_, lo, hi) in enumerate(AGE_GROUPS):
+                fa[gi] += sum(ages[lo:min(hi, MAX_AGE) + 1])
             ri, ro = reg_age_in[a], reg_age_out[b]
             for k, v in enumerate(ages):
                 if v:
@@ -185,10 +191,28 @@ def scan_month(args):
                "unmapped": dict(unmapped), "regNet": dict(reg_net)}
     det = None
     if detail:
-        det = {"flow": dict(flow), "ageIn": dict(reg_age_in), "ageOut": dict(reg_age_out),
+        det = {"flow": dict(flow), "flowAge": flow_age, "ageIn": dict(reg_age_in), "ageOut": dict(reg_age_out),
                "capAge": cap_age, "seoulAge": seoul_age,
                "dongIn": dict(dong_in), "dongOut": dict(dong_out), "dongName": dong_name}
     return summary, det
+
+
+FLOWS_OUT = ROOT / "public" / "data" / "move_flows.json"
+MIN_PAIR = 10  # 12개월 이동이 이보다 적은 시군구 쌍은 지도에서 뺀다
+
+
+def write_flows(flow: Counter, flow_age: dict, win: list[str]) -> None:
+    """지도 흐름용 시군구 쌍 집계(12개월): [출발 index, 도착 index, 전체, 연령대별...]. 원자료가 아니라 연간 합계."""
+    ids = sorted({x for k in flow for x in k})
+    ix = {r: i for i, r in enumerate(ids)}
+    rows = [[ix[s], ix[t], n, *flow_age.get((s, t), [0] * len(AGE_GROUPS))]
+            for (s, t), n in sorted(flow.items(), key=lambda x: -x[1]) if n >= MIN_PAIR]
+    FLOWS_OUT.parent.mkdir(parents=True, exist_ok=True)
+    FLOWS_OUT.write_text(json.dumps({
+        "period": [win[0], win[-1]], "ids": ids, "groups": ["all", *[k for k, _, _ in AGE_GROUPS]],
+        "ages": {k: [lo, hi] for k, lo, hi in AGE_GROUPS}, "minPair": MIN_PAIR, "rows": rows,
+    }, separators=(",", ":")))
+    print(f"  → {FLOWS_OUT.relative_to(ROOT)} ({len(rows):,}쌍, {FLOWS_OUT.stat().st_size // 1024} KB)")
 
 
 def build():
@@ -228,6 +252,7 @@ def build():
 
     # ---- 창 합산
     flow: Counter = Counter()
+    flow_age: dict = {}
     age_in = defaultdict(lambda: [0] * (MAX_AGE + 1))
     age_out = defaultdict(lambda: [0] * (MAX_AGE + 1))
     cap_age = [0] * (MAX_AGE + 1)
@@ -239,6 +264,10 @@ def build():
         if d is None:
             continue
         flow.update(d["flow"])
+        for k, arr in d["flowAge"].items():
+            t = flow_age.setdefault(k, [0] * len(AGE_GROUPS))
+            for gi, v in enumerate(arr):
+                t[gi] += v
         for tgt, src in ((age_in, d["ageIn"]), (age_out, d["ageOut"])):
             for rid, arr in src.items():
                 t = tgt[rid]
@@ -349,6 +378,8 @@ def build():
         s["youth"] += r["youth"]
         s["pop"] += r["pop"]
     sido_out = {k: {**v, "rate": r1(v["net"] / v["pop"] * 1000)} for k, v in sido.items()}
+
+    write_flows(flow, flow_age, win)
 
     return {
         "meta": {

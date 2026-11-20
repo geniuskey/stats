@@ -24,5 +24,6 @@ MS="npx -y mapshaper@0.6.102"
 $MS "$TMP/dong_u.geojson" -dissolve id copy-fields=sido -simplify 25% keep-shapes -filter-islands min-area=0.5km2 -o format=geojson "$OUT/sgg.json" precision=0.0001
 # 시도 경계선
 $MS "$OUT/sgg.json" -dissolve sido -simplify 40% keep-shapes -o format=geojson "$OUT/sido.json" precision=0.0001
+$MS "$OUT/sgg.json" -points inner -o format=geojson "$OUT/sgg_pts.json" precision=0.001  # 이사 흐름 선의 끝점
 rm -rf "$TMP"
 ls -la "$OUT"

@@ -1,5 +1,5 @@
 ---
-// 지도로 보기 — 브이월드 배경지도 위에 시군구 지표를 겹친다 (MapLibre GL, CDN)
+// 지도로 보기 — 이사 흐름(시군구 간 연령별 이동)과 시군구 지표. MapLibre GL(CDN) + OpenFreeMap 벡터 바탕
 import Base from "../../layouts/Base.astro";
 import dongne from "../../data/dongne.json";
 import housingSgg from "../../data/housing_sgg.json";
@@ -26,6 +26,23 @@ const fromObj = (o: Record<string, any>, k: string, div = 1) =>
 
 interface M { key: string; label: string; format: Fmt; kind: ScaleKind; breaks: number[]; mid?: number; desc: string; values: Record<string, number | null> }
 const groups: { title: string; src: string; metrics: M[] }[] = [
+  {
+    title: "이사 흐름", src: `행안부 전입신고 ${ymLabel(mm.period[0])}~${ymLabel(mm.period[1])}`,
+    metrics: [
+      { key: "rate", label: "전체", format: "dec1", kind: "div", breaks: [-10, -5, -2, 2, 5, 10],
+        desc: "색: 다른 시군구와 주고받은 순이동(인구 1천 명당). 선: 사람이 움직인 길.", values: fromObj(MV, "rate") },
+      { key: "kidsRate", label: "아이 0~14세", format: "dec1", kind: "div", breaks: [-3, -1.5, -0.5, 0.5, 1.5, 3],
+        desc: "아이는 혼자 이사하지 않습니다. 아이 키우는 가족이 어디로 가는지 보여 줍니다.", values: fromObj(MV, "kidsRate") },
+      { key: "youthRate", label: "20~34세", format: "dec1", kind: "div", breaks: [-6, -3, -1, 1, 3, 6],
+        desc: "진학·취업·첫 독립의 이동. 색은 이 나이의 순이동(전체 인구 1천 명당).", values: fromObj(MV, "youthRate") },
+      { key: "midRate", label: "35~49세", format: "dec1", kind: "div", breaks: [-4, -2, -0.5, 0.5, 2, 4],
+        desc: "내 집 마련과 학군의 이동. 색은 이 나이의 순이동(전체 인구 1천 명당).", values: fromObj(MV, "midRate") },
+      { key: "preRate", label: "50~64세", format: "dec1", kind: "div", breaks: [-4, -2, -0.5, 0.5, 2, 4],
+        desc: "은퇴 전후·귀농귀촌의 이동. 색은 이 나이의 순이동(전체 인구 1천 명당).", values: fromObj(MV, "preRate") },
+      { key: "oldRate", label: "65세 이상", format: "dec1", kind: "div", breaks: [-4, -2, -0.5, 0.5, 2, 4],
+        desc: "고향·자녀 곁·요양으로의 이동. 색은 이 나이의 순이동(전체 인구 1천 명당).", values: fromObj(MV, "oldRate") },
+    ],
+  },
   {
     title: "인구", src: `${by}년 주민등록, 추계는 중위`,
     metrics: [
@@ -54,24 +71,16 @@ const groups: { title: string; src: string; metrics: M[] }[] = [
         desc: "아파트 전월세 계약 중 월세(보증부 월세 포함) 비율.", values: fromObj(HS, "wolseShare") },
     ],
   },
-  {
-    title: "이사", src: `행안부 전입신고 ${ymLabel(mm.period[0])}~${ymLabel(mm.period[1])}`,
-    metrics: [
-      { key: "rate", label: "순이동률", format: "dec1", kind: "div", breaks: [-10, -5, -2, 2, 5, 10],
-        desc: "다른 시군구와 주고받은 순이동, 인구 1천 명당.", values: fromObj(MV, "rate") },
-      { key: "youthRate", label: "20~34세 순이동", format: "dec1", kind: "div", breaks: [-6, -3, -1, 1, 3, 6],
-        desc: "20~34세 순이동, 인구(전 연령) 1천 명당.", values: fromObj(MV, "youthRate") },
-      { key: "kidsRate", label: "아이(0~14세) 순이동", format: "dec1", kind: "div", breaks: [-3, -1.5, -0.5, 0.5, 1.5, 3],
-        desc: "0~14세 순이동, 인구 1천 명당. 아이 키우는 가족의 이동입니다.", values: fromObj(MV, "kidsRate") },
-      { key: "oldRate", label: "65세 이상 순이동", format: "dec1", kind: "div", breaks: [-4, -2, -0.5, 0.5, 2, 4],
-        desc: "65세 이상 순이동, 인구 1천 명당.", values: fromObj(MV, "oldRate") },
-    ],
-  },
 ];
 const payload = {
   key: vworldKey,
   geo: `${base}geo/sgg.json`,
   geoSido: `${base}geo/sido.json`,
+  geoPts: `${base}geo/sgg_pts.json`,
+  flows: `${base}data/move_flows.json`,
+  flowPeriod: `${ymLabel(mm.period[0])}~${ymLabel(mm.period[1])}`,
+  sidoNames: Object.fromEntries(regs.map((r) => [r.sidoCode, r.sido])),
+  moveNet: Object.fromEntries(Object.entries(MV).map(([id, r]: any) => [id, { all: r.net, kids: r.kids, youth: r.youth, mid: r.mid, pre: r.pre, old: r.old }])),
   base,
   groups: groups.map((g) => ({
     title: g.title, src: g.src,
@@ -81,7 +90,7 @@ const payload = {
 };
 const json = JSON.stringify(payload).replace(/</g, "\\u003c");
 ---
-<Base title="지도로 보기" active="map" description="브이월드 배경지도 위에서 시군구별 인구 전망, 집값 부담, 전세가율, 인구이동을 확대·이동하며 살펴봅니다.">
+<Base title="지도로 보기" active="map" description="누가 어디서 어디로 이사 가는지, 나이별 이동의 흐름을 지도 위에서 봅니다. 시군구별 인구 전망·집값 부담·전세가율도 함께.">
   <div class="map-page">
     <aside class="map-side" aria-label="지표 선택">
       <div class="map-search">
@@ -91,10 +100,12 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       <div id="mp-groups"></div>
       <div class="map-legend" id="mp-legend"></div>
       <p class="small muted" id="mp-desc"></p>
+      <div class="map-flow" id="mp-flow" hidden></div>
       <div class="map-detail" id="mp-detail" hidden></div>
     </aside>
     <div class="map-wrap">
       <div id="mp-map" class="map-canvas" role="region" aria-label="대한민국 지도"></div>
+      <canvas id="mp-arcs" class="map-arcs" aria-hidden="true"></canvas>
       <div class="map-tip" id="mp-tip" hidden></div>
     </div>
   </div>
@@ -191,6 +202,18 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   }
   :global(.map-tip b) { display: block; }
   :global(.maplibregl-ctrl-attrib) { font-size: 11px; }
+  .map-arcs { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  .map-flow { display: grid; gap: 12px; }
+  :global(.map-flow h3) { margin: 0; font-size: 16px; }
+  :global(.map-flow h4) { margin: 0 0 6px; font-size: 13px; color: var(--text-secondary); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  :global(.map-flow h4 i) { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  :global(.map-flow .sum) { margin: 0; font-size: 14px; line-height: 1.6; }
+  :global(.map-flow .flow-row) { display: grid; grid-template-columns: 1fr 70px 52px; gap: 8px; align-items: center; font-size: 13px; padding: 2px 4px; border-radius: 6px; cursor: pointer; }
+  :global(.map-flow .flow-row:hover) { background: var(--surface-2); }
+  :global(.map-flow .flow-row .bar) { height: 6px; border-radius: 3px; }
+  :global(.map-flow .flow-row .v) { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+  :global(.map-flow label.toggle) { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+  :global(.map-flow .hint) { margin: 0; font-size: 13px; color: var(--text-muted); }
   @media (max-width: 760px) {
     .map-page { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
     .map-side { order: 2; border-right: 0; max-height: none; }
@@ -210,8 +233,10 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const all: Metric[] = groups.flatMap((g) => g.metrics);
   const byKey = Object.fromEntries(all.map((m) => [m.key, m]));
   const groupOf = Object.fromEntries(groups.flatMap((g) => g.metrics.map((m) => [m.key, g])));
-  let cur: Metric = byKey[new URLSearchParams(location.search).get("m") ?? ""] ?? byKey["burden"] ?? all[0];
-  let selected: string | null = null;
+  let cur: Metric = byKey[new URLSearchParams(location.search).get("m") ?? ""] ?? byKey["youthRate"] ?? all[0];
+  let selected: string | null = new URLSearchParams(location.search).get("r");
+  const FLOW_G: Record<string, string> = { rate: "all", kidsRate: "kids", youthRate: "youth", midRate: "mid", preRate: "pre", oldRate: "old" };
+  const isFlow = () => FLOW_G[cur.key] != null;
 
   // CSS 색(var·color-mix 포함) → rgb: 지도 엔진은 CSS 변수를 모른다
   const probe = document.createElement("span");
@@ -268,6 +293,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const descEl = document.getElementById("mp-desc")!;
   const detailEl = document.getElementById("mp-detail")!;
   const tip = document.getElementById("mp-tip")!;
+  const flowEl = document.getElementById("mp-flow")!;
+  groupsEl.firstElementChild?.after(flowEl); // 흐름 패널은 나이 버튼 바로 아래
 
   const renderLegend = () => {
     legendEl.innerHTML = `<div class="title">${cur.label}</div>`;
@@ -284,6 +311,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   };
 
   const renderDetail = (id: string | null) => {
+    if (isFlow()) { detailEl.hidden = true; renderFlow(id); return; }
+    flowEl.hidden = true;
     if (!id) { detailEl.hidden = true; return; }
     const r = D.regions[id];
     const rows = groups.map((g) =>
@@ -318,6 +347,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const [geo, sidoGeo] = await Promise.all([fetch(D.geo).then((r) => r.json()), fetch(D.geoSido).then((r) => r.json())]);
   const lineColor = () => (isDark() ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.9)");
 
+  const fillOpacity = () => (isFlow()
+    ? ["interpolate", ["linear"], ["zoom"], 7, 0.55, 10, 0.45, 12, 0.32, 14, 0.22]
+    : ["interpolate", ["linear"], ["zoom"], 7, 0.9, 10, 0.72, 12, 0.5, 14, 0.35]);
   const fillColor = () => {
     const expr: any[] = ["match", ["get", "id"]];
     const colors = cur.bins.map((b) => resolve(b.color));
@@ -336,7 +368,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const st = structuredClone(styleCache[theme]);
     const ROAD_FROM = 8, ROAD_FULL = 10; // 멀리서 볼 때 도로는 지표를 가리기만 한다
     const textColor = resolve("var(--text-primary)"), halo = resolve("var(--surface-1)");
-    st.layers = st.layers.filter((l: any) => l["source-layer"] !== "boundary" && !/^label_(country|state)/.test(l.id)); // 행정경계·국가·도 이름은 우리 선으로
+    st.layers = st.layers.filter((l: any) => l["source-layer"] !== "boundary" && !/country|state/.test(l.id)); // 행정경계·국가·도 이름은 우리 선으로
     for (const l of st.layers) {
       const sl = l["source-layer"];
       if (l.type === "symbol" && l.layout?.["text-field"]) {
@@ -353,7 +385,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     st.sources.sido = { type: "geojson", data: sidoGeo };
     const fill = { id: "sgg-fill", type: "fill", source: "sgg", paint: {
       "fill-color": fillColor(),
-      "fill-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0.9, 10, 0.72, 12, 0.5, 14, 0.35],
+      "fill-opacity": fillOpacity(),
     } };
     const line = { id: "sgg-line", type: "line", source: "sgg", paint: {
       "line-color": lineColor(),
@@ -394,6 +426,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const paint = () => {
     if (!map.getLayer("sgg-fill")) return;
     map.setPaintProperty("sgg-fill", "fill-color", fillColor());
+    map.setPaintProperty("sgg-fill", "fill-opacity", fillOpacity());
   };
 
   function setMetric(key: string) {
@@ -404,6 +437,31 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     renderLegend();
     paint();
     renderDetail(selected);
+    updateArcs();
+  }
+
+  // 선택: 지도 클릭·검색·목록 클릭이 모두 여기로
+  function select(id: string | null, fit = false) {
+    if (id && !D.regions[id]) id = null;
+    setState(selected, "sel", false);
+    selected = id;
+    setState(selected, "sel", true);
+    const u = new URL(location.href);
+    if (id) u.searchParams.set("r", id); else u.searchParams.delete("r");
+    history.replaceState(null, "", u);
+    renderDetail(id);
+    updateArcs().then(() => fit && id && fitArcs());
+  }
+  // 고른 지역의 흐름이 화면에 다 들어오게 (화면 밖으로 나가는 선이 있거나 너무 작을 때만)
+  function fitArcs() {
+    if (!arcs.length) return;
+    const pts = arcs.flatMap((a) => [P[a.s], P[a.t]]).filter(Boolean);
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const b: [[number, number], [number, number]] = [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
+    const v = map.getBounds();
+    const inside = b[0][0] >= v.getWest() && b[1][0] <= v.getEast() && b[0][1] >= v.getSouth() && b[1][1] <= v.getNorth();
+    const small = (b[1][0] - b[0][0]) < (v.getEast() - v.getWest()) * 0.25 && (b[1][1] - b[0][1]) < (v.getNorth() - v.getSouth()) * 0.25;
+    if (!inside || small) map.fitBounds(b, { padding: 70, maxZoom: 10.5, duration: 900 });
   }
 
   let hover: string | null = null;
@@ -412,7 +470,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const id = e.features?.[0]?.properties?.id as string;
     if (hover !== id) { setState(hover, "hover", false); hover = id; setState(hover, "hover", true); }
     map.getCanvas().style.cursor = "pointer";
-    tip.innerHTML = `<b>${D.regions[id].n}</b>${cur.label} ${show(cur, cur.values[id])}`;
+    tip.innerHTML = tipHtml(id);
     tip.hidden = false;
     const { x, y } = e.point;
     const w = map.getContainer().clientWidth;
@@ -425,19 +483,206 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     tip.hidden = true;
     map.getCanvas().style.cursor = "";
   });
-  map.on("click", "sgg-fill", (e: any) => {
-    const id = e.features?.[0]?.properties?.id as string;
-    setState(selected, "sel", false);
-    selected = id;
-    setState(selected, "sel", true);
-    renderDetail(id);
+  map.once("idle", () => { if (selected) { setState(selected, "sel", true); renderDetail(selected); } updateArcs(); });
+  map.on("click", (e: any) => {
+    const f = map.queryRenderedFeatures(e.point, { layers: ["sgg-fill"] })[0];
+    const id = (f?.properties?.id as string) ?? null;
+    select(id === selected ? null : id, true);
   });
+
+
+  // ---- 이사 흐름: 시군구 쌍 집계(12개월)를 캔버스에 곡선과 움직이는 점으로
+  const fmtN = (v: number) => int(Math.round(v));
+  const G_LABEL: Record<string, string> = { all: "전체", kids: "0~14세", youth: "20~34세", mid: "35~49세", pre: "50~64세", old: "65세 이상" };
+  let F: { ids: string[]; groups: string[]; rows: number[][] } | null = null;
+  let P: Record<string, [number, number]> = {};
+  let natLevel: "sido" | "sgg" = "sido";
+  let SP: Record<string, [number, number]> = {}; // 시도 중심 (시군구 중심의 인구 가중 평균)
+  let flowLoading: Promise<void> | null = null;
+  const loadFlows = () => (flowLoading ??= (async () => {
+    const [f, pts] = await Promise.all([fetch(D.flows).then((r) => r.json()), fetch(D.geoPts).then((r) => r.json())]);
+    F = f;
+    P = Object.fromEntries(pts.features.map((x: any) => [x.properties.id, x.geometry.coordinates]));
+    const acc: Record<string, [number, number, number]> = {};
+    for (const [id, c] of Object.entries(P)) {
+      const w = D.regions[id]?.pop ?? 1, a = (acc[id.slice(0, 2)] ??= [0, 0, 0]);
+      a[0] += c[0] * w; a[1] += c[1] * w; a[2] += w;
+    }
+    SP = Object.fromEntries(Object.entries(acc).map(([k, a]) => [k, [a[0] / a[2], a[1] / a[2]]]));
+  })());
+  const gi = () => (F ? F.groups.indexOf(FLOW_G[cur.key]) + 2 : 2);
+  type Arc = { s: string; t: string; n: number; kind: "in" | "out" | "net"; back?: number };
+  let arcs: Arc[] = [];
+
+  const partners = (id: string) => {
+    const g = gi();
+    const ins: [string, number][] = [], outs: [string, number][] = [];
+    for (const r of F!.rows) {
+      const v = r[g];
+      if (!v) continue;
+      if (F!.ids[r[1]] === id) ins.push([F!.ids[r[0]], v]);
+      else if (F!.ids[r[0]] === id) outs.push([F!.ids[r[1]], v]);
+    }
+    ins.sort((a, b) => b[1] - a[1]);
+    outs.sort((a, b) => b[1] - a[1]);
+    return { ins, outs };
+  };
+  const pairValue = (a: string, b: string) => {
+    if (!F) return [0, 0];
+    const g = gi(), ia = F.ids.indexOf(a), ib = F.ids.indexOf(b);
+    let ab = 0, ba = 0;
+    for (const r of F.rows) {
+      if (r[0] === ia && r[1] === ib) ab = r[g];
+      else if (r[0] === ib && r[1] === ia) ba = r[g];
+    }
+    return [ab, ba];
+  };
+  const nationalArcs = (): Arc[] => {
+    const g = gi(), pair = new Map<string, number>();
+    for (const r of F!.rows) {
+      let s = F!.ids[r[0]], t = F!.ids[r[1]];
+      if (s.slice(0, 2) === t.slice(0, 2)) continue; // 전국 화면은 시도를 넘는 이동만
+      if (natLevel === "sido") { s = s.slice(0, 2); t = t.slice(0, 2); }
+      const k = `${s}>${t}`;
+      pair.set(k, (pair.get(k) ?? 0) + r[g]);
+    }
+    const out: Arc[] = [];
+    for (const [k, v] of pair) {
+      const [s, t] = k.split(">");
+      const back = pair.get(`${t}>${s}`) ?? 0;
+      if (v > back) out.push({ s, t, n: v - back, back, kind: "net" });
+    }
+    return out.sort((a, b) => b.n - a.n).slice(0, natLevel === "sido" ? 30 : 45);
+  };
+
+  async function updateArcs() {
+    if (!isFlow()) { arcs = []; return; }
+    await loadFlows();
+    if (!isFlow()) { arcs = []; return; }
+    if (selected) {
+      const { ins, outs } = partners(selected);
+      arcs = [
+        ...ins.slice(0, 12).map(([s, n]) => ({ s, t: selected!, n, kind: "in" as const })),
+        ...outs.slice(0, 12).map(([t, n]) => ({ s: selected!, t, n, kind: "out" as const })),
+      ];
+    } else arcs = nationalArcs();
+    renderFlow(selected);
+  }
+
+  function renderFlow(id: string | null) {
+    flowEl.hidden = false;
+    if (!F) { flowEl.innerHTML = `<p class="hint">이동 자료를 불러오는 중…</p>`; return; }
+    const g = FLOW_G[cur.key], gl = G_LABEL[g];
+    const cIn = resolve(IN_C), cOut = resolve(OUT_C);
+    const list = (rows: [string, number][], color: string) => {
+      const max = Math.max(...rows.map((r) => r[1]), 1);
+      return rows.map(([pid, v]) => `<div class="flow-row" data-id="${pid}"><span>${D.regions[pid]?.n ?? pid}</span><span class="bar" style="width:${Math.max(4, (v / max) * 100)}%;background:${color}"></span><span class="v">${fmtN(v)}</span></div>`).join("");
+    };
+    if (!id) {
+      const top = arcs.slice(0, 8);
+      flowEl.innerHTML = `
+        <p class="sum"><strong>${gl}</strong>이 가장 많이 옮겨 간 길입니다. 두 지역이 주고받은 인원을 서로 빼고, 남은 쪽으로 흐릅니다. 지도에서 시군구를 누르면 그곳에 누가 어디서 오고 어디로 가는지 보입니다.</p>
+        <div class="mp-chips" role="group" aria-label="단위"><button type="button" data-lv="sido" aria-pressed="${natLevel === "sido"}">시도끼리</button><button type="button" data-lv="sgg" aria-pressed="${natLevel === "sgg"}">시군구끼리</button></div>
+        <div><h4><i style="background:${cIn}"></i>시도를 넘는 순이동이 큰 길 (${D.flowPeriod}, 명)</h4>
+        ${top.map((a) => `<div class="flow-row" data-id="${a.t.length === 2 ? "" : a.t}"><span>${nm(a.s)} → ${nm(a.t).split(" ").pop()}</span><span class="bar" style="width:${Math.max(4, (a.n / top[0].n) * 100)}%;background:${cIn}"></span><span class="v">${fmtN(a.n)}</span></div>`).join("")}</div>`;
+    } else {
+      const { ins, outs } = partners(id);
+      const net = D.moveNet[id]?.[g] ?? 0;
+      const rate = cur.values[id];
+      flowEl.innerHTML = `
+        <h3>${D.regions[id].n}</h3>
+        <p class="sum">${gl} 순이동 <strong>${net > 0 ? "+" : ""}${fmtN(net)}명</strong>${rate != null ? ` (인구 1천 명당 ${rate > 0 ? "+" : ""}${rate.toFixed(1)})` : ""} · ${D.flowPeriod}</p>
+        <div><h4><i style="background:${cIn}"></i>어디서 왔나</h4>${list(ins.slice(0, 8), cIn)}</div>
+        <div><h4><i style="background:${cOut}"></i>어디로 갔나</h4>${list(outs.slice(0, 8), cOut)}</div>
+        <p class="hint">빈 곳을 누르면 전국 흐름으로 돌아갑니다. <a href="${D.base}dongne/${id}/">동네 전망 →</a></p>`;
+    }
+    flowEl.querySelectorAll<HTMLElement>(".flow-row").forEach((el) => el.dataset.id && el.addEventListener("click", () => select(el.dataset.id!, true)));
+    flowEl.querySelectorAll<HTMLElement>("[data-lv]").forEach((el) => el.addEventListener("click", () => { natLevel = el.dataset.lv as any; updateArcs(); }));
+  }
+
+  const nm = (id: string) => (id.length === 2 ? D.sidoNames[id] : D.regions[id]?.n ?? id);
+  const tipHtml = (id: string) => {
+    const head = `<b>${D.regions[id].n}</b>`;
+    if (isFlow() && selected && id !== selected && F) {
+      const [ab, ba] = pairValue(selected, id);
+      const sn = D.regions[selected].n.split(" ").pop();
+      return `${head}${sn}에서 옴 ${fmtN(ba)}명 · ${sn}로 감 ${fmtN(ab)}명 <span style="opacity:.7">(${G_LABEL[FLOW_G[cur.key]]})</span>`;
+    }
+    if (isFlow()) {
+      const g = FLOW_G[cur.key], net = D.moveNet[id]?.[g] ?? 0, v = cur.values[id];
+      return `${head}${G_LABEL[g]} 순이동 ${net > 0 ? "+" : ""}${fmtN(net)}명${v != null ? ` <span style="opacity:.7">(1천 명당 ${v > 0 ? "+" : ""}${v.toFixed(1)})</span>` : ""}`;
+    }
+    return `${head}${cur.label} ${show(cur, cur.values[id])}`;
+  };
+
+  const IN_C = "var(--series-1)";
+  const OUT_C = "var(--series-2)";
+  const canvas = document.getElementById("mp-arcs") as HTMLCanvasElement;
+  const cx = canvas.getContext("2d")!;
+  const sizeCanvas = () => {
+    const r = canvas.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  new ResizeObserver(sizeCanvas).observe(canvas);
+  sizeCanvas();
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const rgba = (rgb: string, a: number) => rgb.replace("rgb(", "rgba(").replace(")", `,${a})`);
+  let colors = { in: "", out: "", halo: "" };
+  const recolor = () => { colors = { in: resolve(IN_C), out: resolve(OUT_C), halo: resolve("var(--surface-1)") }; };
+  recolor();
+  const frame = (now: number) => {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    cx.clearRect(0, 0, w, h);
+    if (arcs.length) {
+      const max = Math.max(...arcs.map((a) => a.n));
+      const sec = now / 1000;
+      for (const a of arcs) {
+        const A = a.s.length === 2 ? SP[a.s] : P[a.s], B = a.t.length === 2 ? SP[a.t] : P[a.t];
+        if (!A || !B) continue;
+        const p0 = map.project(A), p1 = map.project(B);
+        const dx = p1.x - p0.x, dy = p1.y - p0.y, d = Math.hypot(dx, dy);
+        if (d < 3) continue;
+        const bend = Math.min(0.3, 0.18 + 40 / (d + 80));
+        const c = { x: (p0.x + p1.x) / 2 - dy * bend, y: (p0.y + p1.y) / 2 + dx * bend };
+        const wgt = 1 + 7 * Math.sqrt(a.n / max);
+        const col = a.kind === "out" ? colors.out : colors.in;
+        cx.lineCap = "round";
+        cx.beginPath(); cx.moveTo(p0.x, p0.y); cx.quadraticCurveTo(c.x, c.y, p1.x, p1.y);
+        cx.strokeStyle = rgba(col, 0.28); cx.lineWidth = wgt; cx.stroke();
+        // 혜성: 머리 점 + 곡선을 따라 옅어지는 꼬리. 굵은 길일수록 많이, 화면 거리와 상관없이 비슷한 속도로
+        const k = reduce ? 0 : 1 + Math.round(wgt * 0.45);
+        const dur = Math.max(1.6, d / 90);
+        const at = (tt: number) => { const u = 1 - tt; return [u * u * p0.x + 2 * u * tt * c.x + tt * tt * p1.x, u * u * p0.y + 2 * u * tt * c.y + tt * tt * p1.y]; };
+        const tailLen = Math.min(0.35, 60 / d);
+        for (let j = 0; j < k; j++) {
+          const t = (sec / dur + j / k + (a.s.charCodeAt(a.s.length - 1) % 7) / 7) % 1;
+          const N = 10;
+          for (let q = 0; q < N; q++) {
+            const ta = Math.max(0, t - tailLen * (q + 1) / N), tb = Math.max(0, t - tailLen * q / N);
+            if (tb <= 0) break;
+            const [x0, y0] = at(ta), [x1, y1] = at(tb);
+            cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1);
+            cx.strokeStyle = rgba(col, 0.85 * (1 - q / N)); cx.lineWidth = Math.max(1.2, wgt * 0.55) * (1 - q / N * 0.6); cx.stroke();
+          }
+          const [hx, hy] = at(t);
+          cx.beginPath(); cx.arc(hx, hy, Math.max(1.6, wgt * 0.4), 0, Math.PI * 2);
+          cx.fillStyle = col; cx.fill();
+        }
+      }
+    }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
 
   // 테마가 바뀌면 바탕 지도 스타일째 바꾼다 (선택 상태는 다시 칠한다)
   const retheme = async () => {
     map.setStyle(await buildStyle(), { diff: false });
     map.once("idle", () => setState(selected, "sel", true));
+    recolor();
     renderLegend();
+    renderDetail(selected);
   };
   new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
@@ -499,12 +744,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     // 그 위치의 시군구를 선택
     map.once("moveend", () => {
       const f = map.queryRenderedFeatures(map.project([h.x, h.y]), { layers: ["sgg-fill"] })[0];
-      if (f) {
-        map.setFeatureState({ source: "sgg", id: selected ?? "" }, { sel: false });
-        selected = f.properties.id;
-        map.setFeatureState({ source: "sgg", id: selected }, { sel: true });
-        renderDetail(selected);
-      }
+      if (f) select(f.properties.id, true);
     });
   };
   let timer = 0;
