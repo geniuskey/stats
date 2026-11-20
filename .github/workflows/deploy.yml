@@ -62,6 +62,7 @@ jobs:
         env:
           SITE_URL: ${{ vars.SITE_URL || 'https://stats.euiyun.com' }}
           BASE_PATH: ${{ vars.BASE_PATH || '/' }}
+          PUBLIC_VWORLD_KEY: ${{ vars.PUBLIC_VWORLD_KEY }}
           ASTRO_TELEMETRY_DISABLED: 1
       - uses: actions/upload-pages-artifact@v5
         with:

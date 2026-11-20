@@ -89,6 +89,7 @@ const ld = title === "홈"
             );
           })}
           <span class="nav-sep" aria-hidden="true"></span>
+          <a class="nav-link" href={`${base}map/`} aria-current={active === "map" ? "page" : undefined}>지도</a>
           <a class="nav-link" href={`${base}track/`} aria-current={active === "track" ? "page" : undefined}>성적표</a>
           <a class="nav-link" href={`${base}methodology/`} aria-current={active === "methodology" ? "page" : undefined}>방법론</a>
         </nav>

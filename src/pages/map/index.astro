@@ -1,0 +1,499 @@
+---
+// 지도로 보기 — 브이월드 배경지도 위에 시군구 지표를 겹친다 (MapLibre GL, CDN)
+import Base from "../../layouts/Base.astro";
+import dongne from "../../data/dongne.json";
+import housingSgg from "../../data/housing_sgg.json";
+import move from "../../data/move.json";
+import { makeBins, type ScaleKind } from "../../lib/scale";
+import type { Fmt } from "../../lib/format";
+
+const base = import.meta.env.BASE_URL;
+const vworldKey = import.meta.env.PUBLIC_VWORLD_KEY ?? "";
+
+const DN = dongne as any;
+const by: number = DN.meta.baseYear;
+const end: number = DN.meta.end;
+const regs = DN.regions as any[];
+const HS = (housingSgg as any).regions as Record<string, any>;
+const MV = (move as any).regions as Record<string, any>;
+const hm = (housingSgg as any).meta;
+const mm = (move as any).meta;
+const ymLabel = (ym: string) => `${ym.slice(0, 4)}.${ym.slice(4)}`;
+const r4 = (v: any) => (v == null || !isFinite(v) ? null : Math.round(v * 10000) / 10000);
+const fromRegs = (f: (r: any) => any) => Object.fromEntries(regs.map((r) => [r.id, r4(f(r))]));
+const fromObj = (o: Record<string, any>, k: string, div = 1) =>
+  Object.fromEntries(regs.map((r) => [r.id, o[r.id]?.[k] == null ? null : r4(o[r.id][k] / div)]));
+
+interface M { key: string; label: string; format: Fmt; kind: ScaleKind; breaks: number[]; mid?: number; desc: string; values: Record<string, number | null> }
+const groups: { title: string; src: string; metrics: M[] }[] = [
+  {
+    title: "인구", src: `${by}년 주민등록, 추계는 중위`,
+    metrics: [
+      { key: "ch", label: `인구 변화 ${by}→${end}`, format: "pctS", kind: "div", breaks: [-0.3, -0.2, -0.1, -0.05, 0.05, 0.1, 0.2],
+        desc: `${by}년 대비 ${end}년 인구 변화율 (중위 추계).`, values: fromRegs((r) => r.series.mid[end].total / r.series.mid[by].total - 1) },
+      { key: "old", label: "65세 이상 비중", format: "pct", kind: "seq", breaks: [0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45],
+        desc: `${by}년 주민 중 65세 이상 비율.`, values: fromRegs((r) => r.series.mid[by].oldShare) },
+      { key: "ext", label: "소멸위험지수", format: "dec2", kind: "div", mid: 0.5, breaks: [0.2, 0.35, 0.5, 0.75, 1.0, 1.5],
+        desc: "20~39세 여성 ÷ 65세 이상. 0.5 미만이면 소멸위험, 0.2 미만이면 고위험.", values: fromRegs((r) => r.series.mid[by].extinction) },
+      { key: "idx", label: "지속가능성 지수", format: "dec1", kind: "div", mid: 50, breaks: [30, 40, 45, 50, 55, 60, 70],
+        desc: "인구 전망·청년 이동·소멸위험·일자리·빈집을 합친 지수. 50 = 시군구 평균.", values: fromRegs((r) => r.m.index) },
+    ],
+  },
+  {
+    title: "집값", src: `국토부 실거래 ${ymLabel(hm.period[0])}~${ymLabel(hm.period[1])}`,
+    metrics: [
+      { key: "burden", label: "주택구입 부담률", format: "pct", kind: "seq", breaks: [0.05, 0.1, 0.15, 0.2, 0.3, 0.45, 0.6],
+        desc: "84㎡ 중위가격의 대출 월 상환액 ÷ 시도 평균 가구 월소득.", values: fromObj(HS, "burden", 100) },
+      { key: "price84", label: "84㎡ 가격", format: "eok", kind: "seq", breaks: [1, 2, 3, 5, 7, 10, 15],
+        desc: "아파트 ㎡당 중위가격 × 84㎡ (억원).", values: fromObj(HS, "price84", 1e4) },
+      { key: "jeonseRatio", label: "전세가율", format: "pct", kind: "seq", breaks: [0.5, 0.6, 0.7, 0.75, 0.8, 0.85],
+        desc: "같은 단지 안 전세 보증금 ÷ 매매가의 중앙값.", values: fromObj(HS, "jeonseRatio", 100) },
+      { key: "renewUp", label: "전세 재계약 인상률", format: "pct1S", kind: "div", breaks: [-0.02, -0.001, 0.001, 0.02, 0.04, 0.05],
+        desc: "전세 갱신 계약의 보증금 인상률 중앙값.", values: fromObj(HS, "renewUp") },
+      { key: "wolseShare", label: "월세 비중", format: "pct", kind: "seq", breaks: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        desc: "아파트 전월세 계약 중 월세(보증부 월세 포함) 비율.", values: fromObj(HS, "wolseShare") },
+    ],
+  },
+  {
+    title: "이사", src: `행안부 전입신고 ${ymLabel(mm.period[0])}~${ymLabel(mm.period[1])}`,
+    metrics: [
+      { key: "rate", label: "순이동률", format: "dec1", kind: "div", breaks: [-10, -5, -2, 2, 5, 10],
+        desc: "다른 시군구와 주고받은 순이동, 인구 1천 명당.", values: fromObj(MV, "rate") },
+      { key: "youthRate", label: "20~34세 순이동", format: "dec1", kind: "div", breaks: [-6, -3, -1, 1, 3, 6],
+        desc: "20~34세 순이동, 인구(전 연령) 1천 명당.", values: fromObj(MV, "youthRate") },
+      { key: "kidsRate", label: "아이(0~14세) 순이동", format: "dec1", kind: "div", breaks: [-3, -1.5, -0.5, 0.5, 1.5, 3],
+        desc: "0~14세 순이동, 인구 1천 명당. 아이 키우는 가족의 이동입니다.", values: fromObj(MV, "kidsRate") },
+      { key: "oldRate", label: "65세 이상 순이동", format: "dec1", kind: "div", breaks: [-4, -2, -0.5, 0.5, 2, 4],
+        desc: "65세 이상 순이동, 인구 1천 명당.", values: fromObj(MV, "oldRate") },
+    ],
+  },
+];
+const payload = {
+  key: vworldKey,
+  geo: `${base}geo/sgg.json`,
+  base,
+  groups: groups.map((g) => ({
+    title: g.title, src: g.src,
+    metrics: g.metrics.map((m) => ({ ...m, bins: makeBins(m.breaks, m.kind, m.format, m.mid).map((b) => ({ color: b.color, label: b.label, lo: b.lo, hi: b.hi })) })),
+  })),
+  regions: Object.fromEntries(regs.map((r) => [r.id, { n: `${r.sido} ${r.name}`, pop: r.series.mid[by].total }])),
+};
+const json = JSON.stringify(payload).replace(/</g, "\\u003c");
+---
+<Base title="지도로 보기" active="map" description="브이월드 배경지도 위에서 시군구별 인구 전망, 집값 부담, 전세가율, 인구이동을 확대·이동하며 살펴봅니다.">
+  <div class="map-page">
+    <aside class="map-side" aria-label="지표 선택">
+      <div class="map-search">
+        <input type="search" id="mp-q" placeholder="동네·아파트·주소 검색" autocomplete="off" aria-label="장소 검색" />
+        <ul id="mp-results" class="map-results" role="listbox" hidden></ul>
+      </div>
+      <div id="mp-groups"></div>
+      <div class="map-legend" id="mp-legend"></div>
+      <p class="small muted" id="mp-desc"></p>
+      <div class="map-detail" id="mp-detail" hidden></div>
+    </aside>
+    <div class="map-wrap">
+      <div id="mp-map" class="map-canvas" role="region" aria-label="대한민국 지도"></div>
+      <div class="map-tip" id="mp-tip" hidden></div>
+      {!vworldKey && <p class="map-warn small">배경지도 키(PUBLIC_VWORLD_KEY)가 없어 경계만 표시합니다.</p>}
+    </div>
+  </div>
+  <script type="application/json" id="mp-data" set:html={json} />
+</Base>
+
+<style>
+  .map-page {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: calc(100vh - 64px);
+    min-height: 520px;
+    border-top: 1px solid var(--border, rgba(127, 127, 127, 0.2));
+  }
+  .map-side {
+    overflow-y: auto;
+    padding: 16px;
+    background: var(--surface-1);
+    border-right: 1px solid var(--border, rgba(127, 127, 127, 0.2));
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .map-wrap { position: relative; min-height: 0; }
+  .map-canvas { position: absolute; inset: 0; background: var(--surface-2); }
+  .map-search { position: relative; }
+  .map-search input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    background: var(--surface-2);
+    color: var(--text-primary);
+    font: inherit;
+  }
+  .map-results {
+    position: absolute;
+    z-index: 5;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  :global(.map-results li) { padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  :global(.map-results li:hover), :global(.map-results li[aria-selected="true"]) { background: var(--surface-2); }
+  :global(.map-results li small) { display: block; color: var(--text-muted); font-size: 12px; }
+  :global(.mp-group h3) { font-size: 12px; letter-spacing: 0.04em; color: var(--text-muted); margin: 0 0 6px; font-weight: 600; }
+  :global(.mp-group .mp-src) { font-weight: 400; }
+  :global(.mp-chips) { display: flex; flex-wrap: wrap; gap: 6px; }
+  :global(.mp-chips button) {
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  :global(.mp-chips button[aria-pressed="true"]) { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+  #mp-groups { display: grid; gap: 14px; }
+  .map-legend { display: grid; gap: 4px; font-size: 12px; }
+  :global(.map-legend .row) { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+  :global(.map-legend i) { width: 18px; height: 12px; border-radius: 3px; display: inline-block; }
+  :global(.map-legend .title) { font-weight: 600; color: var(--text-primary); font-size: 13px; margin-bottom: 2px; }
+  .map-detail { border-top: 1px solid var(--border, rgba(127, 127, 127, 0.2)); padding-top: 12px; }
+  :global(.map-detail h3) { margin: 0 0 8px; font-size: 16px; }
+  :global(.map-detail table) { width: 100%; font-size: 13px; border-collapse: collapse; }
+  :global(.map-detail td) { padding: 3px 0; }
+  :global(.map-detail td.num) { text-align: right; font-variant-numeric: tabular-nums; }
+  :global(.map-detail tr.on td) { font-weight: 700; }
+  :global(.map-detail .links) { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; font-size: 13px; }
+  .map-tip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+    white-space: nowrap;
+  }
+  :global(.map-tip b) { display: block; }
+  .map-warn { position: absolute; left: 12px; bottom: 28px; margin: 0; background: var(--surface-1); padding: 6px 10px; border-radius: 8px; }
+  :global(.maplibregl-ctrl-attrib) { font-size: 11px; }
+  @media (max-width: 760px) {
+    .map-page { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
+    .map-side { order: 2; border-right: 0; max-height: none; }
+    .map-wrap { order: 1; height: 62vh; }
+  }
+</style>
+
+<script>
+  import { fmt, int } from "../../lib/format";
+
+  async function main() {
+
+  type Bin = { color: string; label: string; lo: number | null; hi: number | null };
+  type Metric = { key: string; label: string; format: any; desc: string; values: Record<string, number | null>; bins: Bin[] };
+  const D = JSON.parse(document.getElementById("mp-data")!.textContent || "{}");
+  const groups = D.groups as { title: string; src: string; metrics: Metric[] }[];
+  const all: Metric[] = groups.flatMap((g) => g.metrics);
+  const byKey = Object.fromEntries(all.map((m) => [m.key, m]));
+  const groupOf = Object.fromEntries(groups.flatMap((g) => g.metrics.map((m) => [m.key, g])));
+  let cur: Metric = byKey[new URLSearchParams(location.search).get("m") ?? ""] ?? byKey["burden"] ?? all[0];
+  let selected: string | null = null;
+
+  // CSS 색(var·color-mix 포함) → rgb: 지도 엔진은 CSS 변수를 모른다
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  document.body.appendChild(probe);
+  const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+  const resolve = (c: string) => {
+    probe.style.color = "";
+    probe.style.color = c;
+    const s = getComputedStyle(probe).color;
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = "#000";
+    ctx.fillStyle = s;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return `rgb(${r},${g},${b})`;
+  };
+  const isDark = () => {
+    const t = document.documentElement.dataset.theme;
+    return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  };
+  const binIdx = (bins: Bin[], v: number | null | undefined) => {
+    if (v == null || !isFinite(v)) return -1;
+    for (let i = 0; i < bins.length; i++) {
+      const b = bins[i];
+      if ((b.lo == null || v >= b.lo) && (b.hi == null || v < b.hi)) return i;
+    }
+    return bins.length - 1;
+  };
+  const show = (m: Metric, v: number | null | undefined) => (v == null ? "자료 없음" : fmt(v, m.format));
+
+  // ---- 사이드 패널
+  const groupsEl = document.getElementById("mp-groups")!;
+  for (const g of groups) {
+    const box = document.createElement("div");
+    box.className = "mp-group";
+    box.innerHTML = `<h3>${g.title} <span class="mp-src">· ${g.src}</span></h3>`;
+    const chips = document.createElement("div");
+    chips.className = "mp-chips";
+    for (const m of g.metrics) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = m.label;
+      b.dataset.key = m.key;
+      b.addEventListener("click", () => setMetric(m.key));
+      chips.appendChild(b);
+    }
+    box.appendChild(chips);
+    groupsEl.appendChild(box);
+  }
+  const legendEl = document.getElementById("mp-legend")!;
+  const descEl = document.getElementById("mp-desc")!;
+  const detailEl = document.getElementById("mp-detail")!;
+  const tip = document.getElementById("mp-tip")!;
+
+  const renderLegend = () => {
+    legendEl.innerHTML = `<div class="title">${cur.label}</div>`;
+    const rows = [...cur.bins].reverse().map((b) => ({ c: resolve(b.color), l: b.label }));
+    rows.push({ c: resolve("var(--surface-2)"), l: "자료 없음" });
+    for (const r of rows) {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `<i style="background:${r.c}"></i><span>${r.l}</span>`;
+      legendEl.appendChild(row);
+    }
+    descEl.textContent = cur.desc;
+    for (const b of groupsEl.querySelectorAll("button")) b.setAttribute("aria-pressed", String((b as HTMLElement).dataset.key === cur.key));
+  };
+
+  const renderDetail = (id: string | null) => {
+    if (!id) { detailEl.hidden = true; return; }
+    const r = D.regions[id];
+    const rows = groups.map((g) =>
+      `<tr><td colspan="2" class="small muted" style="padding-top:8px">${g.title}</td></tr>` +
+      g.metrics.map((m) => `<tr class="${m.key === cur.key ? "on" : ""}"><td>${m.label}</td><td class="num">${show(m, m.values[id])}</td></tr>`).join(""),
+    ).join("");
+    detailEl.innerHTML = `<h3>${r.n}</h3><p class="small muted" style="margin:0 0 6px">인구 ${int(r.pop)}명</p><table>${rows}</table>
+      <div class="links"><a href="${D.base}dongne/${id}/">동네 전망 →</a><a href="${D.base}housing/#sgg">집값 →</a><a href="${D.base}move/#map">이사 →</a></div>`;
+    detailEl.hidden = false;
+  };
+
+  // ---- 지도
+  const loadCss = (href: string) => new Promise<void>((ok) => {
+    const l = document.createElement("link");
+    l.rel = "stylesheet"; l.href = href; l.onload = () => ok(); l.onerror = () => ok();
+    document.head.appendChild(l);
+  });
+  const loadJs = (src: string) => new Promise<void>((ok, no) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = () => ok(); s.onerror = () => no(new Error(src));
+    document.head.appendChild(s);
+  });
+  const ML = "https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/";
+  await Promise.all([loadCss(ML + "maplibre-gl.css"), loadJs(ML + "maplibre-gl.js")]);
+  const maplibregl = (window as any).maplibregl;
+
+  const tileUrl = (layer: string) => `https://api.vworld.kr/req/wmts/1.0.0/${D.key}/${layer}/{z}/{y}/{x}.png`;
+  const baseLayer = () => (isDark() ? "midnight" : "white");
+  const ATTR = '배경지도 <a href="https://www.vworld.kr" target="_blank" rel="noopener">© 브이월드(국토교통부)</a> · 경계 통계청 SGIS, <a href="https://github.com/vuski/admdongkor" target="_blank" rel="noopener">vuski/admdongkor</a> (CC BY 4.0)';
+  const sources: any = {};
+  const layers: any[] = [{ id: "bg", type: "background", paint: { "background-color": resolve("var(--surface-2)") } }];
+  if (D.key) {
+    sources.base = { type: "raster", tiles: [tileUrl(baseLayer())], tileSize: 256, maxzoom: 18, attribution: ATTR };
+    layers.push({ id: "base", type: "raster", source: "base" });
+  }
+  const map = new maplibregl.Map({
+    container: "mp-map",
+    style: { version: 8, sources, layers },
+    center: [127.75, 36.1],
+    zoom: 6.2,
+    minZoom: 5.5,
+    maxZoom: 17,
+    maxBounds: [[121.5, 32.0], [133.5, 39.8]],
+    attributionControl: D.key ? { compact: true } : { compact: true, customAttribution: ATTR },
+    dragRotate: false,
+    pitchWithRotate: false,
+  });
+  map.touchZoomRotate.disableRotation();
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+  const fillColor = () => {
+    const expr: any[] = ["match", ["get", "id"]];
+    const colors = cur.bins.map((b) => resolve(b.color));
+    const none = resolve("var(--surface-2)");
+    for (const id of Object.keys(D.regions)) {
+      const i = binIdx(cur.bins, cur.values[id]);
+      expr.push(id, i < 0 ? none : colors[i]);
+    }
+    expr.push(none);
+    return expr;
+  };
+  const paint = () => {
+    if (!map.getLayer("sgg-fill")) return;
+    map.setPaintProperty("sgg-fill", "fill-color", fillColor());
+    map.setPaintProperty("sgg-line", "line-color", isDark() ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)");
+    map.setPaintProperty("bg", "background-color", resolve("var(--surface-2)"));
+  };
+
+  function setMetric(key: string) {
+    cur = byKey[key];
+    const u = new URL(location.href);
+    u.searchParams.set("m", key);
+    history.replaceState(null, "", u);
+    renderLegend();
+    paint();
+    renderDetail(selected);
+  }
+
+  map.on("load", async () => {
+    const geo = await (await fetch(D.geo)).json();
+    map.addSource("sgg", { type: "geojson", data: geo, promoteId: "id" });
+    map.addLayer({ id: "sgg-fill", type: "fill", source: "sgg", paint: {
+      "fill-color": fillColor(),
+      "fill-opacity": ["interpolate", ["linear"], ["zoom"], 6, 0.82, 9, 0.68, 11, 0.5, 13, 0.3],
+    } });
+    map.addLayer({ id: "sgg-line", type: "line", source: "sgg", paint: {
+      "line-color": isDark() ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)",
+      "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.4, 10, 1.2],
+    } });
+    map.addLayer({ id: "sgg-hl", type: "line", source: "sgg", paint: {
+      "line-color": resolve("var(--text-primary)"),
+      "line-width": ["case", ["boolean", ["feature-state", "sel"], false], 2.6, ["boolean", ["feature-state", "hover"], false], 1.6, 0],
+    } });
+
+    let hover: string | null = null;
+    const setState = (id: string | null, k: string, v: boolean) => id && map.setFeatureState({ source: "sgg", id }, { [k]: v });
+    map.on("mousemove", "sgg-fill", (e: any) => {
+      const id = e.features?.[0]?.properties?.id as string;
+      if (hover !== id) { setState(hover, "hover", false); hover = id; setState(hover, "hover", true); }
+      map.getCanvas().style.cursor = "pointer";
+      tip.innerHTML = `<b>${D.regions[id].n}</b>${cur.label} ${show(cur, cur.values[id])}`;
+      tip.hidden = false;
+      const { x, y } = e.point;
+      const w = map.getContainer().clientWidth;
+      tip.style.left = `${Math.min(x + 14, w - tip.offsetWidth - 8)}px`;
+      tip.style.top = `${y + 14}px`;
+    });
+    map.on("mouseleave", "sgg-fill", () => {
+      setState(hover, "hover", false);
+      hover = null;
+      tip.hidden = true;
+      map.getCanvas().style.cursor = "";
+    });
+    map.on("click", "sgg-fill", (e: any) => {
+      const id = e.features?.[0]?.properties?.id as string;
+      setState(selected, "sel", false);
+      selected = id;
+      setState(selected, "sel", true);
+      renderDetail(id);
+    });
+  });
+
+  // 테마가 바뀌면 바탕 지도와 색을 다시
+  const retheme = () => {
+    if (D.key && map.getSource("base")) (map.getSource("base") as any).setTiles([tileUrl(baseLayer())]);
+    if (map.getLayer("sgg-hl")) map.setPaintProperty("sgg-hl", "line-color", resolve("var(--text-primary)"));
+    paint();
+    renderLegend();
+  };
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
+
+  renderLegend();
+
+  // ---- 검색 (브이월드 검색 API, JSONP: 브라우저 직접 호출은 CORS가 막혀 있다)
+  let cbn = 0;
+  let seq = 0;
+  const jsonp = (params: Record<string, string>) => new Promise<any>((ok) => {
+    const cb = `__vw${++cbn}`;
+    const s = document.createElement("script");
+    const done = (v: any) => { delete (window as any)[cb]; s.remove(); ok(v); };
+    (window as any)[cb] = (d: any) => done(d);
+    const q = new URLSearchParams({ service: "search", request: "search", version: "2.0", format: "json", size: "5", key: D.key, domain: location.hostname, callback: cb, ...params });
+    s.src = `https://api.vworld.kr/req/search?${q}`;
+    s.onerror = () => done(null);
+    document.head.appendChild(s);
+    setTimeout(() => (window as any)[cb] && done(null), 6000);
+  });
+  const qEl = document.getElementById("mp-q") as HTMLInputElement;
+  const resEl = document.getElementById("mp-results")!;
+  type Hit = { t: string; s: string; x: number; y: number; z: number };
+  let hits: Hit[] = [];
+  let active = -1;
+  const items = (d: any) => (d?.response?.status === "OK" ? d.response.result.items : []) as any[];
+  const search = async (q: string) => {
+    if (!D.key || q.trim().length < 2) { resEl.hidden = true; return; }
+    const my = ++seq;
+    const c = map.getCenter();
+    const [dist, place, road] = await Promise.all([
+      jsonp({ type: "district", category: "L4", query: q }),
+      jsonp({ type: "place", query: q, bbox: `${c.lng - 1.5},${c.lat - 1.2},${c.lng + 1.5},${c.lat + 1.2}` }),
+      /\d/.test(q) ? jsonp({ type: "address", category: "road", query: q }) : Promise.resolve(null),
+    ]);
+    if (my !== seq) return;
+    hits = [
+      ...items(dist).map((i) => ({ t: i.title, s: "행정구역", x: +i.point.x, y: +i.point.y, z: 13 })),
+      ...items(road).map((i) => ({ t: i.address.road, s: i.address.bldnm || "도로명주소", x: +i.point.x, y: +i.point.y, z: 16 })),
+      ...items(place).map((i) => ({ t: i.title, s: i.address?.road || i.address?.parcel || i.category || "", x: +i.point.x, y: +i.point.y, z: 16 })),
+    ].slice(0, 10);
+    active = -1;
+    resEl.innerHTML = hits.length ? "" : `<li aria-disabled="true">결과가 없습니다</li>`;
+    hits.forEach((h, i) => {
+      const li = document.createElement("li");
+      li.setAttribute("role", "option");
+      li.innerHTML = `${h.t}<small>${h.s}</small>`;
+      li.addEventListener("mousedown", (e) => { e.preventDefault(); go(i); });
+      resEl.appendChild(li);
+    });
+    resEl.hidden = false;
+  };
+  const go = (i: number) => {
+    const h = hits[i];
+    if (!h) return;
+    map.flyTo({ center: [h.x, h.y], zoom: h.z, speed: 1.6 });
+    resEl.hidden = true;
+    qEl.value = h.t;
+    // 그 위치의 시군구를 선택
+    map.once("moveend", () => {
+      const f = map.queryRenderedFeatures(map.project([h.x, h.y]), { layers: ["sgg-fill"] })[0];
+      if (f) {
+        map.setFeatureState({ source: "sgg", id: selected ?? "" }, { sel: false });
+        selected = f.properties.id;
+        map.setFeatureState({ source: "sgg", id: selected }, { sel: true });
+        renderDetail(selected);
+      }
+    });
+  };
+  let timer = 0;
+  qEl.addEventListener("input", () => { clearTimeout(timer); timer = window.setTimeout(() => search(qEl.value), 280); });
+  qEl.addEventListener("keydown", (e) => {
+    const lis = [...resEl.querySelectorAll("li[role=option]")];
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      active = Math.max(0, Math.min(lis.length - 1, active + (e.key === "ArrowDown" ? 1 : -1)));
+      lis.forEach((l, i) => l.setAttribute("aria-selected", String(i === active)));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (active >= 0) go(active); else if (hits.length) go(0); else search(qEl.value);
+    } else if (e.key === "Escape") resEl.hidden = true;
+  });
+  qEl.addEventListener("blur", () => setTimeout(() => (resEl.hidden = true), 150));
+  }
+  main();
+</script>

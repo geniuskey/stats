@@ -45,6 +45,7 @@ export function ogKey(pathname: string, base: string): string {
 export function allCards(): Card[] {
   const cards: Card[] = [
     { key: "index", eyebrow: "숫자 너머", title: "공공 통계로 보는\n대한민국의 미래", label: "흩어진 공공 통계를 결합해 기존에 없던 지표와 추계를 만듭니다", chips: SERVICES.map((s) => s.short) },
+    { key: "map", eyebrow: "숫자 너머", title: "지도로 보기", label: "229개 시군구의 인구·집값·이사 지표를 지도 위에서", chips: ["인구 전망", "집값 부담", "전세가율", "인구이동"] },
     { key: "methodology", eyebrow: "숫자 너머", title: "방법론과 한계", label: "데이터 수집 · 결합 · 추계 방법을 모두 공개합니다", chips: ["KOSIS OpenAPI", "코호트 요인법", "Hamilton-Perry", "과거 검증"] },
   ];
   for (const s of SERVICES) {
