@@ -72,8 +72,6 @@ const payload = {
   key: vworldKey,
   geo: `${base}geo/sgg.json`,
   geoSido: `${base}geo/sido.json`,
-  geoSidoPts: `${base}geo/sido_pts.json`,
-  sidoNames: Object.fromEntries(regs.map((r) => [r.sidoCode, r.sido])),
   base,
   groups: groups.map((g) => ({
     title: g.title, src: g.src,
@@ -98,7 +96,6 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     <div class="map-wrap">
       <div id="mp-map" class="map-canvas" role="region" aria-label="대한민국 지도"></div>
       <div class="map-tip" id="mp-tip" hidden></div>
-      {!vworldKey && <p class="map-warn small">배경지도 키(PUBLIC_VWORLD_KEY)가 없어 경계만 표시합니다.</p>}
     </div>
   </div>
   <script type="application/json" id="mp-data" set:html={json} />
@@ -193,16 +190,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     white-space: nowrap;
   }
   :global(.map-tip b) { display: block; }
-  .map-warn { position: absolute; left: 12px; bottom: 28px; margin: 0; background: var(--surface-1); padding: 6px 10px; border-radius: 8px; }
   :global(.maplibregl-ctrl-attrib) { font-size: 11px; }
-  :global(.map-label) {
-    pointer-events: none;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text-primary);
-    text-shadow: 0 0 3px var(--surface-1), 0 0 3px var(--surface-1), 0 0 6px var(--surface-1);
-    white-space: nowrap;
-  }
   @media (max-width: 760px) {
     .map-page { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
     .map-side { order: 2; border-right: 0; max-height: none; }
@@ -245,11 +233,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const t = document.documentElement.dataset.theme;
     return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   };
-  const SEA = "var(--surface-1)";
   const NODATA = "color-mix(in oklab, var(--text-muted) 22%, var(--surface-1))";
   const SIDO_LINE = "color-mix(in oklab, var(--text-primary) 45%, var(--surface-1))";
-  const BASE_FROM = 8.5;
-  const BASE_FULL = 10.5;
   const binIdx = (bins: Bin[], v: number | null | undefined) => {
     if (v == null || !isFinite(v)) return -1;
     for (let i = 0; i < bins.length; i++) {
@@ -325,31 +310,13 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   await Promise.all([loadCss(ML + "maplibre-gl.css"), loadJs(ML + "maplibre-gl.js")]);
   const maplibregl = (window as any).maplibregl;
 
-  const tileUrl = (layer: string) => `https://api.vworld.kr/req/wmts/1.0.0/${D.key}/${layer}/{z}/{y}/{x}.png`;
-  const baseLayer = () => (isDark() ? "midnight" : "white");
-  const ATTR = '배경지도 <a href="https://www.vworld.kr" target="_blank" rel="noopener">© 브이월드(국토교통부)</a> · 경계 통계청 SGIS, <a href="https://github.com/vuski/admdongkor" target="_blank" rel="noopener">vuski/admdongkor</a> (CC BY 4.0)';
-  const sources: any = {};
-  const layers: any[] = [{ id: "bg", type: "background", paint: { "background-color": resolve(SEA) } }];
-  if (D.key) {
-    sources.base = { type: "raster", tiles: [tileUrl(baseLayer())], tileSize: 256, maxzoom: 18, attribution: ATTR };
-    // 멀리서 볼 때 바탕 지도의 굵은 도로가 지표를 가린다: 시군구 수준(줌 8.5~)부터 서서히 보인다
-    layers.push({ id: "base", type: "raster", source: "base", minzoom: BASE_FROM, paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], BASE_FROM, 0, BASE_FULL, 1] } });
-  }
-  const map = new maplibregl.Map({
-    container: "mp-map",
-    style: { version: 8, sources, layers },
-    center: [127.75, 36.1],
-    zoom: 6.2,
-    minZoom: 5.5,
-    maxZoom: 17,
-    maxBounds: [[121.5, 32.0], [133.5, 39.8]],
-    attributionControl: D.key ? { compact: true } : { compact: true, customAttribution: ATTR },
-    dragRotate: false,
-    pitchWithRotate: false,
-  });
-  map.touchZoomRotate.disableRotation();
-  (window as any).__map = map; // 디버깅·자동 점검용
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  // 바탕 지도: OpenFreeMap 벡터 타일(OSM). 색칠을 물·도로·이름 아래에 끼워 넣을 수 있다
+  const STYLE_URL = { light: "https://tiles.openfreemap.org/styles/positron", dark: "https://tiles.openfreemap.org/styles/dark" };
+  const ATTR = '경계 통계청 SGIS, <a href="https://github.com/vuski/admdongkor" target="_blank" rel="noopener">vuski/admdongkor</a> (CC BY 4.0)' + (D.key ? ' · 검색 <a href="https://www.vworld.kr" target="_blank" rel="noopener">브이월드</a>' : "");
+  const KO = ["coalesce", ["get", "name:ko"], ["get", "name"]];
+  const styleCache: Record<string, any> = {};
+  const [geo, sidoGeo] = await Promise.all([fetch(D.geo).then((r) => r.json()), fetch(D.geoSido).then((r) => r.json())]);
+  const lineColor = () => (isDark() ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.9)");
 
   const fillColor = () => {
     const expr: any[] = ["match", ["get", "id"]];
@@ -362,12 +329,71 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     expr.push(none);
     return expr;
   };
+
+  async function buildStyle() {
+    const theme = isDark() ? "dark" : "light";
+    styleCache[theme] ??= await fetch(STYLE_URL[theme]).then((r) => r.json());
+    const st = structuredClone(styleCache[theme]);
+    const ROAD_FROM = 8, ROAD_FULL = 10; // 멀리서 볼 때 도로는 지표를 가리기만 한다
+    const textColor = resolve("var(--text-primary)"), halo = resolve("var(--surface-1)");
+    st.layers = st.layers.filter((l: any) => l["source-layer"] !== "boundary" && !/^label_(country|state)/.test(l.id)); // 행정경계·국가·도 이름은 우리 선으로
+    for (const l of st.layers) {
+      const sl = l["source-layer"];
+      if (l.type === "symbol" && l.layout?.["text-field"]) {
+        l.layout["text-field"] = KO; // 한국어 이름 우선
+        l.paint = { ...l.paint, "text-color": textColor, "text-halo-color": halo, "text-halo-width": 1.6, "text-halo-blur": 0.3 };
+      }
+      if (sl === "transportation" || sl === "aeroway") {
+        if (l.type === "line") l.paint = { ...l.paint, "line-opacity": ["interpolate", ["linear"], ["zoom"], ROAD_FROM, 0, ROAD_FULL, theme === "dark" ? 0.35 : 1] };
+        if (l.type === "fill") l.paint = { ...l.paint, "fill-opacity": ["interpolate", ["linear"], ["zoom"], ROAD_FROM, 0, ROAD_FULL, 1] };
+      }
+      if (sl === "transportation_name") l.minzoom = Math.max(l.minzoom ?? 0, ROAD_FULL);
+    }
+    st.sources.sgg = { type: "geojson", data: geo, promoteId: "id", attribution: ATTR };
+    st.sources.sido = { type: "geojson", data: sidoGeo };
+    const fill = { id: "sgg-fill", type: "fill", source: "sgg", paint: {
+      "fill-color": fillColor(),
+      "fill-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0.9, 10, 0.72, 12, 0.5, 14, 0.35],
+    } };
+    const line = { id: "sgg-line", type: "line", source: "sgg", paint: {
+      "line-color": lineColor(),
+      "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.3, 10, 1.1, 14, 2],
+    } };
+    const sidoLine = { id: "sido-line", type: "line", source: "sido", paint: {
+      "line-color": resolve(SIDO_LINE),
+      "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.8, 10, 1.8],
+    } };
+    const hl = { id: "sgg-hl", type: "line", source: "sgg", paint: {
+      "line-color": resolve("var(--text-primary)"),
+      "line-width": ["case", ["boolean", ["feature-state", "sel"], false], 2.6, ["boolean", ["feature-state", "hover"], false], 1.6, 0],
+    } };
+    // 순서: 배경·녹지 → 색칠 → 물(강이 보이게) → 건물·도로 → 경계선 → 이름
+    const at = (pred: (l: any) => boolean) => { const i = st.layers.findIndex(pred); return i < 0 ? st.layers.length : i; };
+    st.layers.splice(at((l: any) => l["source-layer"] === "water"), 0, fill);
+    st.layers.splice(at((l: any) => l.type === "symbol"), 0, line, sidoLine, hl);
+    return st;
+  }
+
+  const map = new maplibregl.Map({
+    container: "mp-map",
+    style: await buildStyle(),
+    center: [127.75, 36.1],
+    zoom: 6.2,
+    minZoom: 5.5,
+    maxZoom: 17,
+    maxBounds: [[121.5, 32.0], [133.5, 39.8]],
+    attributionControl: { compact: true },
+    localIdeographFontFamily: "'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif",
+    dragRotate: false,
+    pitchWithRotate: false,
+  });
+  map.touchZoomRotate.disableRotation();
+  (window as any).__map = map; // 디버깅·자동 점검용
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
   const paint = () => {
     if (!map.getLayer("sgg-fill")) return;
     map.setPaintProperty("sgg-fill", "fill-color", fillColor());
-    map.setPaintProperty("sgg-line", "line-color", isDark() ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)");
-    map.setPaintProperty("bg", "background-color", resolve(SEA));
-    if (map.getLayer("sido-line")) map.setPaintProperty("sido-line", "line-color", resolve(SIDO_LINE));
   };
 
   function setMetric(key: string) {
@@ -380,76 +406,37 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     renderDetail(selected);
   }
 
-  map.on("load", async () => {
-    const geo = await (await fetch(D.geo)).json();
-    map.addSource("sgg", { type: "geojson", data: geo, promoteId: "id" });
-    map.addLayer({ id: "sgg-fill", type: "fill", source: "sgg", paint: {
-      "fill-color": fillColor(),
-      "fill-opacity": ["interpolate", ["linear"], ["zoom"], BASE_FROM, 1, BASE_FULL, 0.66, 12, 0.45, 14, 0.28],
-    } });
-    map.addLayer({ id: "sgg-line", type: "line", source: "sgg", paint: {
-      "line-color": isDark() ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)",
-      "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.4, 10, 1.2],
-    } });
-    const [sidoGeo, sidoPts] = await Promise.all([fetch(D.geoSido).then((r) => r.json()), fetch(D.geoSidoPts).then((r) => r.json())]);
-    map.addSource("sido", { type: "geojson", data: sidoGeo });
-    map.addLayer({ id: "sido-line", type: "line", source: "sido", paint: {
-      "line-color": resolve(SIDO_LINE),
-      "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.9, 10, 1.8],
-    } });
-    // 시도 이름: 바탕 지도가 보이기 전까지만. 광역시·특별시는 조금 확대해야 보인다(겹침 방지)
-    const METRO = new Set(["11", "26", "27", "28", "29", "30", "31", "36"]);
-    const labels = sidoPts.features.map((f: any) => {
-      const el = document.createElement("div");
-      el.className = "map-label";
-      el.textContent = D.sidoNames[f.properties.sido] ?? "";
-      const mk = new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates).addTo(map);
-      return { el, metro: METRO.has(f.properties.sido) };
-    });
-    const toggleLabels = () => {
-      const z = map.getZoom();
-      for (const l of labels) l.el.style.display = z >= BASE_FULL - 0.5 || (l.metro && z < 7.2) ? "none" : "";
-    };
-    map.on("zoom", toggleLabels);
-    toggleLabels();
-    map.addLayer({ id: "sgg-hl", type: "line", source: "sgg", paint: {
-      "line-color": resolve("var(--text-primary)"),
-      "line-width": ["case", ["boolean", ["feature-state", "sel"], false], 2.6, ["boolean", ["feature-state", "hover"], false], 1.6, 0],
-    } });
-
-    let hover: string | null = null;
-    const setState = (id: string | null, k: string, v: boolean) => id && map.setFeatureState({ source: "sgg", id }, { [k]: v });
-    map.on("mousemove", "sgg-fill", (e: any) => {
-      const id = e.features?.[0]?.properties?.id as string;
-      if (hover !== id) { setState(hover, "hover", false); hover = id; setState(hover, "hover", true); }
-      map.getCanvas().style.cursor = "pointer";
-      tip.innerHTML = `<b>${D.regions[id].n}</b>${cur.label} ${show(cur, cur.values[id])}`;
-      tip.hidden = false;
-      const { x, y } = e.point;
-      const w = map.getContainer().clientWidth;
-      tip.style.left = `${Math.min(x + 14, w - tip.offsetWidth - 8)}px`;
-      tip.style.top = `${y + 14}px`;
-    });
-    map.on("mouseleave", "sgg-fill", () => {
-      setState(hover, "hover", false);
-      hover = null;
-      tip.hidden = true;
-      map.getCanvas().style.cursor = "";
-    });
-    map.on("click", "sgg-fill", (e: any) => {
-      const id = e.features?.[0]?.properties?.id as string;
-      setState(selected, "sel", false);
-      selected = id;
-      setState(selected, "sel", true);
-      renderDetail(id);
-    });
+  let hover: string | null = null;
+  const setState = (id: string | null, k: string, v: boolean) => id && map.getSource("sgg") && map.setFeatureState({ source: "sgg", id }, { [k]: v });
+  map.on("mousemove", "sgg-fill", (e: any) => {
+    const id = e.features?.[0]?.properties?.id as string;
+    if (hover !== id) { setState(hover, "hover", false); hover = id; setState(hover, "hover", true); }
+    map.getCanvas().style.cursor = "pointer";
+    tip.innerHTML = `<b>${D.regions[id].n}</b>${cur.label} ${show(cur, cur.values[id])}`;
+    tip.hidden = false;
+    const { x, y } = e.point;
+    const w = map.getContainer().clientWidth;
+    tip.style.left = `${Math.min(x + 14, w - tip.offsetWidth - 8)}px`;
+    tip.style.top = `${y + 14}px`;
+  });
+  map.on("mouseleave", "sgg-fill", () => {
+    setState(hover, "hover", false);
+    hover = null;
+    tip.hidden = true;
+    map.getCanvas().style.cursor = "";
+  });
+  map.on("click", "sgg-fill", (e: any) => {
+    const id = e.features?.[0]?.properties?.id as string;
+    setState(selected, "sel", false);
+    selected = id;
+    setState(selected, "sel", true);
+    renderDetail(id);
   });
 
-  // 테마가 바뀌면 바탕 지도와 색을 다시
-  const retheme = () => {
-    if (D.key && map.getSource("base")) (map.getSource("base") as any).setTiles([tileUrl(baseLayer())]);
-    if (map.getLayer("sgg-hl")) map.setPaintProperty("sgg-hl", "line-color", resolve("var(--text-primary)"));
-    paint();
+  // 테마가 바뀌면 바탕 지도 스타일째 바꾼다 (선택 상태는 다시 칠한다)
+  const retheme = async () => {
+    map.setStyle(await buildStyle(), { diff: false });
+    map.once("idle", () => setState(selected, "sel", true));
     renderLegend();
   };
   new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
