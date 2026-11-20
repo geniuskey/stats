@@ -293,6 +293,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   :global(.map-flow .lapse-legend div) { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center; }
   :global(.map-flow .lapse-legend i) { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   :global(.map-flow .lapse-legend b) { font-variant-numeric: tabular-nums; }
+  :global(.map-flow .route) { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 2px 0; }
+  :global(.map-flow .route .nm) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :global(.map-flow .route b) { font-variant-numeric: tabular-nums; }
   :global(.map-flow .lapse-cap) { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-size: 13px; line-height: 1.5; }
   .map-arcs { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
   .map-flow { display: grid; gap: 12px; }
@@ -941,10 +944,6 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   let lapseMonth = 0;
   let monthStart = 0, monthDur = MONTH_MS;
   let lapseColors: string[] = [];
-  type Dot = { x0: number; y0: number; x1: number; y1: number; t0: number; dur: number; bend: number };
-  let dots: Dot[] = [];
-  const clearDots = () => { dots = []; };
-  const anyDots = (now: number) => dots.some((d) => now < d.t0 + d.dur);
   const toM = (lng: number, lat: number): [number, number] => [(lng + 180) / 360, (1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2];
   let jit: Record<string, [number, number, number]> = {};
   let cum: Float64Array[][] = []; // [묶음][지역] → 달까지 누적 순이동
@@ -970,29 +969,59 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       return [id, [mx, my, Math.max(Math.min(b[2] - b[0], (b[3] - b[1]) * 1.25) / 360 / 5, 0.00002)]];
     }));
   })());
-  function spawnMonth(i: number, start: number) {
-    if (!L) return;
-    const sc = (k: number) => { const x = Math.sin(k * 78.233 + start * 0.001) * 43758.5453; return x - Math.floor(x); };
-    let n = 0;
+  // 이달의 길: 순이동이 큰 시군구 쌍을 곡선으로 (출발 빨강 → 도착 파랑 그라데이션), 점은 그 위를 꼬리 달고 흐른다
+  const TOP_ARCS = 60;
+  type LArc = { a: string; b: string; n: number; mx0: number; my0: number; mx1: number; my1: number; cx: number; cy: number; born: number; dying?: number };
+  type Dot = { arc: LArc; t0: number; dur: number };
+  let larcs: LArc[] = [];
+  let dots: Dot[] = [];
+  const clearDots = () => { dots = []; larcs = []; };
+  const anyDots = (now: number) => dots.some((d) => now < d.t0 + d.dur);
+  let lapseLevel: "sido" | "sgg" = "sido";
+  const nmShort = (id: string) => (id.length === 2 ? D.sidoNames[id] : (D.regions[id]?.n ?? id));
+  const sidoM = (sd: string): [number, number, number] | null => { const c = SP[sd]; if (!c) return null; const [mx, my] = toM(c[0], c[1]); return [mx, my, 0]; };
+  const monthArcs = (i: number) => {
+    if (lapseLevel === "sido") {
+      // 시도끼리: 시도를 넘는 쌍의 순이동을 더해 시도 쌍마다 다시 서로 뺀다
+      const net = new Map<string, number>();
+      for (let p = 0; p < L.pairs.length; p++) {
+        const c = decode(L.dots[p][lapseGroup][i]) || bigMap.get(`${p},${lapseGroup},${i}`) || 0;
+        if (!c) continue;
+        const sa = L.ids[L.pairs[p][0]].slice(0, 2), sb = L.ids[L.pairs[p][1]].slice(0, 2);
+        if (sa === sb) continue;
+        const [x, y, v] = sa < sb ? [sa, sb, c] : [sb, sa, -c];
+        net.set(`${x}>${y}`, (net.get(`${x}>${y}`) ?? 0) + v);
+      }
+      return [...net].map(([k, v]) => { const [x, y] = k.split(">"); return v > 0 ? { a: x, b: y, c: v } : { a: y, b: x, c: -v }; })
+        .filter((r) => r.c > 0).sort((x, y) => y.c - x.c).slice(0, 25);
+    }
+    const list: { a: string; b: string; c: number }[] = [];
     for (let p = 0; p < L.pairs.length; p++) {
       const c = decode(L.dots[p][lapseGroup][i]) || bigMap.get(`${p},${lapseGroup},${i}`) || 0;
       if (!c) continue;
       const ia = L.ids[L.pairs[p][0]], ib = L.ids[L.pairs[p][1]];
-      const A = jit[c > 0 ? ia : ib], B = jit[c > 0 ? ib : ia];
+      list.push(c > 0 ? { a: ia, b: ib, c } : { a: ib, b: ia, c: -c });
+    }
+    return list.sort((x, y) => y.c - x.c).slice(0, TOP_ARCS);
+  };
+  function spawnMonth(i: number, start: number) {
+    if (!L) return;
+    const sc = (k: number) => { const x = Math.sin(k * 78.233 + start * 0.001) * 43758.5453; return x - Math.floor(x); };
+    for (const a of larcs) if (a.dying == null) a.dying = start; // 지난달 길은 서서히 사라진다
+    let n = 0;
+    for (const m of monthArcs(i)) {
+      const A = m.a.length === 2 ? sidoM(m.a) : jit[m.a], B = m.b.length === 2 ? sidoM(m.b) : jit[m.b];
       if (!A || !B) continue;
-      for (let j = 0; j < Math.abs(c); j++) {
-        n++;
-        const a1 = sc(n) * 6.283, r1 = Math.sqrt(sc(n + 0.3)) * A[2], a2 = sc(n + 0.6) * 6.283, r2 = Math.sqrt(sc(n + 0.9)) * B[2];
-        const x0 = A[0] + Math.cos(a1) * r1, y0 = A[1] + Math.sin(a1) * r1, x1 = B[0] + Math.cos(a2) * r2, y1 = B[1] + Math.sin(a2) * r2;
-        const dist = Math.hypot(x1 - x0, y1 - y0);
-        dots.push({ x0, y0, x1, y1, t0: start + sc(n + 1.7) * monthDur * 0.8, dur: Math.min(2800, Math.max(900, 700 + dist * 160000)), bend: (sc(n + 2.3) - 0.5) * 0.25 });
-      }
+      const dx = B[0] - A[0], dy = B[1] - A[1];
+      const arc: LArc = { a: m.a, b: m.b, n: m.c * L.unit, mx0: A[0], my0: A[1], mx1: B[0], my1: B[1], cx: (A[0] + B[0]) / 2 - dy * 0.22, cy: (A[1] + B[1]) / 2 + dx * 0.22, born: start };
+      larcs.push(arc);
+      const k = Math.min(40, m.c);
+      for (let j = 0; j < k; j++) dots.push({ arc, t0: start + ((j + sc(++n) * 0.8) / k) * monthDur * 0.9, dur: 1100 + sc(n + 0.5) * 300 });
     }
   }
   const ymTxt = (ym: string) => `${ym.slice(0, 4)}.${ym.slice(4)}`;
   const captionOf = (ym: string) => D.lapseCaptions[ym] ?? (ym.endsWith("02") ? D.lapseCaptions["02"] : "");
   const man = (v: number) => (Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(1)}만` : fmtN(v));
-  // 지금 보여 줄 누적값 (달 안에서 부드럽게)
   const cumNow = (r: number, now: number) => {
     const c = cum[lapseGroup][r], i = lapseMonth;
     const prev = i > 0 ? c[i - 1] : 0, prog = Math.max(0, Math.min(1, (now - monthStart) / monthDur));
@@ -1004,41 +1033,68 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const a = map.project(RA), b = map.project(RB), ma = toM(RA[0], RA[1]), mb = toM(RB[0], RB[1]);
     const sx = (b.x - a.x) / (mb[0] - ma[0]), sy = (b.y - a.y) / (mb[1] - ma[1]);
     const ox = a.x - ma[0] * sx, oy = a.y - ma[1] * sy;
-    const z = map.getZoom(), RMAX = 34 * Math.pow(2, (z - 6.2) / 2);
-    // 누적 원
+    const X = (m: number) => ox + m * sx, Y = (m: number) => oy + m * sy;
+    const z = map.getZoom(), RMAX = 30 * Math.pow(2, (z - 6.2) / 2);
+    // 1) 누적 원 (옅게: 길이 주인공)
     const circ: [number, number, number, number, string][] = [];
     for (let r = 0; r < L.ids.length; r++) {
       const j = jit[L.ids[r]];
       if (!j) continue;
       const v = cumNow(r, now);
-      if (!v) continue;
       const rad = RMAX * Math.sqrt(Math.abs(v) / cumMax[lapseGroup]);
       if (rad < 1.2) continue;
-      circ.push([ox + j[0] * sx, oy + j[1] * sy, rad, v, L.ids[r]]);
+      circ.push([X(j[0]), Y(j[1]), rad, v, L.ids[r]]);
     }
     circ.sort((p, q) => q[2] - p[2]);
     for (const [x, y, rad, v] of circ) {
       const col = v > 0 ? colors.in : colors.out;
       cx.beginPath(); cx.arc(x, y, rad, 0, 6.283);
-      cx.fillStyle = rgba(col, 0.22); cx.fill();
-      cx.strokeStyle = rgba(col, 0.85); cx.lineWidth = 1.2; cx.stroke();
+      cx.fillStyle = rgba(col, 0.12); cx.fill();
+      cx.strokeStyle = rgba(col, 0.5); cx.lineWidth = 1; cx.stroke();
     }
-    // 점
-    const sz = Math.max(2.2, Math.min(3.6, z * 0.45)), hs = sz / 2;
-    cx.fillStyle = rgba(colors.ink, 0.82); // 점은 한 색: 파랑·빨강은 원(얻음·잃음)에 쓴다
+    // 2) 이달의 길
+    const maxN = Math.max(1, ...larcs.filter((l) => l.dying == null).map((l) => l.n));
+    larcs = larcs.filter((l) => l.dying == null || now - l.dying < 600);
+    const bez = (l: LArc, t: number): [number, number] => {
+      const u = 1 - t;
+      return [X(u * u * l.mx0 + 2 * u * t * l.cx + t * t * l.mx1), Y(u * u * l.my0 + 2 * u * t * l.cy + t * t * l.my1)];
+    };
+    cx.lineCap = "round";
+    for (const l of [...larcs].sort((p, q) => p.n - q.n)) {
+      const fade = Math.min(1, (now - l.born) / 400) * (l.dying != null ? Math.max(0, 1 - (now - l.dying) / 600) : 1);
+      if (fade <= 0) continue;
+      const [x0, y0] = bez(l, 0), [x1, y1] = bez(l, 1), [qx, qy] = [X(l.cx), Y(l.cy)];
+      if (Math.hypot(x1 - x0, y1 - y0) < 4) continue;
+      const g = cx.createLinearGradient(x0, y0, x1, y1);
+      g.addColorStop(0, rgba(colors.out, 0.75 * fade)); g.addColorStop(1, rgba(colors.in, 0.85 * fade));
+      const wd = 1 + 7 * Math.sqrt(l.n / maxN);
+      cx.beginPath(); cx.moveTo(x0, y0); cx.quadraticCurveTo(qx, qy, x1, y1);
+      cx.strokeStyle = g; cx.lineWidth = wd; cx.stroke();
+      // 도착지 화살촉
+      const [bx, by] = bez(l, 0.93), ang = Math.atan2(y1 - by, x1 - bx), ah = 5 + wd;
+      cx.beginPath(); cx.moveTo(x1, y1);
+      cx.lineTo(x1 - ah * Math.cos(ang - 0.5), y1 - ah * Math.sin(ang - 0.5));
+      cx.lineTo(x1 - ah * Math.cos(ang + 0.5), y1 - ah * Math.sin(ang + 0.5));
+      cx.closePath(); cx.fillStyle = rgba(colors.in, 0.9 * fade); cx.fill();
+    }
+    // 3) 점: 꼬리 달린 혜성 (하나 = unit명)
     let w = 0;
     for (let i = 0; i < dots.length; i++) {
       const d = dots[i], u = (now - d.t0) / d.dur;
-      if (u > 1.1) continue;
+      if (u > 1) continue;
       dots[w++] = d;
       if (u < 0) continue;
-      const e = u >= 1 ? 1 : u < 0.5 ? 2 * u * u : 1 - (2 - 2 * u) * (2 - 2 * u) / 2;
-      const dx = d.x1 - d.x0, dy = d.y1 - d.y0, k = 4 * e * (1 - e) * d.bend;
-      const s2 = u >= 1 ? sz * (1 - (u - 1) / 0.1) : sz;
-      cx.fillRect(ox + (d.x0 + dx * e - dy * k) * sx - hs, oy + (d.y0 + dy * e + dx * k) * sy - hs, s2, s2);
+      const e = u < 0.5 ? 2 * u * u : 1 - (2 - 2 * u) * (2 - 2 * u) / 2;
+      const [hx, hy] = bez(d.arc, e), [tx, ty] = bez(d.arc, Math.max(0, e - 0.12));
+      const tg = cx.createLinearGradient(tx, ty, hx, hy);
+      tg.addColorStop(0, rgba(colors.ink, 0)); tg.addColorStop(1, rgba(colors.ink, 0.8));
+      cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(hx, hy);
+      cx.strokeStyle = tg; cx.lineWidth = 2; cx.stroke();
+      cx.beginPath(); cx.arc(hx, hy, 2.3, 0, 6.283);
+      cx.fillStyle = colors.ink; cx.fill();
     }
     dots.length = w;
-    // 이름표: 누적이 가장 큰 곳 위아래 4곳씩
+    // 4) 이름표: 누적 상·하위 (겹치면 생략)
     const pos = circ.filter((c) => c[3] > 0).slice(0, 4), neg = circ.filter((c) => c[3] < 0).slice(0, 4);
     cx.font = "700 12px Pretendard, 'Apple SD Gothic Neo', sans-serif";
     cx.textAlign = "center"; cx.textBaseline = "middle";
@@ -1047,7 +1103,6 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       const t = `${(D.regions[id]?.n ?? id).split(" ").pop()} ${v > 0 ? "+" : "−"}${man(Math.abs(Math.round(v)))}`;
       const tw = cx.measureText(t).width;
       let ty = y - rad - 9;
-      // 겹치면 원 아래로, 그래도 겹치면 생략
       const hit = (yy: number) => placed.some(([px, py, pw]) => Math.abs(px - x) < (pw + tw) / 2 + 4 && Math.abs(py - yy) < 15);
       if (hit(ty)) { ty = y + rad + 10; if (hit(ty)) continue; }
       placed.push([x, ty, tw]);
@@ -1065,16 +1120,27 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const mx = Math.max(1, ...[...top, ...bot].map((r: any) => Math.abs(r[1])));
     const li = (r: [string, number]) => `<div class="fly-row" data-id="${r[0]}"><span class="nm">${D.regions[r[0]]?.n ?? r[0]}</span><span class="l">${r[1] < 0 ? `<span style="width:${(-r[1] / mx) * 100}%;background:${colors.out}"></span>` : ""}</span><span class="r">${r[1] > 0 ? `<span style="width:${(r[1] / mx) * 100}%;background:${colors.in}"></span>` : ""}</span><span class="v" style="color:${r[1] >= 0 ? colors.in : colors.out}">${r[1] > 0 ? "+" : r[1] < 0 ? "−" : ""}${man(Math.abs(r[1]))}</span></div>`;
     const capNet = D.monthly.capNet[idx];
+    const routes = monthArcs(lapseMonth).slice(0, 6);
+    const short = nmShort;
     flowEl.innerHTML = `
       <h3>${ymTxt(ym)}까지, 사람들이 모인 곳</h3>
       <div class="mp-chips" role="group" aria-label="나이">${LG_LABEL.map((l, g) => `<button type="button" data-lg="${g}" aria-pressed="${g === lapseGroup}">${l}</button>`).join("")}</div>
       ${cap0 ? `<p class="lapse-cap">${cap0}</p>` : ""}
-      <p class="sum">원은 ${ymTxt(L.months[0])}부터 쌓인 순이동(<span style="color:${colors.in}">파랑 +</span> · <span style="color:${colors.out}">빨강 −</span>), 점(<span style="display:inline-block;width:6px;height:6px;background:${colors.ink};vertical-align:1px"></span>)은 이달 두 시군구가 주고받은 걸 서로 빼고 남은 이사(점 하나 = ${fmtN(L.unit)}명)입니다.${lapseGroup === 0 && capNet != null ? ` 이달 수도권 순유입 <strong style="color:${capNet >= 0 ? colors.in : colors.out}">${signed(capNet)}명</strong>.` : ""}</p>
+      <p class="sum">선은 이달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})로, <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀌고 점 하나가 ${fmtN(L.unit)}명입니다. 원은 ${ymTxt(L.months[0])}부터 쌓인 순이동입니다.${lapseGroup === 0 && capNet != null ? ` 이달 수도권 순유입 <strong style="color:${capNet >= 0 ? colors.in : colors.out}">${signed(capNet)}명</strong>.` : ""}</p>
+      <div class="mp-chips" role="group" aria-label="길 단위"><button type="button" data-ll="sido" aria-pressed="${lapseLevel === "sido"}">시도끼리</button><button type="button" data-ll="sgg" aria-pressed="${lapseLevel === "sgg"}">시군구끼리</button></div>
+      <div><h4>이달 큰 길 (${LG_DESC[lapseGroup]}, 순이동)</h4>
+        ${routes.map((r) => `<div class="route"><span class="nm"><span style="color:${colors.out}">${short(r.a)}</span> → <span style="color:${colors.in}">${short(r.b)}</span></span><b>${fmtN(r.c * L.unit)}</b></div>`).join("")}</div>
       <div class="fly">
         <div class="fly-head"><span>${LG_DESC[lapseGroup]} · 누적</span><span class="l" style="color:${colors.out}">← 잃음</span><span class="r" style="color:${colors.in}">얻음 →</span><span class="v">명</span></div>
         ${top.map(li).join("")}<div style="height:6px"></div>${bot.map(li).join("")}
       </div>
-      <p class="hint">점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍만, 위치는 시군구 안에 흩뿌린 것입니다. 원·목록은 모든 쌍의 정확한 합계입니다.</p>`;
+      <p class="hint">선·점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 원·누적 목록은 모든 쌍의 정확한 합계입니다.</p>`;
+    flowEl.querySelectorAll<HTMLElement>("[data-ll]").forEach((el) => el.addEventListener("click", () => {
+      lapseLevel = el.dataset.ll as any;
+      clearDots();
+      spawnMonth(lapseMonth, performance.now());
+      renderLapse();
+    }));
     flowEl.querySelectorAll<HTMLElement>("[data-lg]").forEach((el) => el.addEventListener("click", () => {
       lapseGroup = +el.dataset.lg!;
       clearDots();
