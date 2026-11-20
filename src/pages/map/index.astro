@@ -381,7 +381,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       b.type = "button";
       b.textContent = m.label;
       b.dataset.key = m.key;
-      b.addEventListener("click", () => setMetric(m.key));
+      b.addEventListener("click", () => setMetric(m.key, true));
       chips.appendChild(b);
     }
     box.appendChild(chips);
@@ -392,7 +392,12 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const detailEl = document.getElementById("mp-detail")!;
   const tip = document.getElementById("mp-tip")!;
   const flowEl = document.getElementById("mp-flow")!;
-  groupsEl.firstElementChild?.after(flowEl); // 흐름 패널은 나이 버튼 바로 아래
+  // 흐름·타임랩스 패널은 누른 버튼이 있는 묶음 바로 아래
+  const placeFlowPanel = () => {
+    const btn = groupsEl.querySelector<HTMLElement>(`button[data-key="${cur.key}"]`);
+    (btn?.closest(".mp-group") ?? groupsEl.firstElementChild)?.after(flowEl);
+  };
+  placeFlowPanel();
   document.querySelector(".map-search")!.after(detailEl); // 고른 지역의 추이는 맨 위에
 
   const renderLegend = () => {
@@ -622,7 +627,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     map.setPaintProperty("sido-line", "line-width", cur.level === "sido" ? ["interpolate", ["linear"], ["zoom"], 6, 1.4, 10, 2.4] : ["interpolate", ["linear"], ["zoom"], 6, 0.8, 10, 1.8]);
   };
 
-  function setMetric(key: string) {
+  function setMetric(key: string, clicked = false) {
     stopPlay();
     cur = byKey[key];
     const u = new URL(location.href);
@@ -630,7 +635,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     history.replaceState(null, "", u);
     renderLegend();
     paint();
-    if (isLapse()) enterLapse(); else clearDots();
+    placeFlowPanel();
+    if (isLapse()) enterLapse().then(() => { if (clicked) { playLapse(true); flowEl.scrollIntoView({ behavior: "smooth", block: "nearest" }); } });
+    else clearDots();
     renderDetail(selected);
     renderTime();
     updateArcs();
@@ -1282,18 +1289,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   });
   playEl.addEventListener("click", () => {
     if (playTimer) { stopPlay(); return; }
-    if (isLapse() && L) {
-      if (lapseMonth >= L.months.length - 1) { clearDots(); lapseMonth = 0; }
-      playEl.textContent = "❚❚"; playEl.setAttribute("aria-label", "멈춤");
-      setLapseMonth(lapseMonth, performance.now());
-      const step = () => {
-        if (lapseMonth >= L.months.length - 1) { stopPlay(); return; }
-        setLapseMonth(lapseMonth + 1, performance.now());
-        playTimer = window.setTimeout(step, monthDur);
-      };
-      playTimer = window.setTimeout(step, monthDur);
-      return;
-    }
+    if (isLapse() && L) { playLapse(false); return; }
     if (isFlow()) {
       if (flowWin >= FW.length - 1) setFlowWin(0);
       playEl.textContent = "❚❚"; playEl.setAttribute("aria-label", "멈춤");
@@ -1313,6 +1309,21 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     }, ys.length > 12 ? 380 : 700);
   });
   renderTime();
+
+  // 타임랩스 재생 (fromStart: 처음 달부터)
+  function playLapse(fromStart: boolean) {
+    if (!L) return;
+    stopPlay();
+    if (fromStart || lapseMonth >= L.months.length - 1) { clearDots(); lapseMonth = 0; }
+    playEl.textContent = "❚❚"; playEl.setAttribute("aria-label", "멈춤");
+    setLapseMonth(lapseMonth, performance.now());
+    const step = () => {
+      if (lapseMonth >= L.months.length - 1) { stopPlay(); return; }
+      setLapseMonth(lapseMonth + 1, performance.now());
+      playTimer = window.setTimeout(step, monthDur);
+    };
+    playTimer = window.setTimeout(step, monthDur);
+  }
 
   // 테마가 바뀌면 바탕 지도 스타일째 바꾼다 (선택 상태는 다시 칠한다)
   const retheme = async () => {
