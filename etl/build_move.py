@@ -230,6 +230,52 @@ def write_flows(flow: Counter, flow_age: dict, win: list[str], name: str = "move
     return {"period": [win[0], win[-1]], "file": name}
 
 
+LAPSE_UNIT = 50          # 점 하나 = 50명
+LAPSE_MIN_YEAR = 100     # 연평균 이만큼 이상 오간 시군구 쌍만
+LAPSE_GROUPS = [("young", ("youth",)), ("family", ("kids", "mid")), ("senior", ("pre", "old"))]
+B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def write_lapse(results, months: list[str]) -> None:
+    """전국 이동 타임랩스: 시군구 쌍 × 달 × 나이 3묶음의 '점 개수'(1점 = LAPSE_UNIT명).
+    점 개수는 반올림 오차를 다음 달로 넘겨(쌍·묶음별) 기간 합계가 맞게 한다. 한 글자(0~z) = 한 달."""
+    gi = {k: i for i, (k, _, _) in enumerate(AGE_GROUPS)}
+    by_month = {s["ym"]: d for s, d in results if d}
+    tot: Counter = Counter()
+    for ym in months:
+        for k, arr in by_month[ym]["flowAge"].items():
+            tot[k] += sum(arr[gi[g]] for _, gs in LAPSE_GROUPS for g in gs)
+    years = len(months) / 12
+    pairs = sorted((k for k, v in tot.items() if v / years >= LAPSE_MIN_YEAR), key=lambda k: -tot[k])
+    ids = sorted({x for k in pairs for x in k})
+    ix = {r: i for i, r in enumerate(ids)}
+    dots, capped = [], 0
+    for k in pairs:
+        row = []
+        for _, gs in LAPSE_GROUPS:
+            acc, chars = 0.0, []
+            for ym in months:
+                arr = by_month[ym]["flowAge"].get(k)
+                acc += sum(arr[gi[g]] for g in gs) if arr else 0
+                n = int(acc / LAPSE_UNIT + 0.5)
+                acc -= n * LAPSE_UNIT
+                if n > 35:
+                    capped += 1
+                    n = 35
+                chars.append(B36[n])
+            row.append("".join(chars))
+        dots.append(row)
+    all_moves = sum(sum(sum(arr[gi[g]] for _, gs in LAPSE_GROUPS for g in gs) for arr in by_month[ym]["flowAge"].values()) for ym in months)
+    out = FLOWS_DIR / "move_lapse.json"
+    out.write_text(json.dumps({
+        "unit": LAPSE_UNIT, "minYear": LAPSE_MIN_YEAR, "months": months, "groups": [g for g, _ in LAPSE_GROUPS],
+        "groupAges": {g: [AGE_GROUPS[gi[x]][1:] for x in gs] for g, gs in LAPSE_GROUPS},
+        "coverage": round(sum(tot[k] for k in pairs) / all_moves, 3) if all_moves else None,
+        "ids": ids, "pairs": [[ix[s], ix[t]] for s, t in pairs], "dots": dots,
+    }, separators=(",", ":")))
+    print(f"  → {out.relative_to(ROOT)} ({len(pairs):,}쌍 · 이동의 {sum(tot[k] for k in pairs) / all_moves:.0%} · {out.stat().st_size // 1024} KB · 35점 넘는 칸 {capped})")
+
+
 def build():
     mf = MOVE / "manifest.json"
     if not mf.exists():
@@ -254,7 +300,7 @@ def build():
 
     # 흐름은 달력 연도(12달이 다 있는 해)별로도: 최근 12개월이 아닌 달은 흐름만 센다
     flow_years = [y for y in sorted({ym[:4] for ym in months}) if all(f"{y}{m:02d}" in months for m in range(1, 13))]
-    jobs = [(ym, "full" if ym in win else ("flow" if ym[:4] in flow_years else "")) for ym in months]
+    jobs = [(ym, "full" if ym in win else "flow") for ym in months]  # 타임랩스가 모든 달의 흐름을 쓴다
     with ProcessPoolExecutor() as ex:
         results = list(ex.map(scan_month, jobs))
 
@@ -409,6 +455,7 @@ def build():
                     t[gi] += v
         flow_windows.append({"key": y, "label": f"{y}년", **write_flows(fy, fay, [f"{y}01", f"{y}12"], f"move_flows_{y}.json")})
     flow_windows.append({"key": "recent", "label": "최근 1년", **write_flows(flow, flow_age, win)})
+    write_lapse(results, months)
 
     return {
         "meta": {

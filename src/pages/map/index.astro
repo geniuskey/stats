@@ -46,6 +46,13 @@ const groups: { title: string; src: string; metrics: M[] }[] = [
     ],
   },
   {
+    title: "전국 타임랩스", src: `${ymLabel((move as any).monthly.months[0])}~${ymLabel(mm.last)} · 달마다`,
+    metrics: [
+      { key: "lapse", label: "▶ 전국 이사 재생", format: "dec1", kind: "div", breaks: [-10, -5, -2, 2, 5, 10],
+        desc: "매달 시군구를 넘는 이사를 점으로 날립니다. 색은 나이 묶음.", values: fromObj(MV, "rate") },
+    ],
+  },
+  {
     title: "인구 전망", src: `2015~${end} · ▶로 재생`,
     metrics: [
       tm("t_pop"), tm("t_old"), tm("t_kid"), tm("t_ext"),
@@ -79,6 +86,15 @@ const payload = {
     ...w, url: `${base}data/${w.file}`, periodLabel: `${ymLabel(w.period[0])}~${ymLabel(w.period[1])}`,
   })),
   sidoNames: Object.fromEntries(regs.map((r) => [r.sidoCode, r.sido])),
+  lapse: `${base}data/move_lapse.json`,
+  monthly: { months: (move as any).monthly.months, capNet: (move as any).monthly.capNet, interSgg: (move as any).monthly.interSgg },
+  lapseCaptions: {
+    "02": "2월: 새 학기·첫 직장 이사. 해마다 이동이 가장 많고 수도권 순유입도 가장 큰 달입니다.",
+    "202510": "10월 20일 농어촌 기본소득 시범 7개 군 발표 (연천·정선·청양·순창·신안·영양·남해).",
+    "202511": "기본소득 시범 군으로 전입이 몰립니다. 이 7개 군의 이달 순유입은 인구 1천 명당 24명.",
+    "202512": "추가 시범 3개 군(옥천·장수·곡성)으로 전입이 몰립니다.",
+    "202606": "6월 11일 추가 시범 7개 군 발표 (화천·보은·진안·무주·구례·보성·청송) — 이달 순유입 1천 명당 18명.",
+  },
   moveNet: Object.fromEntries(Object.entries(MV).map(([id, r]: any) => [id, { all: r.net, kids: r.kids, youth: r.youth, mid: r.mid, pre: r.pre, old: r.old }])),
   base,
   groups: groups.map((g) => ({
@@ -273,6 +289,11 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   :global(.map-tip .tt-fly:not(.head) .r) { display: flex; height: 8px; }
   :global(.map-tip .tt-fly .l span), :global(.map-tip .tt-fly .r span) { display: block; height: 100%; }
   :global(.map-tip .tt-fly .v) { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+  :global(.map-flow .lapse-legend) { display: grid; gap: 4px; font-size: 13px; }
+  :global(.map-flow .lapse-legend div) { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center; }
+  :global(.map-flow .lapse-legend i) { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  :global(.map-flow .lapse-legend b) { font-variant-numeric: tabular-nums; }
+  :global(.map-flow .lapse-cap) { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-size: 13px; line-height: 1.5; }
   .map-arcs { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
   .map-flow { display: grid; gap: 12px; }
   :global(.map-flow h3) { margin: 0; font-size: 16px; }
@@ -312,6 +333,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   let selected: string | null = new URLSearchParams(location.search).get("r");
   const FLOW_G: Record<string, string> = { rate: "all", kidsRate: "kids", youthRate: "youth", midRate: "mid", preRate: "pre", oldRate: "old" };
   const isFlow = () => FLOW_G[cur.key] != null;
+  const isLapse = () => cur.key === "lapse";
   let F: { ids: string[]; groups: string[]; rows: number[][]; net?: Record<string, number[]> } | null = null; // 지금 기간의 이사 흐름
 
   // CSS 색(var·color-mix 포함) → rgb: 지도 엔진은 CSS 변수를 모른다
@@ -388,6 +410,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   };
 
   const renderDetail = (id: string | null) => {
+    if (isLapse()) { detailEl.hidden = true; renderLapse(); return; }
     if (isFlow()) { detailEl.hidden = true; renderFlow(id); return; }
     flowEl.hidden = true;
     if (!id) { detailEl.hidden = true; return; }
@@ -514,10 +537,11 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const allScenKeys = (m: any): string[] => (m.scen?.length ? m.scen.reduce((acc: string[], d: any) => acc.flatMap((a) => d.options.map((o: any) => (a ? `${a}|${o.v}` : o.v))), [""]) : ["_"]);
   const lineColor = () => (isDark() ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.9)");
 
-  const fillOpacity = () => (isFlow()
+  const fillOpacity = () => (isFlow() || isLapse()
     ? ["interpolate", ["linear"], ["zoom"], 7, 0.55, 10, 0.45, 12, 0.32, 14, 0.22]
     : ["interpolate", ["linear"], ["zoom"], 7, 0.9, 10, 0.72, 12, 0.5, 14, 0.35]);
   const fillColor = () => {
+    if (isLapse()) return resolve("color-mix(in oklab, var(--text-muted) 14%, var(--surface-1))");
     const expr: any[] = ["match", ["get", "id"]];
     const colors = cur.bins.map((b) => resolve(b.color));
     const none = resolve(NODATA);
@@ -606,6 +630,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     history.replaceState(null, "", u);
     renderLegend();
     paint();
+    if (isLapse()) enterLapse(); else clearDots();
     renderDetail(selected);
     renderTime();
     updateArcs();
@@ -663,7 +688,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     placeTip(x, y);
   });
   map.getCanvas().addEventListener("mouseleave", () => { clearHover(); tip.hidden = true; });
-  map.once("idle", () => { if (selected) { setState(selected, "sel", true); renderDetail(selected); } updateArcs(); });
+  map.once("idle", () => { if (selected) { setState(selected, "sel", true); renderDetail(selected); } updateArcs(); if (isLapse()) enterLapse(); });
   map.on("click", (e: any) => {
     const g = isFlow() ? arcAt(e.point.x, e.point.y) : null;
     if (g) { tip.innerHTML = arcTip(g.a); placeTip(e.point.x, e.point.y); return; } // 터치: 선을 누르면 나이별 인원
@@ -848,6 +873,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const rgba = (rgb: string, a: number) => rgb.replace("rgb(", "rgba(").replace(")", `,${a})`);
   let colors = { in: "", out: "", halo: "", ink: "", mute: "", ages: [] as string[] };
   const recolor = () => {
+    lapseColors = LG_VARS.map(resolve);
     colors = { in: resolve(IN_C), out: resolve(OUT_C), halo: resolve("var(--surface-1)"), ink: resolve("var(--text-primary)"), mute: resolve("var(--neutral-series)"), ages: AGE_VARS.map(resolve) };
     renderFlowLegend();
   };
@@ -895,10 +921,139 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     flowLegendEl.querySelector("details")!.addEventListener("toggle", (e) => { legendOpen = (e.target as HTMLDetailsElement).open; });
   }
 
+
+  // ---- 전국 이동 타임랩스: 매달 시군구를 넘는 이사를 점(1점 = unit명)으로 출발지 → 도착지에 날린다
+  const MONTH_MS = 1500;
+  const LG = ["young", "family", "senior"];
+  const LG_LABEL = ["20~34세 청년", "아이 동반 가족 (0~14·35~49세)", "50세 이상"];
+  const LG_VARS = ["var(--series-1)", "var(--series-4)", "var(--series-8)"];
+  let L: any = null;
+  let lapseLoading: Promise<void> | null = null;
+  let lapseMonth = 0;
+  let lapseColors: string[] = [];
+  type Dot = { x0: number; y0: number; x1: number; y1: number; t0: number; dur: number; g: number; bend: number };
+  let dots: Dot[][] = [[], [], []]; // 나이 묶음별 (그리기 한 번에 한 색)
+  const clearDots = () => { dots = [[], [], []]; };
+  const anyDots = (now: number) => dots.some((arr) => arr.some((d) => now < d.t0 + d.dur));
+  const toM = (lng: number, lat: number): [number, number] => [(lng + 180) / 360, (1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2];
+  let jit: Record<string, [number, number, number]> = {}; // id → [mx, my, 흩뿌림 반경(메르카토르)]
+  const loadLapse = () => (lapseLoading ??= (async () => {
+    const [l] = await Promise.all([fetch(D.lapse).then((r) => r.json()), loadPts()]);
+    L = l;
+    lapseMonth = L.months.length - 1;
+    // 시군구마다 대표점과 흩뿌림 반경(경계 상자 짧은 변의 1/4)
+    const bb: Record<string, number[]> = {};
+    for (const f of geo.features) {
+      const b = (bb[f.properties.id] ??= [180, 90, -180, -90]);
+      const walk = (c: any) => (typeof c[0] === "number" ? (b[0] = Math.min(b[0], c[0]), b[1] = Math.min(b[1], c[1]), b[2] = Math.max(b[2], c[0]), b[3] = Math.max(b[3], c[1])) : c.forEach(walk));
+      walk(f.geometry.coordinates);
+    }
+    jit = Object.fromEntries(Object.entries(P).map(([id, c]) => {
+      const b = bb[id] ?? [c[0], c[1], c[0], c[1]];
+      const [mx, my] = toM(c[0], c[1]);
+      const r = Math.min(b[2] - b[0], (b[3] - b[1]) * 1.25) / 360 / 4;
+      return [id, [mx, my, Math.max(r, 0.00002)]];
+    }));
+  })());
+  const B36 = "0123456789abcdefghijklmnopqrstuvwxyz";
+  function spawnMonth(i: number, start: number) {
+    if (!L) return;
+    const sc = (k: number) => { const x = Math.sin(k * 78.233 + start) * 43758.5453; return x - Math.floor(x); };
+    let n = 0;
+    for (let p = 0; p < L.pairs.length; p++) {
+      const A = jit[L.ids[L.pairs[p][0]]], B = jit[L.ids[L.pairs[p][1]]];
+      if (!A || !B) continue;
+      for (let g = 0; g < 3; g++) {
+        const c = B36.indexOf(L.dots[p][g][i]);
+        for (let j = 0; j < c; j++) {
+          n++;
+          const a1 = sc(n) * 6.283, r1 = Math.sqrt(sc(n + 0.3)) * A[2], a2 = sc(n + 0.6) * 6.283, r2 = Math.sqrt(sc(n + 0.9)) * B[2];
+          const x0 = A[0] + Math.cos(a1) * r1, y0 = A[1] + Math.sin(a1) * r1, x1 = B[0] + Math.cos(a2) * r2, y1 = B[1] + Math.sin(a2) * r2;
+          const dist = Math.hypot(x1 - x0, y1 - y0);
+          dots[g].push({ x0, y0, x1, y1, g, t0: start + sc(n + 1.7) * MONTH_MS, dur: Math.min(2600, Math.max(700, 600 + dist * 150000)), bend: (sc(n + 2.3) - 0.5) * 0.3 });
+        }
+      }
+    }
+  }
+  const monthCount = (i: number) => {
+    const c = [0, 0, 0];
+    if (!L) return c;
+    for (const row of L.dots) for (let g = 0; g < 3; g++) c[g] += B36.indexOf(row[g][i]);
+    return c.map((x) => x * L.unit);
+  };
+  const ymTxt = (ym: string) => `${ym.slice(0, 4)}.${ym.slice(4)}`;
+  const captionOf = (ym: string) => D.lapseCaptions[ym] ?? (ym.endsWith("02") ? D.lapseCaptions["02"] : "");
+  function drawLapse(now: number) {
+    const RA = [126, 35], RB = [129.5, 38];
+    const a = map.project(RA), b = map.project(RB), ma = toM(RA[0], RA[1]), mb = toM(RB[0], RB[1]);
+    const sx = (b.x - a.x) / (mb[0] - ma[0]), sy = (b.y - a.y) / (mb[1] - ma[1]);
+    const ox = a.x - ma[0] * sx, oy = a.y - ma[1] * sy;
+    const sz = Math.max(2, Math.min(3.4, map.getZoom() * 0.42)), hs = sz / 2;
+    cx.globalAlpha = 0.78;
+    // 적은 묶음부터 그린다: 위에 덮이는 색이 그 순간 가장 많이 움직이는 묶음이 되게
+    const order = [0, 1, 2].sort((p, q) => dots[p].length - dots[q].length);
+    for (const g of order) {
+      const arr = dots[g];
+      cx.fillStyle = lapseColors[g];
+      let w = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const d = arr[i];
+        const u = (now - d.t0) / d.dur;
+        if (u > 1.15) continue; // 끝난 점은 버린다
+        arr[w++] = d;
+        if (u < 0) continue;
+        const e = u >= 1 ? 1 : u < 0.5 ? 2 * u * u : 1 - (2 - 2 * u) * (2 - 2 * u) / 2;
+        const dx = d.x1 - d.x0, dy = d.y1 - d.y0, k = 4 * e * (1 - e) * d.bend;
+        const x = ox + (d.x0 + dx * e - dy * k) * sx, y = oy + (d.y0 + dy * e + dx * k) * sy;
+        const s2 = u >= 1 ? sz * (1 - (u - 1) / 0.15) : sz;
+        cx.fillRect(x - hs, y - hs, s2, s2);
+      }
+      arr.length = w;
+    }
+    cx.globalAlpha = 1;
+  }
+  function renderLapse() {
+    flowEl.hidden = false;
+    detailEl.hidden = true;
+    if (!L) { flowEl.innerHTML = `<p class="hint">이동 자료를 불러오는 중…</p>`; return; }
+    const ym = L.months[lapseMonth], idx = D.monthly.months.indexOf(ym);
+    const cnt = monthCount(lapseMonth), cap = D.monthly.capNet[idx], tot = D.monthly.interSgg[idx];
+    const vals: number[] = D.monthly.capNet, mx = Math.max(...vals.map(Math.abs), 1);
+    const W = 280, H = 60, bw = W / vals.length;
+    const bars = vals.map((v, i) => `<rect x="${(i * bw).toFixed(1)}" y="${v >= 0 ? H / 2 - (v / mx) * (H / 2 - 2) : H / 2}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${Math.max(0.5, (Math.abs(v) / mx) * (H / 2 - 2))}" fill="${D.monthly.months[i] === ym ? colors.ink : v >= 0 ? colors.in : colors.out}" opacity="${D.monthly.months[i] === ym ? 1 : 0.55}"/>`).join("");
+    const cap0 = captionOf(ym);
+    flowEl.innerHTML = `
+      <h3>${ymTxt(ym)} 전국 이사</h3>
+      <p class="sum">시군구를 넘은 이사 <strong>${fmtN(tot)}명</strong> · 수도권 순유입 <strong style="color:${cap >= 0 ? colors.in : colors.out}">${signed(cap)}명</strong></p>
+      <div class="lapse-legend">${LG_LABEL.map((l, i) => `<div><i style="background:${lapseColors[i]}"></i><span>${l}</span><b>${fmtN(cnt[i])}</b></div>`).join("")}</div>
+      ${cap0 ? `<p class="lapse-cap">${cap0}</p>` : ""}
+      <div><h4>수도권 순유입, 달마다 (명)</h4><svg class="mp-spark" viewBox="0 0 ${W} ${H}"><line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="${colors.ink}" stroke-opacity=".2"/>${bars}</svg>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted)"><span>${ymTxt(L.months[0])}</span><span>${ymTxt(L.months[L.months.length - 1])}</span></div></div>
+      <p class="hint">점 하나 = ${fmtN(L.unit)}명. 연평균 ${L.minYear}명 이상 오간 시군구 쌍(시군구를 넘는 이사의 ${Math.round(L.coverage * 100)}%)만 그리고, 15~19세는 뺐습니다. 출발·도착 위치는 시군구 안에 흩뿌린 것으로 실제 주소가 아닙니다.</p>`;
+  }
+  async function enterLapse() {
+    await loadLapse();
+    lapseColors = LG_VARS.map(resolve);
+    clearDots();
+    spawnMonth(lapseMonth, performance.now());
+    renderTime();
+    renderLapse();
+  }
+  const setLapseMonth = (i: number, start = performance.now()) => {
+    lapseMonth = i;
+    spawnMonth(i, start);
+    renderTime();
+    renderLapse();
+  };
+
   const frame = (now: number) => {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     cx.clearRect(0, 0, w, h);
     geoms = [];
+    if (isLapse()) {
+      drawLapse(now);
+      if (!playTimer && L && !anyDots(now)) spawnMonth(lapseMonth, now + 200); // 멈춰 있으면 그 달을 되풀이
+    }
     if (arcs.length) {
       const sec = now / 1000;
       const labelMin = arcs.map(netOf).sort((a, b) => b - a)[Math.min(9, arcs.length - 1)];
@@ -1028,6 +1183,18 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     renderDetail(selected);
   };
   function renderTime() {
+    if (isLapse()) {
+      if (!L) { timeEl.hidden = true; yearEl.hidden = true; return; }
+      const ms: string[] = L.months, n = ms.length;
+      timeEl.hidden = false; yearEl.hidden = false; scenEl.hidden = true; scenEl.innerHTML = "";
+      rangeEl.max = String(n - 1);
+      rangeEl.value = String(lapseMonth);
+      ticksEl.innerHTML = ms.map((m, k) => (k === 0 || k === n - 1 || (m.endsWith("01") && k > n * 0.1 && k < n * 0.9)) ? `<span style="left:${(k / (n - 1)) * 100}%">${k === 0 || k === n - 1 ? ymTxt(m) : m.slice(0, 4)}</span>` : "").join("");
+      yearEl.classList.remove("proj");
+      yearEl.querySelector("b")!.textContent = ymTxt(ms[lapseMonth]);
+      yearEl.querySelector("span")!.textContent = `전국 이사 · 점 하나 = ${fmtN(L.unit)}명`;
+      return;
+    }
     if (isFlow() && FW.length > 1) {
       timeEl.hidden = false; yearEl.hidden = false; scenEl.hidden = true; scenEl.innerHTML = "";
       rangeEl.max = String(FW.length - 1);
@@ -1061,9 +1228,25 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       paint(); renderTime(); renderDetail(selected);
     }));
   }
-  rangeEl.addEventListener("input", () => { stopPlay(); if (isFlow()) setFlowWin(+rangeEl.value); else setYear(cur.years[+rangeEl.value]); });
+  rangeEl.addEventListener("input", () => {
+    stopPlay();
+    if (isLapse()) { clearDots(); setLapseMonth(+rangeEl.value); return; }
+    if (isFlow()) setFlowWin(+rangeEl.value); else setYear(cur.years[+rangeEl.value]);
+  });
   playEl.addEventListener("click", () => {
     if (playTimer) { stopPlay(); return; }
+    if (isLapse() && L) {
+      if (lapseMonth >= L.months.length - 1) { clearDots(); lapseMonth = 0; }
+      playEl.textContent = "❚❚"; playEl.setAttribute("aria-label", "멈춤");
+      let next = performance.now();
+      setLapseMonth(lapseMonth, next);
+      playTimer = window.setInterval(() => {
+        if (lapseMonth >= L.months.length - 1) { stopPlay(); return; }
+        next += MONTH_MS;
+        setLapseMonth(lapseMonth + 1, Math.max(next, performance.now()));
+      }, MONTH_MS);
+      return;
+    }
     if (isFlow()) {
       if (flowWin >= FW.length - 1) setFlowWin(0);
       playEl.textContent = "❚❚"; playEl.setAttribute("aria-label", "멈춤");
