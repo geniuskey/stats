@@ -51,6 +51,7 @@ RULES: dict[str, list[tuple[str, float, float]]] = {
     "housing": [("regions", 18, 20), ("seoulZones", 5, 5)],
     "housing_sgg": [("regions", 220, 240), ("national.burden", 5, 60), ("national.jeonseRatio", 40, 100),
                     ("national.renewUp", -0.1, 0.1), ("national.wolseShare", 0.2, 0.8), ("monthly.months", 24, 120)],
+    "move": [("regions", 220, 240), ("national.total", 4_000_000, 9_000_000), ("national.interSido", 1_000_000, 4_000_000), ("monthly.months", 12, 120), ("flows", 10, 20)],
     "industry": [("industries", 20, 30), ("summary.retire10yShare", 0.1, 0.7)],
     "retire": [
         ("headline.lifeExp65Male", 15, 25),

@@ -64,6 +64,15 @@ def housing_sgg():
 
 
 @module
+def move():
+    """행안부 행정동 인구이동 결합. 원자료(data/mois)는 로컬에만 있어 CI에서는 건너뛰고 기존 결과를 유지."""
+    import build_move
+    r = build_move.build()
+    if r is not None:
+        write("move", r)
+
+
+@module
 def industry():
     import build_industry
     write("industry", build_industry.build())

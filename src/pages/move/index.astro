@@ -1,0 +1,337 @@
+---
+import Base from "../../layouts/Base.astro";
+import Chart from "../../components/Chart.astro";
+import Stat from "../../components/Stat.astro";
+import BarList from "../../components/BarList.astro";
+import KoreaMap from "../../components/KoreaMap.astro";
+import data from "../../data/move.json";
+import { dongneLinks } from "../../lib/dongneMap";
+import { int, compact } from "../../lib/format";
+
+const base = import.meta.env.BASE_URL;
+const D = data as any;
+const meta = D.meta;
+const nat = D.national;
+const R = D.regions as Record<string, any>;
+const NM = D.names as Record<string, [string, string]>;
+const M = D.monthly;
+const BI = D.basicIncome;
+
+const ymLabel = (ym: string) => `${ym.slice(0, 4)}년 ${+ym.slice(4)}월`;
+const ymX = (ym: string) => +ym.slice(0, 4) * 12 + (+ym.slice(4) - 1);
+const periodLabel = `${ymLabel(meta.period[0])}~${ymLabel(meta.period[1])}`;
+const full = (id: string) => `${NM[id][0]} ${NM[id][1]}`;
+const nameCount = Object.values(NM).reduce((c: Record<string, number>, v) => ((c[v[1]] = (c[v[1]] ?? 0) + 1), c), {});
+const short = (id: string) => (nameCount[NM[id][1]] > 1 ? `${NM[id][0]} ${NM[id][1]}` : NM[id][1]);
+const sgn = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "") + int(Math.abs(v));
+const pct0 = (v: number) => `${Math.round(v * 100)}%`;
+
+// ---- 머리 숫자
+const sggShare = nat.interSgg / nat.total;
+const sidoShare = nat.interSido / nat.total;
+const capOther = nat.capNet - nat.capNetYouth; // 20~34세를 뺀 나머지 나이
+
+// ---- 나이별 순이동 곡선
+const ages = Array.from({ length: meta.maxAge + 1 }, (_, i) => i);
+const ageSpec = {
+  type: "line" as const, yFormat: "int" as const, height: 300, legend: true, xUnit: "세",
+  hLines: [{ y: 0, label: "" }],
+  series: [
+    { name: "서울 (다른 시도와 주고받은 결과)", color: "var(--series-1)", data: ages.map((a) => [a, D.seoulAge[a]] as [number, number]), label: true },
+    { name: "수도권 (비수도권과 주고받은 결과)", color: "var(--series-2)", data: ages.map((a) => [a, D.capAge[a]] as [number, number]), label: true },
+  ],
+};
+const ageTable = {
+  headers: ["나이", "서울", "수도권"],
+  rows: ages.filter((a) => a % 5 === 0).map((a) => [`${a}${a === meta.maxAge ? "세 이상" : "세"}`, sgn(D.seoulAge[a]), sgn(D.capAge[a])]),
+};
+const seoulPeak = ages.reduce((b, a) => (D.seoulAge[a] > D.seoulAge[b] ? a : b), 0);
+const seoulTurn = ages.find((a) => a > seoulPeak && D.seoulAge[a] < 0) ?? 0;
+const seoulYouth = ages.filter((a) => a >= 20 && a <= 34).reduce((s, a) => s + D.seoulAge[a], 0);
+const seoulRest = ages.reduce((s, a) => s + D.seoulAge[a], 0) - seoulYouth;
+
+// ---- 시군구 지도
+const vals = (k: string) => Object.fromEntries(Object.entries(R).map(([id, r]) => [id, r[k]]));
+const g = meta.ageGroups;
+const moveMap = [
+  { key: "rate", label: "순이동률", format: "dec1" as const, kind: "div" as const, breaks: [-10, -5, -2, 2, 5, 10],
+    desc: `${periodLabel} 다른 시군구에서 들어온 사람 − 나간 사람, 인구 1천 명당. 같은 시군구 안 이사는 빼고 셉니다.`, values: vals("rate") },
+  { key: "youthRate", label: `${g.youth[0]}~${g.youth[1]}세`, format: "dec1" as const, kind: "div" as const, breaks: [-6, -3, -1, 1, 3, 6],
+    desc: `${g.youth[0]}~${g.youth[1]}세 순이동, 인구(전 연령) 1천 명당. 진학·취업·첫 독립의 이동입니다.`, values: vals("youthRate") },
+  { key: "kidsRate", label: `아이(${g.kids[0]}~${g.kids[1]}세)`, format: "dec1" as const, kind: "div" as const, breaks: [-3, -1.5, -0.5, 0.5, 1.5, 3],
+    desc: `${g.kids[0]}~${g.kids[1]}세 순이동, 인구 1천 명당. 아이는 혼자 이사하지 않으니 아이를 키우는 가족의 이동을 보여 줍니다.`, values: vals("kidsRate") },
+  { key: "oldRate", label: `${g.old[0]}세 이상`, format: "dec1" as const, kind: "div" as const, breaks: [-4, -2, -0.5, 0.5, 2, 4],
+    desc: `${g.old[0]}세 이상 순이동, 인구 1천 명당. 귀농·귀촌과 자녀 곁으로의 이동입니다.`, values: vals("oldRate") },
+];
+const names = Object.fromEntries(Object.keys(R).map((id) => [id, NM[id][1]]));
+const notes = Object.fromEntries(Object.entries(R).map(([id, r]) => {
+  const gain = r.gainFrom[0] ? `${short(r.gainFrom[0][0])}에서 +${int(r.gainFrom[0][1])}` : "";
+  const lose = r.loseTo[0] ? `${short(r.loseTo[0][0])}로 −${int(r.loseTo[0][1])}` : "";
+  return [id, `순이동 ${sgn(r.net)}명${gain || lose ? " · " : ""}${[gain, lose].filter(Boolean).join(" · ")}`];
+}));
+const ranked = Object.entries(R).map(([id, r]) => ({ id, ...r })).sort((a, b) => b.rate - a.rate);
+const sidoRank = Object.entries(D.sido as Record<string, any>).sort((a, b) => b[1].rate - a[1].rate);
+const SIDO_NM: Record<string, string> = Object.fromEntries(Object.entries(NM).map(([id, v]) => [id.slice(0, 2), v[0]]));
+
+// ---- 기본소득 시범 군
+const biFrom = "202407";
+const biIdx = (M.months as string[]).map((ym, i) => [ym, i] as [string, number]).filter(([ym]) => ym >= biFrom);
+const biPts = (k: string) => biIdx.map(([ym, i]) => [ymX(ym), M[k][i]] as [number, number]);
+const biSpec = {
+  type: "line" as const, xFormat: "ym" as const, yFormat: "dec1" as const, height: 300, legend: true,
+  hLines: [{ y: 0, label: "" }],
+  markers: [{ x: ymX("202510"), label: "1차 발표" }, { x: ymX("202606"), label: "추가 발표" }],
+  series: [
+    { name: "1차 7개 군 (2025-10 발표)", color: "var(--series-1)", data: biPts("bi1"), label: true },
+    { name: "추가 3개 군 (2025년 말)", color: "var(--series-3)", data: biPts("bi1b"), label: true },
+    { name: "추가 7개 군 (2026-06 발표)", color: "var(--series-2)", data: biPts("bi2"), label: true },
+    { name: `나머지 ${BI.otherGun}개 군`, color: "var(--text-muted)", data: biPts("otherGun"), label: true, muted: true },
+  ],
+};
+const biTable = {
+  headers: ["월", "1차 7곳", "추가 3곳", "추가 7곳", "나머지 군"],
+  rows: biIdx.map(([ym, i]) => [ymLabel(ym), M.bi1[i].toFixed(1), M.bi1b[i].toFixed(1), M.bi2[i].toFixed(1), M.otherGun[i].toFixed(1)]),
+};
+const biIds = [...BI.bi1, ...BI.bi1b, ...BI.bi2];
+const biNet = BI.net12.bi1 + BI.net12.bi1b + BI.net12.bi2;
+const biPop = biIds.reduce((s: number, id: string) => s + R[id].pop, 0);
+const biPeak = (k: string) => (M[k] as number[]).reduce((b, v, i) => (v > M[k][b] ? i : b), 0);
+const p1 = biPeak("bi1");
+const biTop10 = ranked.slice(0, 10).filter((r) => biIds.includes(r.id)).length;
+const biBars = biIds.map((id: string) => ({ name: full(id), value: R[id].rate, href: `${base}dongne/${id}/` })).sort((a: any, b: any) => b.value - a.value);
+
+// ---- 이동 경로
+const flowItems = (fs: any[]) => fs.map((f) => ({ name: `${full(f.from)} → ${short(f.to)}`, value: f.net }));
+
+// ---- 행정동
+const SIDO_SHORT: Record<string, string> = {
+  서울특별시: "서울", 부산광역시: "부산", 대구광역시: "대구", 인천광역시: "인천", 광주광역시: "광주", 대전광역시: "대전", 울산광역시: "울산",
+  세종특별자치시: "세종", 경기도: "경기", 강원도: "강원", 강원특별자치도: "강원", 충청북도: "충북", 충청남도: "충남", 전라북도: "전북",
+  전북특별자치도: "전북", 전라남도: "전남", 전남광주통합특별시: "전남광주", 경상북도: "경북", 경상남도: "경남", 제주특별자치도: "제주",
+};
+const dongName = (n: string) => { const [s, ...rest] = n.split(" "); return [SIDO_SHORT[s] ?? s, ...rest].join(" "); };
+const dongItems = (ds: any[]) => ds.map((d) => ({ name: dongName(d.name), value: d.net }));
+
+// ---- 월별 수도권
+const capSpec = {
+  type: "line" as const, xFormat: "ym" as const, yFormat: "int" as const, height: 280, legend: true,
+  hLines: [{ y: 0, label: "" }],
+  series: [
+    { name: "전 연령", color: "var(--series-2)", data: (M.months as string[]).map((ym, i) => [ymX(ym), M.capNet[i]] as [number, number]), label: true },
+    { name: `${g.youth[0]}~${g.youth[1]}세`, color: "var(--series-1)", data: (M.months as string[]).map((ym, i) => [ymX(ym), M.capNetYouth[i]] as [number, number]), label: true },
+  ],
+};
+const capTable = {
+  headers: ["월", "전 연령", `${g.youth[0]}~${g.youth[1]}세`, "전체 이동"],
+  rows: (M.months as string[]).map((ym, i) => [ymLabel(ym), sgn(M.capNet[i]), sgn(M.capNetYouth[i]), int(M.total[i])]),
+};
+const half = (k: string, from: number, to: number) => (M[k] as number[]).slice(from, to).reduce((s, v) => s + v, 0);
+const nM = M.months.length;
+const capFirst12 = half("capNet", 0, 12);
+const capLast12 = half("capNet", nM - 12, nM);
+
+// ---- 동네 탐색 (클라이언트)
+const explore = Object.fromEntries(Object.entries(R).map(([id, r]) => [id, { i: r.in, o: r.out, n: r.net, r: r.rate, f: r.from, t: r.to }]));
+const exploreJson = JSON.stringify({ d: explore, n: Object.fromEntries(Object.keys(R).map((id) => [id, full(id)])) }).replace(/</g, "\\u003c");
+const sidoGroups = Object.entries(
+  Object.keys(R).sort().reduce((acc: Record<string, string[]>, id) => ((acc[NM[id][0]] ??= []).push(id), acc), {}),
+);
+const defaultId = "11680";
+---
+<Base title="누가, 어디로 이사 가나?" active="move" description={`행정안전부 행정동 전입신고 ${compact(nat.total)}건(최근 12개월)으로 본 인구이동. 수도권은 20~34세를 ${int(nat.capNetYouth)}명 얻고, 농어촌 기본소득 시범 군에는 발표 직후 전입이 몰렸습니다.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">누가, 어디로 이사 가나? · 행정동 전입신고 × 나이 × 시군구</div>
+      <h1>수도권은 20대를 얻고, 나머지 나이는 내줍니다</h1>
+      <p class="lede">
+        {periodLabel} 동네(행정동)를 바꿔 전입신고를 한 사람은 {compact(nat.total)}명입니다. 비수도권과 주고받은 결과 수도권 인구는 {sgn(nat.capNet)}명 늘었는데,
+        <strong>20~34세만 보면 {sgn(nat.capNetYouth)}명</strong>입니다. 다른 나이에서는 {int(Math.abs(capOther))}명이 수도권을 떠났다는 뜻입니다.
+        행정안전부가 공개하는 행정동 간 이동 원자료를 매달 모아, 누가 어디서 어디로 옮기는지 나이별로 다시 계산했습니다.
+      </p>
+    </section>
+
+    <div class="grid grid-4">
+      <Stat label="동네를 바꾼 사람 (12개월)" value={compact(nat.total)} unit="명" note={`월평균 ${compact(nat.total / 12)}명`} />
+      <Stat label="시군구를 넘은 이사" value={pct0(sggShare)} note={`${compact(nat.interSgg)}명 · 나머지는 같은 시군구 안`} />
+      <Stat label="시도를 넘은 이사" value={pct0(sidoShare)} note={`${compact(nat.interSido)}명`} />
+      <Stat label="수도권 순유입 20~34세" value={sgn(nat.capNetYouth)} unit="명" note={`전 연령 ${sgn(nat.capNet)}명`} count={false} />
+    </div>
+
+    <section class="section" id="age">
+      <h2>나이가 이사 방향을 정한다</h2>
+      <p class="section-desc">
+        서울은 다른 시도와 주고받은 결과 {g.youth[0]}~{g.youth[1]}세를 {sgn(seoulYouth)}명 얻었지만, 그 밖의 나이에서 {sgn(seoulRest)}명을 잃었습니다.
+        순유입은 {seoulPeak}세에서 가장 크고 {seoulTurn}세부터 순유출로 돌아섭니다. 대학과 첫 직장을 찾아 서울로 왔다가, 결혼하고 아이를 키울 무렵 경기·인천으로 나가는 흐름입니다.
+        수도권 전체로 보면 30대 이후에는 거의 0에 가깝습니다. 서울을 떠난 사람 대부분이 수도권 안에 머문다는 뜻입니다.
+      </p>
+      <Chart spec={ageSpec} table={ageTable} title="나이별 순이동" sub={`${periodLabel}, 1세 단위 (${meta.maxAge}세는 ${meta.maxAge}세 이상)`} />
+    </section>
+
+    <section class="section" id="map">
+      <h2>시군구 순이동 지도</h2>
+      <p class="section-desc">
+        지표를 바꾸면 나이대마다 지도가 달라집니다. 청년은 대도시와 산업단지로, 아이 있는 가족은 새 아파트가 들어선 신도시로, 65세 이상은 군 지역으로 갑니다.
+        지역에 마우스를 올리면 그 지역이 가장 많이 얻은 곳과 잃은 곳이 보이고, 누르면 그 동네의 인구 전망으로 갑니다.
+      </p>
+      <KoreaMap metrics={moveMap} names={names} notes={notes} links={dongneLinks(base)} title="시군구 순이동" sub={`${periodLabel} · 인구 1천 명당 · 인구는 ${meta.baseYear}년 주민등록`} />
+      <div class="card" style="margin-top:16px">
+        <h3 class="card-title">시도별 순이동률</h3>
+        <p class="card-sub">인구 1천 명당, 다른 시도와 주고받은 결과</p>
+        <BarList items={sidoRank.map(([k, v]) => ({ name: SIDO_NM[k], value: v.rate }))} format="dec1" diverging />
+      </div>
+    </section>
+
+    <section class="section" id="basic-income">
+      <h2>월 15만 원이 옮긴 주소</h2>
+      <p class="section-desc">
+        농림축산식품부는 2025년 10월 농어촌 기본소득 시범사업 대상 7개 군을 발표했습니다. 주민에게 2년간 매달 15만 원어치 지역사랑상품권을 주는 사업입니다.
+        2025년 말 3개 군, 2026년 6월 7개 군이 더해져 17곳이 됐습니다. 발표 직후 이들 군의 순유입은 한 달 만에 인구 1천 명당
+        {M.bi1[p1].toFixed(0)}명({ymLabel(M.months[p1])}, 1차 7곳)까지 치솟았습니다. 나머지 군은 같은 달 {M.otherGun[p1].toFixed(1)}명이었습니다.
+        최근 12개월 17개 군의 순유입은 {sgn(biNet)}명, 인구의 {(biNet / biPop * 100).toFixed(1)}%입니다. 시군구 순이동률 상위 10곳 가운데 {biTop10}곳이 이 군들입니다.
+      </p>
+      <Chart spec={biSpec} table={biTable} title="기본소득 시범 군의 월별 순이동률" sub="다른 시군구와 주고받은 순이동, 인구 1천 명당 · 광역시 소속 군과 수도권 군은 '나머지'에서 뺐습니다" />
+      <div class="grid grid-2" style="margin-top:16px">
+        <div class="card">
+          <h3 class="card-title">시범 군 17곳의 순이동률</h3>
+          <p class="card-sub">{periodLabel}, 인구 1천 명당</p>
+          <BarList items={biBars} format="dec1" color="var(--series-1)" />
+        </div>
+        <div class="card">
+          <h3 class="card-title">읽을 때 조심할 점</h3>
+          <ul class="small" style="margin:0;padding-left:18px;line-height:1.7">
+            <li>전입신고는 실제로 이사했다는 증거가 아닙니다. 주소만 옮긴 경우도 같이 세어집니다. 시범 군은 30일 이상 실거주 확인을 거쳐 지급합니다.</li>
+            <li>급증은 발표한 달과 다음 달에 몰려 있고 이후에는 크게 줄었습니다. 앞으로도 사람이 남는지는 시간이 지나야 압니다.</li>
+            <li>시범 군은 공모로 뽑혀 원래 사정이 다른 군과 다를 수 있습니다. 그래서 '효과'가 아니라 '발표 전후 변화'로만 읽어야 합니다.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="flows">
+      <h2>가장 큰 이사 길</h2>
+      <p class="section-desc">
+        두 시군구 사이 오간 사람을 서로 빼고 남은 순이동이 큰 순서입니다. 가장 큰 길은 {full(D.flows[0].from)} → {short(D.flows[0].to)}로,
+        {int(D.flows[0].fwd)}명이 가고 {int(D.flows[0].back)}명이 왔습니다. 대부분 옆 동네의 새 아파트로 가는 짧은 이사입니다.
+        시도 경계를 넘는 길은 대부분 서울에서 경기·인천으로 나가는 방향입니다.
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title">순이동이 가장 큰 길</h3>
+          <p class="card-sub">{periodLabel}, 명</p>
+          <BarList items={flowItems(D.flows)} format="int" color="var(--series-2)" />
+        </div>
+        <div class="card">
+          <h3 class="card-title">시도를 넘는 길</h3>
+          <p class="card-sub">{periodLabel}, 명</p>
+          <BarList items={flowItems(D.flowsCross)} format="int" color="var(--series-1)" />
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="explore">
+      <h2>우리 동네는 어디서 오고 어디로 가나</h2>
+      <p class="section-desc">시군구를 고르면 최근 12개월 그 지역으로 가장 많이 들어온 곳과 가장 많이 나간 곳을 보여 줍니다.</p>
+      <div class="card">
+        <div class="controls">
+          <label class="field">시군구
+            <select id="mv-sel">
+              {sidoGroups.map(([sd, ids]) => (
+                <optgroup label={sd}>{ids.map((id) => <option value={id} selected={id === defaultId}>{NM[id][1]}</option>)}</optgroup>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p class="insight" id="mv-sum" aria-live="polite"></p>
+        <div class="grid grid-2">
+          <div><h3 class="card-title">어디서 왔나 (전입)</h3><div class="bar-list" id="mv-from" role="list"></div></div>
+          <div><h3 class="card-title">어디로 갔나 (전출)</h3><div class="bar-list" id="mv-to" role="list"></div></div>
+        </div>
+      </div>
+      <script type="application/json" id="mv-data" set:html={exploreJson} />
+    </section>
+
+    <section class="section" id="dong">
+      <h2>새 아파트가 동네를 바꾼다</h2>
+      <p class="section-desc">
+        행정동 단위로 내려가면 이사의 이유가 더 또렷해집니다. 순유입 상위는 대단지 입주가 있었던 동, 순유출 상위는 재건축·재개발로 주민이 이주한 동이 대부분입니다.
+        {dongName(D.dongTop[0].name)}에는 12개월 동안 {sgn(D.dongTop[0].net)}명이 순유입했습니다.
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="card-title">순유입 상위 행정동</h3>
+          <p class="card-sub">{periodLabel}, 명 · 같은 시군구 안 이사 포함</p>
+          <BarList items={dongItems(D.dongTop)} format="int" color="var(--series-2)" />
+        </div>
+        <div class="card">
+          <h3 class="card-title">순유출 상위 행정동</h3>
+          <p class="card-sub">{periodLabel}, 명</p>
+          <BarList items={dongItems(D.dongBottom)} format="int" color="var(--series-1)" />
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="trend">
+      <h2>수도권 쏠림은 줄고 있나</h2>
+      <p class="section-desc">
+        비수도권에서 수도권으로 순유입한 인원은 첫 12개월({ymLabel(M.months[0])}~) {sgn(capFirst12)}명에서 최근 12개월 {sgn(capLast12)}명으로 바뀌었습니다.
+        20~34세는 매달 꾸준히 수도권으로 들어오지만, 다른 나이의 순유출이 커지면서 전체 숫자는 줄었습니다.
+      </p>
+      <Chart spec={capSpec} table={capTable} title="비수도권 → 수도권 월별 순이동" sub="명, 수도권 = 서울·인천·경기" />
+    </section>
+
+    <section class="section card method" id="method">
+      <h2>계산 방법과 한계</h2>
+      <ul>
+        <li><strong>자료:</strong> 행정안전부 「행정동별 전입·전출」(공공데이터포털 15108093). 전입 행정동 × 전출 행정동 × 성별 × 1세 연령별 인원이 월 단위로 공개됩니다. {ymLabel(meta.first)}~{ymLabel(meta.last)} 자료를 받았고, 같은 행정동 안 이사는 원자료에 없습니다.</li>
+        <li><strong>지역:</strong> 행정동 코드를 2025년 말 시군구 229곳으로 맞췄습니다. 일반구는 시로 합치고, 2026년 전남광주통합특별시와 인천 행정구역 개편 이후 자료는 이전 구역으로 되돌렸습니다.</li>
+        <li><strong>순이동률:</strong> (다른 시군구에서 전입 − 다른 시군구로 전출) ÷ {meta.baseYear}년 주민등록인구 × 1,000. 나이대별 지도도 분모는 전 연령 인구입니다.</li>
+        <li><strong>한계:</strong> 전입신고 기준이라 실제 거주 이동과 다를 수 있습니다(주소만 옮기거나, 이사하고 신고하지 않은 경우). 외국인과 국외 이동은 포함되지 않습니다. 원자료는 재배포하지 않고 집계 결과만 공개합니다.</li>
+        <li><strong>갱신:</strong> 원자료를 따로 수집해 계산하므로 월 2회 자동 갱신에는 포함되지 않습니다. 수집 시점 {meta.fetched}.</li>
+      </ul>
+    </section>
+  </div>
+</Base>
+
+<script>
+  const el = document.getElementById("mv-data");
+  if (el) {
+    const { d, n } = JSON.parse(el.textContent || "{}");
+    const sel = document.getElementById("mv-sel") as HTMLSelectElement;
+    const sum = document.getElementById("mv-sum")!;
+    const nf = new Intl.NumberFormat("ko-KR");
+    const bars = (box: HTMLElement, rows: [string, number][], color: string) => {
+      box.innerHTML = "";
+      const max = Math.max(...rows.map((r) => r[1]), 1);
+      for (const [id, v] of rows) {
+        const row = document.createElement("div");
+        row.className = "bar-row";
+        row.setAttribute("role", "listitem");
+        const name = document.createElement("span");
+        name.className = "bar-name";
+        name.textContent = n[id] ?? id;
+        const track = document.createElement("span");
+        track.className = "bar-track";
+        const fill = document.createElement("span");
+        fill.className = "bar-fill";
+        fill.style.cssText = `left:0;width:${(v / max) * 100}%;background:${color}`;
+        track.appendChild(fill);
+        const val = document.createElement("span");
+        val.className = "bar-val";
+        val.textContent = nf.format(v);
+        row.append(name, track, val);
+        box.appendChild(row);
+      }
+    };
+    const render = () => {
+      const id = sel.value;
+      const r = d[id];
+      if (!r) return;
+      const sign = r.n > 0 ? "+" : r.n < 0 ? "−" : "";
+      sum.textContent = `${n[id]}: 다른 시군구에서 ${nf.format(r.i)}명이 들어오고 ${nf.format(r.o)}명이 나가 순이동 ${sign}${nf.format(Math.abs(r.n))}명 (인구 1천 명당 ${r.r > 0 ? "+" : ""}${r.r.toFixed(1)}명)`;
+      bars(document.getElementById("mv-from")!, r.f, "var(--series-2)");
+      bars(document.getElementById("mv-to")!, r.t, "var(--series-1)");
+    };
+    sel.addEventListener("change", render);
+    render();
+  }
+</script>

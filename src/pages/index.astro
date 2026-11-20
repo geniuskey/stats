@@ -13,6 +13,7 @@ import births from "../data/births.json";
 import univ from "../data/univ.json";
 import care from "../data/care.json";
 import { compact, pct, won } from "../lib/format";
+import move from "../data/move.json";
 import { HEADLINES, shrinkCount } from "../lib/headlines";
 import KoreaMap from "../components/KoreaMap.astro";
 import Spark from "../components/Spark.astro";
@@ -49,6 +50,7 @@ const sparks: Record<string, { actual: [number, number][]; proj?: [number, numbe
   births: { actual: E((births as any).annual.births).filter(([y]) => y >= 2005), proj: [[(births as any).meta.lastAnnual, (births as any).annual.births[String((births as any).meta.lastAnnual)]], [(births as any).meta.year, (births as any).headline.births], [(births as any).meta.year + 1, (births as any).headline.next]], color: "var(--series-1)", from: "2005", to: `${(births as any).meta.year + 1} 출생아` },
   univ: { actual: E((univ as any).national.entrantsTotal).filter(([y]) => y >= 2005), proj: E((univ as any).national.demand.mid).filter(([y]) => y <= 2045), color: "var(--series-2)", from: "2005", to: "2045 입학 수요" },
   care: { actual: [], proj: E((care as any).regions.find((r: any) => r.key === "00").old75), color: "var(--series-2)", from: String((care as any).meta.baseYear), to: "2045 75세 이상" },
+  move: { actual: (move as any).monthly.months.map((ym: string, i: number) => [+ym.slice(0, 4) + (+ym.slice(4) - 1) / 12, (move as any).monthly.capNetYouth[i]]), color: "var(--series-4)", from: `${(move as any).meta.first.slice(0, 4)}.${(move as any).meta.first.slice(4)}`, to: "수도권 청년 순이동(월)" },
   retire: { actual: E(life.male).filter(([y]) => y >= 1990), proj: E(lifeF.male).filter(([y]) => y <= 2050), color: "var(--series-3)", from: "1990", to: "2050 65세 기대여명" },
 };
 const cards = HEADLINES;

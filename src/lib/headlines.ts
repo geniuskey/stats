@@ -12,6 +12,7 @@ import births from "../data/births.json";
 import univ from "../data/univ.json";
 import care from "../data/care.json";
 import track from "../data/track.json";
+import move from "../data/move.json";
 import { compact, int, pct, won } from "./format";
 import { quantile } from "./me";
 
@@ -30,6 +31,7 @@ const bh = (births as any).headline;
 const uh = (univ as any).headline;
 const ch = (care as any).headline;
 const ts = (track as any).summary;
+const mv = (move as any).national;
 
 export const HEADLINES: Record<string, { num: string; label: string }> = {
   me: { num: `${int(quantile(sal, 0.5))}만원`, label: `근로소득자 ${compact(sal.n)}명 연봉의 한가운데 (${sal.year}년)` },
@@ -44,5 +46,6 @@ export const HEADLINES: Record<string, { num: string; label: string }> = {
   univ: { num: `${Math.round((1 - uh.fill2040) * 10)}/10`, label: `2040년 비는 대학 입학 자리 (지금 ${compact(uh.cap)}개 기준)` },
   care: { num: `+${compact(ch.bedsGap2045)}명`, label: "2045년까지 더 필요한 요양 정원 (75세 100명당 지금 수준 유지)" },
   track: { num: pct(ts.pop1y, 1), label: `시군구 인구 추계 1년 뒤 평균 오차 (${ts.popEndH}년 뒤 ${pct(ts.popEnd, 1)})` },
+  move: { num: `+${compact(mv.capNetYouth)}명`, label: `최근 12개월 비수도권→수도권 20~34세 순이동 (전 연령 +${compact(mv.capNet)}명)` },
   retire: { num: won(rt.gap65Male).replace(" 0만", ""), label: "65세 남성 은퇴 후 연금으로 못 채우는 생활비 총액" },
 };
