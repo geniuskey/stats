@@ -105,6 +105,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     <div class="map-wrap">
       <div id="mp-map" class="map-canvas" role="region" aria-label="대한민국 지도"></div>
       <canvas id="mp-arcs" class="map-arcs" aria-hidden="true"></canvas>
+      <div class="map-flowlegend" id="mp-flowlegend" hidden></div>
       <div class="map-tip" id="mp-tip" hidden></div>
       <div class="map-year" id="mp-year" hidden aria-live="polite"><b></b><span></span></div>
       <div class="map-time" id="mp-time" hidden>
@@ -231,6 +232,24 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   :global(.map-time .scen .mp-chips button) { font-size: 12px; padding: 3px 9px; }
   :global(.mp-spark) { width: 100%; height: auto; display: block; margin: 6px 0 4px; overflow: visible; }
   :global(.mp-spark text) { font-size: 10px; fill: var(--text-muted); }
+  .map-flowlegend {
+    position: absolute; right: 10px; top: 88px; z-index: 3; width: 150px;
+    background: color-mix(in oklab, var(--surface-1) 92%, transparent); backdrop-filter: blur(6px);
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); border-radius: 10px; padding: 8px 10px; font-size: 11px; color: var(--text-secondary);
+  }
+  :global(.map-flowlegend summary) { cursor: pointer; font-weight: 700; color: var(--text-primary); font-size: 12px; }
+  :global(.map-flowlegend details[open] summary) { margin-bottom: 4px; }
+  :global(.map-flowlegend .lg-title) { font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+  :global(.map-flowlegend .lg-row) { display: flex; align-items: center; gap: 6px; }
+  :global(.map-flowlegend .lg-ages) { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; }
+  :global(.map-flowlegend .lg-ages i) { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  :global(.map-flowlegend .lg-note) { margin-top: 6px; color: var(--text-muted); }
+  :global(.map-tip .tt-ages) { display: grid; gap: 2px; margin-top: 6px; }
+  :global(.map-tip .tt-age) { display: grid; grid-template-columns: 10px 58px 70px auto; gap: 6px; align-items: center; font-size: 12px; }
+  :global(.map-tip .tt-age i) { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+  :global(.map-tip .tt-age .b) { height: 6px; background: color-mix(in oklab, var(--text-muted) 15%, transparent); border-radius: 3px; overflow: hidden; display: block; }
+  :global(.map-tip .tt-age .b span) { display: block; height: 100%; }
+  :global(.map-tip .tt-age .v) { text-align: right; font-variant-numeric: tabular-nums; }
   .map-arcs { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
   .map-flow { display: grid; gap: 12px; }
   :global(.map-flow h3) { margin: 0; font-size: 16px; }
@@ -244,6 +263,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   :global(.map-flow label.toggle) { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
   :global(.map-flow .hint) { margin: 0; font-size: 13px; color: var(--text-muted); }
   @media (max-width: 760px) {
+    .map-flowlegend { top: 84px; right: 8px; width: auto; max-width: 150px; padding: 6px 8px; }
     .map-year { top: 8px; left: 10px; }
     :global(.map-year b) { font-size: 30px; }
     .map-time { bottom: 30px; padding: 8px 10px; }
@@ -594,25 +614,36 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
 
   let hover: string | null = null;
   const setState = (id: string | null, k: string, v: boolean) => id && map.getSource("sgg") && map.setFeatureState({ source: "sgg", id }, { [k]: v });
-  map.on("mousemove", "sgg-fill", (e: any) => {
-    const id = e.features?.[0]?.properties?.id as string;
-    if (hover !== id) { setState(hover, "hover", false); hover = id; setState(hover, "hover", true); }
+  const placeTip = (x: number, y: number) => {
+    tip.hidden = false;
+    const w = map.getContainer().clientWidth, h = map.getContainer().clientHeight;
+    tip.style.left = `${Math.min(x + 14, w - tip.offsetWidth - 8)}px`;
+    tip.style.top = `${Math.min(y + 14, h - tip.offsetHeight - 8)}px`;
+  };
+  const clearHover = () => { setState(hover, "hover", false); hover = null; };
+  map.on("mousemove", (e: any) => {
+    const { x, y } = e.point;
+    const g = isFlow() ? arcAt(x, y) : null;
+    if (g) {
+      clearHover();
+      map.getCanvas().style.cursor = "default";
+      tip.innerHTML = arcTip(g.a);
+      placeTip(x, y);
+      return;
+    }
+    const f = map.queryRenderedFeatures(e.point, { layers: ["sgg-fill"] })[0];
+    const id = f?.properties?.id as string | undefined;
+    if (!id) { clearHover(); tip.hidden = true; map.getCanvas().style.cursor = ""; return; }
+    if (hover !== id) { clearHover(); hover = id; setState(hover, "hover", true); }
     map.getCanvas().style.cursor = "pointer";
     tip.innerHTML = tipHtml(id);
-    tip.hidden = false;
-    const { x, y } = e.point;
-    const w = map.getContainer().clientWidth;
-    tip.style.left = `${Math.min(x + 14, w - tip.offsetWidth - 8)}px`;
-    tip.style.top = `${y + 14}px`;
+    placeTip(x, y);
   });
-  map.on("mouseleave", "sgg-fill", () => {
-    setState(hover, "hover", false);
-    hover = null;
-    tip.hidden = true;
-    map.getCanvas().style.cursor = "";
-  });
+  map.getCanvas().addEventListener("mouseleave", () => { clearHover(); tip.hidden = true; });
   map.once("idle", () => { if (selected) { setState(selected, "sel", true); renderDetail(selected); } updateArcs(); });
   map.on("click", (e: any) => {
+    const g = isFlow() ? arcAt(e.point.x, e.point.y) : null;
+    if (g) { tip.innerHTML = arcTip(g.a); placeTip(e.point.x, e.point.y); return; } // 터치: 선을 누르면 나이별 인원
     const f = map.queryRenderedFeatures(e.point, { layers: ["sgg-fill"] })[0];
     const id = (f?.properties?.id as string) ?? null;
     select(id === selected ? null : id, true);
@@ -648,17 +679,21 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const GROUPS = ["all", "kids", "youth", "mid", "pre", "old"];
   const flowNet = (id: string) => (F as any)?.net?.[id]?.[GROUPS.indexOf(FLOW_G[cur.key])] ?? D.moveNet[id]?.[FLOW_G[cur.key]] ?? 0;
   const gi = () => (F ? F.groups.indexOf(FLOW_G[cur.key]) + 2 : 2);
-  type Arc = { s: string; t: string; n: number; kind: "in" | "out" | "net"; back?: number };
+  // comp: 이 길로 움직인 사람의 나이 구성 [0~14, 15~19, 20~34, 35~49, 50~64, 65+] (같은 방향 전입 기준)
+  type Arc = { s: string; t: string; n: number; kind: "in" | "out" | "net"; back?: number; comp: number[] };
+  const compOf = (r: number[]) => { const [all, k, y, m, p, o] = r.slice(2, 8); return [k, Math.max(0, all - k - y - m - p - o), y, m, p, o]; };
+  const AGE_BANDS = ["0~14세", "15~19세", "20~34세", "35~49세", "50~64세", "65세 이상"];
+  const AGE_VARS = ["var(--series-4)", "var(--neutral-series)", "var(--series-1)", "var(--series-7)", "var(--series-5)", "var(--series-8)"];
   let arcs: Arc[] = [];
 
   const partners = (id: string) => {
     const g = gi();
-    const ins: [string, number][] = [], outs: [string, number][] = [];
+    const ins: [string, number, number[]][] = [], outs: [string, number, number[]][] = [];
     for (const r of F!.rows) {
       const v = r[g];
       if (!v) continue;
-      if (F!.ids[r[1]] === id) ins.push([F!.ids[r[0]], v]);
-      else if (F!.ids[r[0]] === id) outs.push([F!.ids[r[1]], v]);
+      if (F!.ids[r[1]] === id) ins.push([F!.ids[r[0]], v, compOf(r)]);
+      else if (F!.ids[r[0]] === id) outs.push([F!.ids[r[1]], v, compOf(r)]);
     }
     ins.sort((a, b) => b[1] - a[1]);
     outs.sort((a, b) => b[1] - a[1]);
@@ -675,35 +710,39 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     return [ab, ba];
   };
   const nationalArcs = (): Arc[] => {
-    const g = gi(), pair = new Map<string, number>();
+    const g = gi(), pair = new Map<string, number>(), comp = new Map<string, number[]>();
     for (const r of F!.rows) {
       let s = F!.ids[r[0]], t = F!.ids[r[1]];
       if (s.slice(0, 2) === t.slice(0, 2)) continue; // 전국 화면은 시도를 넘는 이동만
       if (natLevel === "sido") { s = s.slice(0, 2); t = t.slice(0, 2); }
       const k = `${s}>${t}`;
       pair.set(k, (pair.get(k) ?? 0) + r[g]);
+      const c = comp.get(k) ?? [0, 0, 0, 0, 0, 0], rc = compOf(r);
+      comp.set(k, c.map((x, i) => x + rc[i]));
     }
     const out: Arc[] = [];
     for (const [k, v] of pair) {
       const [s, t] = k.split(">");
       const back = pair.get(`${t}>${s}`) ?? 0;
-      if (v > back) out.push({ s, t, n: v - back, back, kind: "net" });
+      if (v > back) out.push({ s, t, n: v - back, back, kind: "net", comp: comp.get(k)! });
     }
     return out.sort((a, b) => b.n - a.n).slice(0, natLevel === "sido" ? 30 : 45);
   };
 
   async function updateArcs() {
-    if (!isFlow()) { arcs = []; return; }
+    if (!isFlow()) { arcs = []; renderFlowLegend(); return; }
     await loadFlows();
-    if (!isFlow()) { arcs = []; return; }
+    if (!isFlow()) { arcs = []; renderFlowLegend(); return; }
     if (selected) {
       const { ins, outs } = partners(selected);
       arcs = [
-        ...ins.slice(0, 12).map(([s, n]) => ({ s, t: selected!, n, kind: "in" as const })),
-        ...outs.slice(0, 12).map(([t, n]) => ({ s: selected!, t, n, kind: "out" as const })),
+        ...ins.slice(0, 12).map(([s, n, comp]) => ({ s, t: selected!, n, kind: "in" as const, comp })),
+        ...outs.slice(0, 12).map(([t, n, comp]) => ({ s: selected!, t, n, kind: "out" as const, comp })),
       ];
     } else arcs = nationalArcs();
+    rescale();
     renderFlow(selected);
+    renderFlowLegend();
   }
 
   function renderFlow(id: string | null) {
@@ -711,14 +750,14 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     if (!F) { flowEl.innerHTML = `<p class="hint">이동 자료를 불러오는 중…</p>`; return; }
     const g = FLOW_G[cur.key], gl = G_LABEL[g];
     const cIn = resolve(IN_C), cOut = resolve(OUT_C);
-    const list = (rows: [string, number][], color: string) => {
+    const list = (rows: [string, number, ...any[]][], color: string) => {
       const max = Math.max(...rows.map((r) => r[1]), 1);
       return rows.map(([pid, v]) => `<div class="flow-row" data-id="${pid}"><span>${D.regions[pid]?.n ?? pid}</span><span class="bar" style="width:${Math.max(4, (v / max) * 100)}%;background:${color}"></span><span class="v">${fmtN(v)}</span></div>`).join("");
     };
     if (!id) {
       const top = arcs.slice(0, 8);
       flowEl.innerHTML = `
-        <p class="sum"><strong>${gl}</strong>이 가장 많이 옮겨 간 길입니다. 두 지역이 주고받은 인원을 서로 빼고, 남은 쪽으로 흐릅니다. 지도에서 시군구를 누르면 그곳에 누가 어디서 오고 어디로 가는지 보입니다.</p>
+        <p class="sum"><strong>${g === "all" ? "사람들" : gl}</strong>이 가장 많이 옮겨 간 길입니다. 두 지역이 주고받은 인원을 서로 빼고, 남은 쪽으로 흐릅니다. 지도에서 시군구를 누르면 그곳에 누가 어디서 오고 어디로 가는지 보입니다.</p>
         <div class="mp-chips" role="group" aria-label="단위"><button type="button" data-lv="sido" aria-pressed="${natLevel === "sido"}">시도끼리</button><button type="button" data-lv="sgg" aria-pressed="${natLevel === "sgg"}">시군구끼리</button></div>
         <div><h4><i style="background:${cIn}"></i>시도를 넘는 순이동이 큰 길 (${FW[flowWin].periodLabel}, 명)</h4>
         ${top.map((a) => `<div class="flow-row" data-id="${a.t.length === 2 ? "" : a.t}"><span>${nm(a.s)} → ${nm(a.t).split(" ").pop()}</span><span class="bar" style="width:${Math.max(4, (a.n / top[0].n) * 100)}%;background:${cIn}"></span><span class="v">${fmtN(a.n)}</span></div>`).join("")}</div>`;
@@ -767,16 +806,55 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   sizeCanvas();
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const rgba = (rgb: string, a: number) => rgb.replace("rgb(", "rgba(").replace(")", `,${a})`);
-  let colors = { in: "", out: "", halo: "" };
-  const recolor = () => { colors = { in: resolve(IN_C), out: resolve(OUT_C), halo: resolve("var(--surface-1)") }; };
-  recolor();
+  let colors = { in: "", out: "", halo: "", ink: "", ages: [] as string[] };
+  const recolor = () => {
+    colors = { in: resolve(IN_C), out: resolve(OUT_C), halo: resolve("var(--surface-1)"), ink: resolve("var(--text-primary)"), ages: AGE_VARS.map(resolve) };
+    renderFlowLegend();
+  };
+
+  // 인코딩: 굵기 = 연간 인원(제곱근 — 서울→경기처럼 한 길이 압도적이라 선형이면 나머지가 실선이 된다), 점 하나 = UNIT명(셀 수 있게), 띠 = 나이 구성('전체'일 때), 숫자 = 큰 길, 화살촉·점의 방향 = 이동 방향
+  const NICE = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+  const W_MAX = 22, W_MIN = 1.5;
+  let scale = { max: 1, unit: 100 };
+  const rescale = () => {
+    const ns = arcs.map((a) => a.n).sort((a, b) => b - a);
+    const max = Math.max(1, ns[0] ?? 1), ref = ns[Math.min(4, ns.length - 1)] ?? max; // 다섯 번째 길에 점이 8개쯤
+    scale = { max, unit: NICE.find((u) => ref / u <= 8) ?? 10000 };
+  };
+  const widthOf = (n: number) => Math.max(W_MIN, Math.sqrt(n / scale.max) * W_MAX);
+  const ribbon = () => FLOW_G[cur.key] === "all";
+  type Geo = { a: Arc; pts: [number, number][]; nrm: [number, number][]; w: number };
+  let geoms: Geo[] = [];
+  const SAMPLES = 28;
+  const hash = (k: number) => { const x = Math.sin(k * 12.9898) * 43758.5453; return x - Math.floor(x); };
+
+  const flowLegendEl = document.getElementById("mp-flowlegend")!;
+  let legendOpen = !matchMedia("(max-width: 760px)").matches; // 좁은 화면은 접어 둔다
+  function renderFlowLegend() {
+    if (!isFlow() || !arcs.length) { flowLegendEl.hidden = true; return; }
+    flowLegendEl.hidden = false;
+    const big = NICE.slice().reverse().find((u) => u <= scale.max) ?? scale.max;
+    const small = NICE.slice().reverse().find((u) => u <= big / 4) ?? big / 4;
+    const line = (n: number) => `<div class="lg-row"><svg width="46" height="${Math.max(8, widthOf(n) + 4)}"><line x1="2" x2="44" y1="50%" y2="50%" stroke="${colors.ink}" stroke-opacity="0.55" stroke-width="${widthOf(n)}" stroke-linecap="round"/></svg><span>${fmtN(n)}명</span></div>`;
+    flowLegendEl.innerHTML = `<details ${legendOpen ? "open" : ""}><summary>범례</summary>
+      <div class="lg-title">선 굵기 = 1년 이동 인원</div>${line(big)}${line(small)}${line(NICE.slice().reverse().find((u) => u <= small / 5) ?? small / 5)}
+      <div class="lg-row"><svg width="46" height="12"><circle cx="23" cy="6" r="2.6" fill="${colors.ink}" stroke="${colors.halo}" stroke-width="1"/></svg><span>점 하나 = ${fmtN(scale.unit)}명</span></div>
+      ${ribbon() ? `<div class="lg-title" style="margin-top:6px">띠 = 나이 구성</div><div class="lg-ages">${AGE_BANDS.map((b, i) => `<span><i style="background:${colors.ages[i]}"></i>${b}</span>`).join("")}</div>`
+        : selected ? `<div class="lg-ages"><span><i style="background:${colors.in}"></i>들어옴</span><span><i style="background:${colors.out}"></i>나감</span></div>` : ""}
+      <div class="lg-note">선에 마우스를 올리면(누르면) 나이별 인원</div></details>`;
+    flowLegendEl.querySelector("details")!.addEventListener("toggle", (e) => { legendOpen = (e.target as HTMLDetailsElement).open; });
+  }
+
   const frame = (now: number) => {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     cx.clearRect(0, 0, w, h);
+    geoms = [];
     if (arcs.length) {
-      const max = Math.max(...arcs.map((a) => a.n));
       const sec = now / 1000;
-      for (const a of arcs) {
+      const labelMin = [...arcs].sort((a, b) => b.n - a.n)[Math.min(9, arcs.length - 1)].n;
+      const labels: [number, number, string][] = [];
+      // 작은 길을 먼저, 큰 길을 위에
+      for (const a of [...arcs].sort((x, y) => x.n - y.n)) {
         const A = a.s.length === 2 ? SP[a.s] : P[a.s], B = a.t.length === 2 ? SP[a.t] : P[a.t];
         if (!A || !B) continue;
         const p0 = map.project(A), p1 = map.project(B);
@@ -784,35 +862,101 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
         if (d < 3) continue;
         const bend = Math.min(0.3, 0.18 + 40 / (d + 80));
         const c = { x: (p0.x + p1.x) / 2 - dy * bend, y: (p0.y + p1.y) / 2 + dx * bend };
-        const wgt = 1 + 7 * Math.sqrt(a.n / max);
-        const col = a.kind === "out" ? colors.out : colors.in;
-        cx.lineCap = "round";
-        cx.beginPath(); cx.moveTo(p0.x, p0.y); cx.quadraticCurveTo(c.x, c.y, p1.x, p1.y);
-        cx.strokeStyle = rgba(col, 0.28); cx.lineWidth = wgt; cx.stroke();
-        // 혜성: 머리 점 + 곡선을 따라 옅어지는 꼬리. 굵은 길일수록 많이, 화면 거리와 상관없이 비슷한 속도로
-        const k = reduce ? 0 : 1 + Math.round(wgt * 0.45);
-        const dur = Math.max(1.6, d / 90);
-        const at = (tt: number) => { const u = 1 - tt; return [u * u * p0.x + 2 * u * tt * c.x + tt * tt * p1.x, u * u * p0.y + 2 * u * tt * c.y + tt * tt * p1.y]; };
-        const tailLen = Math.min(0.35, 60 / d);
-        for (let j = 0; j < k; j++) {
-          const t = (sec / dur + j / k + (a.s.charCodeAt(a.s.length - 1) % 7) / 7) % 1;
-          const N = 10;
-          for (let q = 0; q < N; q++) {
-            const ta = Math.max(0, t - tailLen * (q + 1) / N), tb = Math.max(0, t - tailLen * q / N);
-            if (tb <= 0) break;
-            const [x0, y0] = at(ta), [x1, y1] = at(tb);
-            cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(x1, y1);
-            cx.strokeStyle = rgba(col, 0.85 * (1 - q / N)); cx.lineWidth = Math.max(1.2, wgt * 0.55) * (1 - q / N * 0.6); cx.stroke();
-          }
-          const [hx, hy] = at(t);
-          cx.beginPath(); cx.arc(hx, hy, Math.max(1.6, wgt * 0.4), 0, Math.PI * 2);
-          cx.fillStyle = col; cx.fill();
+        const wd = widthOf(a.n);
+        // 곡선 표본점과 법선
+        const pts: [number, number][] = [], nrm: [number, number][] = [];
+        for (let i = 0; i <= SAMPLES; i++) {
+          const t = i / SAMPLES, u = 1 - t;
+          pts.push([u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, u * u * p0.y + 2 * u * t * c.y + t * t * p1.y]);
+          const tx = 2 * u * (c.x - p0.x) + 2 * t * (p1.x - c.x), ty = 2 * u * (c.y - p0.y) + 2 * t * (p1.y - c.y), tl = Math.hypot(tx, ty) || 1;
+          nrm.push([-ty / tl, tx / tl]);
         }
+        geoms.push({ a, pts, nrm, w: wd });
+        // 끝을 가늘게: 도착지에 가까울수록 살짝 좁아진다 (방향감)
+        const taper = (i: number) => 1 - 0.35 * (i / SAMPLES);
+        const strokeBand = (off: number, bw: number, col: string, alpha: number) => {
+          cx.beginPath();
+          for (let i = 0; i <= SAMPLES; i++) {
+            const k = taper(i), x = pts[i][0] + nrm[i][0] * off * k, y = pts[i][1] + nrm[i][1] * off * k;
+            i ? cx.lineTo(x, y) : cx.moveTo(x, y);
+          }
+          cx.strokeStyle = rgba(col, alpha); cx.lineWidth = Math.max(0.8, bw); cx.stroke();
+        };
+        cx.lineCap = "butt"; cx.lineJoin = "round";
+        strokeBand(0, wd + 2.5, colors.halo, 0.75); // 바탕과 떼어 놓는 테두리
+        if (ribbon() && wd >= 4) {
+          const tot = a.comp.reduce((x, y) => x + y, 0) || 1;
+          let acc = -wd / 2;
+          a.comp.forEach((v, i) => {
+            const bw = (v / tot) * wd;
+            if (bw > 0.15) strokeBand(acc + bw / 2, bw + 0.3, colors.ages[i], 0.9);
+            acc += bw;
+          });
+        } else {
+          strokeBand(0, wd, ribbon() ? colors.ink : a.kind === "out" ? colors.out : colors.in, ribbon() ? 0.45 : 0.75);
+        }
+        // 화살촉
+        const iE = SAMPLES - 1, [ex, ey] = pts[SAMPLES], [bx, by] = pts[iE];
+        const ang = Math.atan2(ey - by, ex - bx), ah = Math.max(6, wd * 0.6 + 4);
+        cx.beginPath();
+        cx.moveTo(ex, ey);
+        cx.lineTo(ex - ah * Math.cos(ang - 0.45), ey - ah * Math.sin(ang - 0.45));
+        cx.lineTo(ex - ah * Math.cos(ang + 0.45), ey - ah * Math.sin(ang + 0.45));
+        cx.closePath();
+        cx.fillStyle = ribbon() ? colors.ink : a.kind === "out" ? colors.out : colors.in; cx.fill();
+        // 사람 점: 하나 = scale.unit 명, 띠 폭 안에 흩어져 흐른다
+        if (!reduce) {
+          const k = Math.min(150, Math.max(1, Math.round(a.n / scale.unit)));
+          const dur = Math.max(2.6, d / 70);
+          for (let j = 0; j < k; j++) {
+            const t = (sec / dur + j / k + hash(j + a.n) * 0.15) % 1;
+            const fi = t * SAMPLES, i0 = Math.floor(fi), f = fi - i0, i1 = Math.min(SAMPLES, i0 + 1);
+            const lat = (hash(j * 7.13 + a.s.length) - 0.5) * wd * 0.75 * taper(fi);
+            const x = pts[i0][0] + (pts[i1][0] - pts[i0][0]) * f + nrm[i0][0] * lat;
+            const y = pts[i0][1] + (pts[i1][1] - pts[i0][1]) * f + nrm[i0][1] * lat;
+            cx.beginPath(); cx.arc(x, y, 2.4, 0, Math.PI * 2);
+            cx.fillStyle = colors.ink; cx.fill();
+            cx.strokeStyle = colors.halo; cx.lineWidth = 1; cx.stroke();
+          }
+        }
+        if (a.n >= labelMin) {
+          const m = SAMPLES >> 1, off = wd / 2 + 9;
+          labels.push([pts[m][0] + nrm[m][0] * off, pts[m][1] + nrm[m][1] * off, fmtN(a.n)]);
+        }
+      }
+      // 숫자는 맨 위에 (테두리로 읽히게)
+      cx.font = "700 12px Pretendard, 'Apple SD Gothic Neo', sans-serif";
+      cx.textAlign = "center"; cx.textBaseline = "middle";
+      for (const [x, y, t] of labels) {
+        cx.lineWidth = 3.5; cx.strokeStyle = colors.halo; cx.strokeText(t, x, y);
+        cx.fillStyle = colors.ink; cx.fillText(t, x, y);
       }
     }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
+  recolor();
+
+  // 선 위 마우스: 가장 가까운 길 (띠 폭 안)
+  const arcAt = (x: number, y: number): Geo | null => {
+    let best: Geo | null = null, bd = Infinity;
+    for (const g of geoms) {
+      for (const [px, py] of g.pts) {
+        const dd = Math.hypot(px - x, py - y);
+        if (dd < Math.max(7, g.w / 2 + 3) && dd < bd) { bd = dd; best = g; }
+      }
+    }
+    return best;
+  };
+  const arcTip = (a: Arc) => {
+    const tot = a.comp.reduce((x, y) => x + y, 0) || 1, mx = Math.max(...a.comp, 1);
+    const head = `<b>${nm(a.s)} → ${nm(a.t)}</b>`;
+    const main = a.kind === "net"
+      ? `순이동 <strong>${fmtN(a.n)}명</strong> <span style="opacity:.7">(이쪽 ${fmtN(a.n + (a.back ?? 0))} · 반대 ${fmtN(a.back ?? 0)})</span>`
+      : `<strong>${fmtN(a.n)}명</strong> <span style="opacity:.7">${G_LABEL[FLOW_G[cur.key]]} · ${FW[flowWin].periodLabel}</span>`;
+    const rows = a.comp.map((v, i) => `<div class="tt-age"><i style="background:${colors.ages[i]}"></i><span>${AGE_BANDS[i]}</span><span class="b"><span style="width:${(v / mx) * 100}%;background:${colors.ages[i]}"></span></span><span class="v">${fmtN(v)} <span style="opacity:.6">${Math.round((v / tot) * 100)}%</span></span></div>`).join("");
+    return `${head}${main}<div class="tt-ages">${rows}</div>${a.kind === "net" ? `<div style="opacity:.6;font-size:11px;margin-top:4px">나이 구성은 이쪽 방향 이동 기준</div>` : ""}`;
+  };
 
 
   // ---- 연도 슬라이더·재생·시나리오
