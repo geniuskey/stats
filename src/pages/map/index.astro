@@ -858,7 +858,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   //  - 화살촉·흐르는 점 = 순이동 방향, 점 하나 = UNIT명
   //  - 색 = 고른 지역 기준 순유입(파랑)·순유출(주황)
   const NICE = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
-  const W_MAX = 12, W_MIN = 1;
+  const W_MAX = 20, W_MIN = 1;
   let scale = { max: 1, unit: 100 };
   const rescale = () => {
     const nets = arcs.map(netOf).sort((a, b) => b - a);
