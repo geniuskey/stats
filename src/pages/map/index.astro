@@ -125,8 +125,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       <div class="map-flowlegend" id="mp-flowlegend" hidden></div>
       <aside class="map-info map-flow" id="mp-info" hidden aria-label="이달의 이동" aria-live="polite"></aside>
       <div class="map-tip" id="mp-tip" hidden></div>
-      <div class="map-year" id="mp-year" hidden aria-live="polite"><b></b><span></span></div>
       <div class="map-time" id="mp-time" hidden>
+        <div class="map-year" id="mp-year" hidden aria-live="polite"><b></b><span></span></div>
         <div class="row1">
           <button type="button" id="mp-play" class="play" aria-label="재생">▶</button>
           <div class="track"><input type="range" id="mp-range" min="0" max="0" step="1" aria-label="연도" /><div class="ticks" id="mp-ticks"></div></div>
@@ -228,9 +228,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   }
   :global(.map-tip b) { display: block; }
   :global(.maplibregl-ctrl-attrib) { font-size: 11px; }
-  .map-year { position: absolute; left: 16px; top: 12px; z-index: 3; pointer-events: none; line-height: 1; text-shadow: 0 0 6px var(--surface-1), 0 0 2px var(--surface-1); }
-  :global(.map-year b) { display: block; font-size: 44px; font-weight: 800; letter-spacing: -0.02em; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-  :global(.map-year span) { display: block; margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .map-year { display: flex; align-items: baseline; gap: 10px; min-width: 0; line-height: 1; }
+  :global(.map-year b) { flex: none; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  :global(.map-year span) { min-width: 0; font-size: 13px; font-weight: 600; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :global(.map-year.proj b) { color: var(--series-2); }
   .map-time {
     position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 3;
@@ -241,7 +241,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   }
   .map-info {
     position: absolute; right: 12px; top: 12px; z-index: 3; width: 300px; box-sizing: border-box;
-    max-height: calc(100% - 150px); overflow-y: auto; align-content: start;
+    max-height: calc(100% - 190px); overflow-y: auto; align-content: start;
     background: color-mix(in oklab, var(--surface-1) 93%, transparent); backdrop-filter: blur(8px);
     border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); border-radius: 14px; padding: 14px;
     box-shadow: 0 6px 22px rgba(0, 0, 0, 0.14);
@@ -332,8 +332,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   :global(.map-flow .hint) { margin: 0; font-size: 13px; color: var(--text-muted); }
   @media (max-width: 760px) {
     .map-flowlegend { top: 84px; right: 8px; width: auto; max-width: 150px; padding: 6px 8px; }
-    .map-year { top: 8px; left: 10px; }
-    :global(.map-year b) { font-size: 30px; }
+    :global(.map-year b) { font-size: 22px; }
+    :global(.map-year span) { font-size: 12px; }
     .map-time { bottom: 30px; padding: 8px 10px; }
     .map-page { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
     .map-side { order: 2; border-right: 0; max-height: none; }
@@ -560,7 +560,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const vcache = new Map<string, Record<string, number | null>>();
   const vals = (m: any): Record<string, number | null> => {
     if (FLOW_G[m.key] && F && (F as any).net) {
-      const k = `${m.key}:flow:${flowWin}`;
+      const k = `${m.key}:flow:${fWin}`; // 슬라이더 위치가 아니라 F에 실제로 든 기간
       let v = vcache.get(k);
       if (!v) {
         const gix = GROUPS.indexOf(FLOW_G[m.key]);
@@ -690,7 +690,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     renderLegend();
     paint();
     placeFlowPanel();
-    if (isLapse()) enterLapse().then(() => { if (clicked) { playLapse(true); flowEl.scrollIntoView({ behavior: "smooth", block: "nearest" }); } });
+    if (isLapse()) enterLapse().then(() => { if (clicked && isLapse() && !reduce) { playLapse(true); flowEl.scrollIntoView({ behavior: "smooth", block: "nearest" }); } });
     else clearDots();
     renderDetail(selected);
     renderTime();
@@ -753,6 +753,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   map.on("click", (e: any) => {
     const g = isFlow() ? arcAt(e.point.x, e.point.y) : null;
     if (g) { tip.innerHTML = arcTip(g.a); placeTip(e.point.x, e.point.y); return; } // 터치: 선을 누르면 나이별 인원
+    tip.hidden = true; // 터치: 선 말풍선은 다른 곳을 누르면 닫는다
     const f = map.queryRenderedFeatures(e.point, { layers: ["sgg-fill"] })[0];
     const id = (f?.properties?.id as string) ?? null;
     select(id === selected ? null : id, true);
@@ -770,10 +771,15 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const flowCache: Record<number, Promise<any>> = {};
   const loadWin = (i: number) => (flowCache[i] ??= fetch(FW[i].url).then((r) => r.json()));
   let ptsLoading: Promise<void> | null = null;
+  let fWin = -1; // F가 담고 있는 기간
+  /** 지금 기간을 불러 F에 넣는다. 기다리는 사이 기간이 바뀌었으면 false (늦게 온 응답은 버린다) */
   const loadFlows = async () => {
-    const [f] = await Promise.all([loadWin(flowWin), loadPts()]);
-    F = f;
-    for (const j of [flowWin - 1, flowWin + 1]) if (FW[j]) loadWin(j); // 재생할 때 끊기지 않게 이웃 기간을 미리
+    const w = flowWin;
+    const [f] = await Promise.all([loadWin(w), loadMoveGeo()]);
+    for (const j of [w - 1, w + 1]) if (FW[j]) loadWin(j); // 재생할 때 끊기지 않게 이웃 기간을 미리
+    if (w !== flowWin) return false;
+    F = f; fWin = w;
+    return true;
   };
   const loadPts = () => (ptsLoading ??= (async () => {
     const pts = await fetch(D.geoPts).then((r) => r.json());
@@ -790,7 +796,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const gi = () => (F ? F.groups.indexOf(FLOW_G[cur.key]) + 2 : 2);
   // 통로: 두 지역 사이 양방향 이동을 하나로 묶는다. a→b 가 더 많이 간 쪽(fwd ≥ back)
   // cf·cb: a→b, b→a 의 나이 구성 [0~14, 15~19, 20~34, 35~49, 50~64, 65+] (전 연령)
-  type Arc = { a: string; b: string; fwd: number; back: number; cf: number[]; cb: number[] };
+  // comp: 시도 통로를 이루는 시군구 쌍 [출발, 도착, 인원] (점의 출발·도착 시군구를 이 비중대로 뽑는다)
+  type Arc = { a: string; b: string; fwd: number; back: number; cf: number[]; cb: number[]; comp?: [string, string, number][] };
   const compOf = (r: number[]) => { const [all, k, y, m, p, o] = r.slice(2, 8); return [k, Math.max(0, all - k - y - m - p - o), y, m, p, o]; };
   const addv = (x: number[], y: number[]) => x.map((v, i) => v + y[i]);
   const Z6 = () => [0, 0, 0, 0, 0, 0];
@@ -832,12 +839,14 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   };
   // 전국: 시도(또는 시군구)를 넘는 쌍을 묶어 순이동이 큰 통로
   const nationalArcs = (): Arc[] => {
-    const g = gi(), val = new Map<string, number>(), comp = new Map<string, number[]>();
+    const g = gi(), val = new Map<string, number>(), comp = new Map<string, number[]>(), sub = new Map<string, [string, string, number][]>();
     for (const r of F!.rows) {
-      let s = F!.ids[r[0]], t = F!.ids[r[1]];
+      const s0 = F!.ids[r[0]], t0 = F!.ids[r[1]];
+      let s = s0, t = t0;
       if (s.slice(0, 2) === t.slice(0, 2)) continue;
       if (natLevel === "sido") { s = s.slice(0, 2); t = t.slice(0, 2); }
       const k = `${s}>${t}`;
+      if (natLevel === "sido" && r[g]) (sub.get(k) ?? sub.set(k, []).get(k)!).push([s0, t0, r[g]]);
       val.set(k, (val.get(k) ?? 0) + r[g]);
       comp.set(k, addv(comp.get(k) ?? Z6(), compOf(r)));
     }
@@ -845,20 +854,22 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     for (const [k, v] of val) {
       const [s, t] = k.split(">");
       const back = val.get(`${t}>${s}`) ?? 0;
-      if (v > back || (v === back && s < t)) out.push({ a: s, b: t, fwd: v, back, cf: comp.get(k)!, cb: comp.get(`${t}>${s}`) ?? Z6() });
+      if (v > back || (v === back && s < t)) out.push({ a: s, b: t, fwd: v, back, cf: comp.get(k)!, cb: comp.get(`${t}>${s}`) ?? Z6(), comp: sub.get(k) });
     }
     return out.sort((x, y) => netOf(y) - netOf(x)).slice(0, natLevel === "sido" ? 30 : 45);
   };
 
   async function updateArcs() {
     if (!isFlow()) { arcs = []; renderFlowLegend(); return; }
-    await loadFlows();
+    if (!(await loadFlows())) return; // 더 새 요청이 이어서 그린다
     if (!isFlow()) { arcs = []; renderFlowLegend(); return; }
     if (selected) arcs = regionCorr(selected).list.slice(0, 14).map((e) => toArc(e.p, selected!, e));
     else arcs = nationalArcs();
     rescale();
+    flowComets(performance.now());
     renderFlow(selected);
     renderFlowLegend();
+    kick();
   }
 
   // 나비 막대: 왼쪽 = 나감(또는 반대 방향), 오른쪽 = 들어옴(또는 순이동 방향), 끝에 순이동
@@ -877,7 +888,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     if (!id) {
       const top = arcs.slice(0, 10), mx = Math.max(1, ...top.map((c) => c.fwd));
       flowEl.innerHTML = `
-        <div class="mp-hd"><h3>${g === "all" ? "" : `${gl} `}이사 흐름</h3>${help(`<strong>${g === "all" ? "사람들" : gl}</strong>이 지역을 넘어 오간 길입니다. 연한 띠는 서로 주고받은 전체, 진한 선은 그중 <strong>더 많이 간 쪽으로 남은 인원(순이동)</strong>입니다. 시군구를 누르면 그곳이 상대마다 얻었는지 잃었는지 보입니다. ${FW[flowWin].periodLabel} · 단위 명.`)}</div>
+        <div class="mp-hd"><h3>${g === "all" ? "" : `${gl} `}이사 흐름</h3>${help(`<strong>${g === "all" ? "사람들" : gl}</strong>이 지역을 넘어 오간 길입니다. 두 지역이 주고받은 걸 서로 빼고 <strong>더 많이 간 쪽으로 남은 인원(순이동)</strong>만큼 점이 출발지 땅에서 도착지 땅으로 흐르고, 꼬리는 출발(빨강)에서 도착(파랑)으로 색이 바뀝니다. 시군구를 누르면 그곳이 상대마다 얻었는지 잃었는지 보입니다. ${FW[flowWin].periodLabel} · 단위 명.`)}</div>
         <div class="mp-chips" role="group" aria-label="단위"><button type="button" data-lv="sido" aria-pressed="${natLevel === "sido"}">시도끼리</button><button type="button" data-lv="sgg" aria-pressed="${natLevel === "sgg"}">시군구끼리</button></div>
         <div class="fly">
           <div class="fly-head"><span></span><span class="l">← 반대쪽</span><span class="r">많이 간 쪽 →</span><span class="v">순</span></div>
@@ -937,46 +948,30 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     renderFlowLegend();
   };
 
-  // 인코딩
-  //  - 바깥 연한 띠 굵기 = 두 지역이 주고받은 전체(제곱근 척도)
-  //  - 안쪽 진한 선 = 그중 순이동 (바깥 띠 대비 비율은 그대로) → 띠가 거의 비어 있으면 '비슷하게 주고받음', 꽉 차면 '한쪽으로 쏠림'
-  //  - 화살촉·흐르는 점 = 순이동 방향, 점 하나 = UNIT명
-  //  - 색 = 고른 지역 기준 순유입(파랑)·순유출(주황)
+  // 인코딩 (타임랩스와 같은 방식)
+  //  - 혜성 점 = 순이동, 점 하나 = unit명. 출발 시군구 땅(행정동 비중)에서 도착 땅으로 같은 속력으로 흐른다
+  //  - 꼬리 색 = 출발 빨강 → 도착 파랑, 숫자 = 통로의 순이동 (고른 지역 기준 얻음 파랑·잃음 빨강)
   const NICE = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
-  const W_MAX = 20, W_MIN = 1;
-  let scale = { max: 1, unit: 100 };
+  let scale = { unit: 100 };
   const rescale = () => {
-    const nets = arcs.map(netOf).sort((a, b) => b - a);
-    const max = Math.max(1, ...arcs.map(grossOf)), ref = nets[Math.min(4, nets.length - 1)] ?? 1;
-    scale = { max, unit: NICE.find((u) => ref / u <= 8) ?? 10000 };
+    const nets = arcs.map(netOf).sort((a, b) => b - a), ref = nets[Math.min(4, nets.length - 1)] ?? 1;
+    scale = { unit: NICE.find((u) => ref / u <= 12) ?? 10000 };
   };
-  const widthOf = (n: number) => Math.max(W_MIN, Math.sqrt(n / scale.max) * W_MAX);
   const colorOfArc = (c: Arc) => (selected ? (c.b === selected ? colors.in : colors.out) : colors.in);
   type Geo = { a: Arc; pts: [number, number][]; nrm: [number, number][]; w: number };
   let geoms: Geo[] = [];
   const SAMPLES = 28;
-  const hash = (k: number) => { const x = Math.sin(k * 12.9898) * 43758.5453; return x - Math.floor(x); };
 
   const flowLegendEl = document.getElementById("mp-flowlegend")!;
   let legendOpen = !matchMedia("(max-width: 760px)").matches; // 좁은 화면은 접어 둔다
   function renderFlowLegend() {
     if (!isFlow() || !arcs.length) { flowLegendEl.hidden = true; return; }
     flowLegendEl.hidden = false;
-    const big = NICE.slice().reverse().find((u) => u <= scale.max) ?? scale.max;
-    const ow = widthOf(big), iw = ow * 0.4;
-    const c = colors.in;
     flowLegendEl.innerHTML = `<details ${legendOpen ? "open" : ""}><summary>범례</summary>
-      <svg width="130" height="${ow + 30}" aria-hidden="true">
-        <path d="M6 ${ow / 2 + 6} H112" stroke="${c}" stroke-opacity="0.22" stroke-width="${ow}"/>
-        <path d="M6 ${ow / 2 + 6} H106" stroke="${c}" stroke-opacity="0.9" stroke-width="${iw}"/>
-        <path d="M104 ${ow / 2 + 6 - iw} L118 ${ow / 2 + 6} L104 ${ow / 2 + 6 + iw}Z" fill="${c}"/>
-        <text x="6" y="${ow + 24}" font-size="10" fill="${colors.ink}">연한 띠: 주고받은 전체</text>
-      </svg>
-      <div class="lg-row"><span class="sw" style="background:${c}"></span>진한 선: 순이동</div>
-      <div class="lg-row"><svg width="16" height="10"><circle cx="8" cy="5" r="2.6" fill="${colors.ink}" stroke="${colors.halo}"/></svg>점 하나 = 순 ${fmtN(scale.unit)}명</div>
-      <div class="lg-row" style="color:var(--text-muted)">띠 ${fmtN(big)}명 굵기 기준</div>
-      ${selected ? `<div class="lg-ages"><span><i style="background:${colors.in}"></i>순유입</span><span><i style="background:${colors.out}"></i>순유출</span></div>` : ""}
-      <div class="lg-note">선을 가리키면(누르면) 양방향 인원과 나이별</div></details>`;
+      <div class="lg-row"><span class="sw" style="width:40px;background:linear-gradient(90deg, ${colors.out}, ${colors.in})"></span>출발 → 도착</div>
+      <div class="lg-row"><svg width="16" height="10" aria-hidden="true"><circle cx="8" cy="5" r="2.2" fill="${colors.in}"/></svg>점 하나 = 순 ${fmtN(scale.unit)}명</div>
+      ${selected ? `<div class="lg-ages"><span><i style="background:${colors.in}"></i>얻음</span><span><i style="background:${colors.out}"></i>잃음</span></div>` : ""}
+      <div class="lg-note">점이 흐르는 길을 가리키면(누르면) 양방향 인원과 나이별</div></details>`;
     flowLegendEl.querySelector("details")!.addEventListener("toggle", (e) => { legendOpen = (e.target as HTMLDetailsElement).open; });
   }
 
@@ -1000,13 +995,10 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   let cumMax: number[] = [];
   let bigMap = new Map<string, number>();
   const decode = (ch: string) => { if (ch === "0") return 0; const c = ch.charCodeAt(0); return c >= 97 ? c - 96 : -(c - 64); };
-  const loadLapse = () => (lapseLoading ??= (async () => {
-    const [l, mpts] = await Promise.all([fetch(D.lapse).then((r) => r.json()), fetch(D.movePts).then((r) => (r.ok ? r.json() : null)).catch(() => null), loadPts()]);
-    L = l;
-    lapseMonth = L.months.length - 1;
-    bigMap = new Map(L.big.map((b: number[]) => [`${b[0]},${b[1]},${b[2]}`, b[3]]));
-    cum = L.net.map((g: number[][]) => g.map((row) => { const c = new Float64Array(row.length); let s = 0; row.forEach((v, i) => (c[i] = s += v)); return c; }));
-    cumMax = cum.map((g) => Math.max(1, ...g.map((c) => Math.max(...Array.from(c).map(Math.abs)))));
+  // 점이 뜨고 내리는 자리(타임랩스·이사 흐름 공통): 시군구 중심·크기, 행정동 비중 점
+  let moveGeoLoading: Promise<void> | null = null;
+  const loadMoveGeo = () => (moveGeoLoading ??= (async () => {
+    const [mpts] = await Promise.all([fetch(D.movePts).then((r) => (r.ok ? r.json() : null)).catch(() => null), loadPts()]);
     const bb: Record<string, number[]> = {};
     for (const f of geo.features) {
       const b = (bb[f.properties.id] ??= [180, 90, -180, -90]);
@@ -1023,6 +1015,14 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       const [mx, my] = toM(c[0], c[1]);
       return [id, [mx, my, Math.max(Math.min(b[2] - b[0], (b[3] - b[1]) * 1.25) / 360 / 5, 0.00002)]];
     }));
+  })());
+  const loadLapse = () => (lapseLoading ??= (async () => {
+    const [l] = await Promise.all([fetch(D.lapse).then((r) => r.json()), loadMoveGeo()]);
+    L = l;
+    lapseMonth = L.months.length - 1;
+    bigMap = new Map(L.big.map((b: number[]) => [`${b[0]},${b[1]},${b[2]}`, b[3]]));
+    cum = L.net.map((g: number[][]) => g.map((row) => { const c = new Float64Array(row.length); let s = 0; row.forEach((v, i) => (c[i] = s += v)); return c; }));
+    cumMax = cum.map((g) => Math.max(1, ...g.map((c) => Math.max(...Array.from(c).map(Math.abs)))));
   })());
   // 이달의 길: 순이동이 큰 시군구 쌍을 곡선으로 (출발 빨강 → 도착 파랑 그라데이션), 점은 그 위를 꼬리 달고 흐른다
   const TOP_ARCS = 60;
@@ -1082,10 +1082,12 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
         mx0: A[0], my0: A[1], mx1: B[0], my1: B[1], cx: (A[0] + B[0]) / 2 - dy * 0.22, cy: (A[1] + B[1]) / 2 + dx * 0.22, born: start });
     }
     spawnCycle(start);
+    kick();
   }
   let cycSeed = 1;
   function spawnCycle(start: number) {
     nextCycle = start + CYCLE;
+    if (reduce) return; // 동작 줄이기: 흐르는 점 없이 지역 색만
     const sc = () => { const x = Math.sin(++cycSeed * 78.233) * 43758.5453; return x - Math.floor(x); };
     for (const arc of larcs) {
       if (arc.dying != null) continue;
@@ -1107,6 +1109,21 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       }
     }
   }
+  // 이사 흐름 통로 → 혜성 길. 통로가 바뀌면 지난 길은 서서히 사라지고 새 길에 점이 흐른다
+  function flowComets(now: number) {
+    for (const a of larcs) if (a.dying == null) a.dying = now;
+    dots = dots.filter((d) => d.t0 <= now);
+    for (const c of arcs) {
+      const net = netOf(c);
+      if (net <= 0) continue;
+      const A = c.a.length === 2 ? sidoM(c.a) : jit[c.a], B = c.b.length === 2 ? sidoM(c.b) : jit[c.b];
+      if (!A || !B) continue;
+      const dx = B[0] - A[0], dy = B[1] - A[1];
+      larcs.push({ a: c.a, b: c.b, n: net, k: Math.min(40, Math.max(1, Math.round(net / scale.unit))), comp: c.comp?.length ? c.comp : [[c.a, c.b, net]],
+        mx0: A[0], my0: A[1], mx1: B[0], my1: B[1], cx: (A[0] + B[0]) / 2 - dy * 0.22, cy: (A[1] + B[1]) / 2 + dx * 0.22, born: now });
+    }
+    spawnCycle(now);
+  }
   const ymTxt = (ym: string) => `${ym.slice(0, 4)}.${ym.slice(4)}`;
   const captionOf = (ym: string) => D.lapseCaptions[ym] ?? (ym.endsWith("02") ? D.lapseCaptions["02"] : "");
   const man = (v: number) => (Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(1)}만` : fmtN(v));
@@ -1116,41 +1133,33 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     return prev + (c[i] - prev) * prog;
   };
   let lastFill = 0;
-  function drawLapse(now: number) {
-    if (!L) return;
+  // 화면 좌표: 메르카토르 [0,1] → 픽셀 (두 기준점으로 선형 변환, 프레임마다 한 번)
+  const projector = () => {
     const RA = [126, 35], RB = [129.5, 38];
     const a = map.project(RA), b = map.project(RB), ma = toM(RA[0], RA[1]), mb = toM(RB[0], RB[1]);
     const sx = (b.x - a.x) / (mb[0] - ma[0]), sy = (b.y - a.y) / (mb[1] - ma[1]);
     const ox = a.x - ma[0] * sx, oy = a.y - ma[1] * sy;
-    const X = (m: number) => ox + m * sx, Y = (m: number) => oy + m * sy;
-    const z = map.getZoom(), RMAX = 30 * Math.pow(2, (z - 6.2) / 2);
-    // 1) 누적 순이동 → 지역 색(옅고 진함). 1초에 8번쯤, 바뀐 곳만 갱신
-    const circ: [number, number, number, number, string][] = []; // 이름표용 [x, y, 0, v, id]
-    const doFill = now - lastFill > 120;
-    if (doFill) lastFill = now;
-    for (let r = 0; r < L.ids.length; r++) {
-      const id = L.ids[r], v = cumNow(r, now);
-      if (doFill) {
-        const t = Math.sign(v) * Math.sqrt(Math.abs(v) / cumMax[lapseGroup]), q = Math.round(t * 100) / 100;
-        if (fillState.get(id) !== q) { fillState.set(id, q); map.setFeatureState({ source: "sgg", id }, { v: q }); }
-      }
-      const j = jit[id];
-      if (j) circ.push([X(j[0]), Y(j[1]), 0, v, id]);
-    }
-    circ.sort((p, q) => Math.abs(q[3]) - Math.abs(p[3]));
-    // 2) 이달의 길
-    const maxN = Math.max(1, ...larcs.filter((l) => l.dying == null).map((l) => l.n));
+    return { X: (m: number) => ox + m * sx, Y: (m: number) => oy + m * sy };
+  };
+  // 혜성 점(타임랩스·이사 흐름 공통): 같은 속력, 긴 꼬리, 출발 빨강 → 도착 파랑. 하나 = unit명
+  function drawComets(now: number, X: (m: number) => number, Y: (m: number) => number) {
     larcs = larcs.filter((l) => l.dying == null || now - l.dying < 600);
-    const bez = (l: LArc, t: number): [number, number] => {
-      const u = 1 - t;
-      return [X(u * u * l.mx0 + 2 * u * t * l.cx + t * t * l.mx1), Y(u * u * l.my0 + 2 * u * t * l.cy + t * t * l.my1)];
-    };
-    cx.lineCap = "round";
-    // 2) 길(선)은 그리지 않는다 — 점의 꼬리가 길을 대신한다
     const ca = colors.out.match(/[\d.]+/g)!.slice(0, 3).map(Number), cb = colors.in.match(/[\d.]+/g)!.slice(0, 3).map(Number);
     const mixC = (t: number, al: number) => `rgba(${ca.map((v, k) => Math.round(v + (cb[k] - v) * t)).join(",")},${al})`;
+    cx.lineCap = "round";
+    if (reduce) {
+      // 동작 줄이기: 흐르는 점 대신 길을 가는 선으로 (출발 빨강 → 도착 파랑)
+      for (const l of larcs) {
+        if (l.dying != null) continue;
+        const p0 = [X(l.mx0), Y(l.my0)], p1 = [X(l.mx1), Y(l.my1)], q = [X(l.cx), Y(l.cy)];
+        const gr = cx.createLinearGradient(p0[0], p0[1], p1[0], p1[1]);
+        gr.addColorStop(0, mixC(0, 0.7)); gr.addColorStop(1, mixC(1, 0.7));
+        cx.beginPath(); cx.moveTo(p0[0], p0[1]); cx.quadraticCurveTo(q[0], q[1], p1[0], p1[1]);
+        cx.strokeStyle = gr; cx.lineWidth = 1.4; cx.stroke();
+      }
+      return;
+    }
     const TAIL = 0.38, SEG = 9;
-    // 3) 점: 꼬리 달린 혜성 (하나 = unit명)
     let w = 0;
     for (let i = 0; i < dots.length; i++) {
       const d = dots[i], u = (now - d.t0) / d.dur;
@@ -1160,7 +1169,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       const e = u; // 같은 속력 (멈칫하는 가감속 없음), 뜰 때·내릴 때는 투명도로
       const al = Math.min(1, u / 0.08, (1 - u) / 0.12);
       const dz = (t: number): [number, number] => { const v = 1 - t; return [X(v * v * d.x0 + 2 * v * t * d.qx + t * t * d.x1), Y(v * v * d.y0 + 2 * v * t * d.qy + t * t * d.y1)]; };
-      // 긴 꼬리: 지나온 곡선을 따라 여러 토막으로, 뒤로 갈수록 옅고 가늘게. 색은 출발(빨강)→도착(파랑)
+      // 긴 꼬리: 지나온 곡선을 따라 여러 토막으로, 뒤로 갈수록 옅고 가늘게
       let [px, py] = dz(Math.max(0, e - TAIL));
       for (let s2 = 1; s2 <= SEG; s2++) {
         const t = Math.max(0, e - TAIL * (1 - s2 / SEG)), f = s2 / SEG;
@@ -1173,6 +1182,26 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       cx.fillStyle = mixC(e, al); cx.fill();
     }
     dots.length = w;
+  }
+  function drawLapse(now: number) {
+    if (!L) return;
+    const { X, Y } = projector();
+    // 1) 누적 순이동 → 지역 색(옅고 진함). 1초에 8번쯤, 바뀐 곳만 갱신
+    const circ: [number, number, number, number, string][] = []; // 이름표용 [x, y, 0, v, id]
+    const doFill = now - lastFill > 120 && !!map.getSource("sgg"); // 스타일을 바꾸는 중엔 소스가 없다
+    if (doFill) lastFill = now;
+    for (let r = 0; r < L.ids.length; r++) {
+      const id = L.ids[r], v = cumNow(r, now);
+      if (doFill) {
+        const t = Math.sign(v) * Math.sqrt(Math.abs(v) / cumMax[lapseGroup]), q = Math.round(t * 100) / 100;
+        if (fillState.get(id) !== q) { fillState.set(id, q); map.setFeatureState({ source: "sgg", id }, { v: q }); }
+      }
+      const j = jit[id];
+      if (j) circ.push([X(j[0]), Y(j[1]), 0, v, id]);
+    }
+    circ.sort((p, q) => Math.abs(q[3]) - Math.abs(p[3]));
+    // 2) 이달의 길을 따라 흐르는 점
+    drawComets(now, X, Y);
     // 4) 이름표: 누적 상·하위 (겹치면 생략)
     const pos = circ.filter((c) => c[3] > 0).slice(0, 4), neg = circ.filter((c) => c[3] < 0).slice(0, 4);
     cx.font = "700 12px Pretendard, 'Apple SD Gothic Neo', sans-serif";
@@ -1250,6 +1279,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   }
   async function enterLapse() {
     await loadLapse();
+    if (!isLapse()) return; // 불러오는 사이 다른 지표로 넘어갔다
     lapseColors = LG_VARS.map(resolve);
     clearDots();
     setLapseMonth(lapseMonth, performance.now());
@@ -1264,76 +1294,45 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     renderLapseInfo();
   };
 
+  // 그릴 것(타임랩스·흐름 선)이 있을 때만 프레임을 돌린다. 상태가 바뀌면 kick()으로 다시 깨운다
+  let running = false;
+  const kick = () => { if (!running) { running = true; requestAnimationFrame(frame); } };
   const frame = (now: number) => {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     cx.clearRect(0, 0, w, h);
     geoms = [];
+    if (!isLapse() && !arcs.length) { running = false; return; }
     if (isLapse()) {
       drawLapse(now);
       if (L && now >= nextCycle) spawnCycle(now - nextCycle > CYCLE ? now : nextCycle); // 재생 중이든 멈춤이든 점은 계속 흐른다
     }
-    if (arcs.length) {
-      const sec = now / 1000;
-      const labelMin = arcs.map(netOf).sort((a, b) => b - a)[Math.min(9, arcs.length - 1)];
+    if (isFlow() && arcs.length) {
+      const { X, Y } = projector();
+      drawComets(now, X, Y);
+      if (now >= nextCycle) spawnCycle(now - nextCycle > CYCLE ? now : nextCycle);
+      // 길은 그리지 않지만 가리키기·숫자 자리를 위해 곡선은 계산해 둔다 (점이 흐르는 곡선과 같은 모양)
+      const labelMin = arcs.map(netOf).sort((p, q) => q - p)[Math.min(9, arcs.length - 1)];
       const labels: [number, number, string, string][] = [];
-      for (const a of [...arcs].sort((x, y) => grossOf(x) - grossOf(y))) {
-        const A = a.a.length === 2 ? SP[a.a] : P[a.a], B = a.b.length === 2 ? SP[a.b] : P[a.b];
+      for (const a of arcs) {
+        const A = a.a.length === 2 ? sidoM(a.a) : jit[a.a], B = a.b.length === 2 ? sidoM(a.b) : jit[a.b];
         if (!A || !B) continue;
-        const p0 = map.project(A), p1 = map.project(B);
-        const dx = p1.x - p0.x, dy = p1.y - p0.y, d = Math.hypot(dx, dy);
-        if (d < 3) continue;
-        const bend = Math.min(0.3, 0.18 + 40 / (d + 80));
-        const c = { x: (p0.x + p1.x) / 2 - dy * bend, y: (p0.y + p1.y) / 2 + dx * bend };
-        const gross = grossOf(a), net = netOf(a);
-        const ow = widthOf(gross), iw = net > 0 ? Math.max(1.6, ow * (net / gross)) : 0;
+        const qx = (A[0] + B[0]) / 2 - (B[1] - A[1]) * 0.22, qy = (A[1] + B[1]) / 2 + (B[0] - A[0]) * 0.22;
         const pts: [number, number][] = [], nrm: [number, number][] = [];
         for (let i = 0; i <= SAMPLES; i++) {
           const t = i / SAMPLES, u = 1 - t;
-          pts.push([u * u * p0.x + 2 * u * t * c.x + t * t * p1.x, u * u * p0.y + 2 * u * t * c.y + t * t * p1.y]);
-          const tx = 2 * u * (c.x - p0.x) + 2 * t * (p1.x - c.x), ty = 2 * u * (c.y - p0.y) + 2 * t * (p1.y - c.y), tl = Math.hypot(tx, ty) || 1;
-          nrm.push([-ty / tl, tx / tl]);
+          pts.push([X(u * u * A[0] + 2 * u * t * qx + t * t * B[0]), Y(u * u * A[1] + 2 * u * t * qy + t * t * B[1])]);
         }
-        geoms.push({ a, pts, nrm, w: ow });
-        const col = colorOfArc(a);
-        // 양 끝을 지역 중심에서 조금 떼어 여러 선이 한 점에 뭉치지 않게
-        const cut = Math.min(SAMPLES / 4, Math.max(1, Math.round((9 / d) * SAMPLES)));
-        const i0 = cut, iEnd = SAMPLES - cut;
-        const path = (from: number, to: number) => {
-          cx.beginPath();
-          for (let i = from; i <= to; i++) i > from ? cx.lineTo(pts[i][0], pts[i][1]) : cx.moveTo(pts[i][0], pts[i][1]);
-        };
-        cx.lineCap = "round"; cx.lineJoin = "round";
-        path(i0, iEnd); cx.strokeStyle = rgba(col, 0.16); cx.lineWidth = ow; cx.stroke();
-        if (iw > 0) {
-          cx.lineCap = "butt";
-          path(i0, iEnd - 1); cx.strokeStyle = rgba(col, 0.85); cx.lineWidth = iw; cx.stroke();
-          // 화살촉: 순이동 방향
-          const [ex, ey] = pts[iEnd], [bx, by] = pts[iEnd - 1];
-          const ang = Math.atan2(ey - by, ex - bx), ah = Math.max(6, iw * 1.2 + 4), sw = Math.max(0.45, Math.min(0.7, iw / ah));
-          cx.beginPath();
-          cx.moveTo(ex, ey);
-          cx.lineTo(ex - ah * Math.cos(ang - sw), ey - ah * Math.sin(ang - sw));
-          cx.lineTo(ex - ah * Math.cos(ang + sw), ey - ah * Math.sin(ang + sw));
-          cx.closePath(); cx.fillStyle = col; cx.fill();
-          // 흐르는 점: 하나 = 순 UNIT명
-          if (!reduce) {
-            const k = Math.min(150, Math.max(1, Math.round(net / scale.unit)));
-            const dur = Math.max(2.6, d / 70);
-            for (let j = 0; j < k; j++) {
-              const t = (sec / dur + j / k + hash(j + net) * 0.15) % 1;
-              const fi = i0 + t * (iEnd - 1 - i0), k0 = Math.floor(fi), f = fi - k0, k1 = Math.min(SAMPLES, k0 + 1);
-              const lat = (hash(j * 7.13 + a.a.length) - 0.5) * iw * 0.5;
-              const x = pts[k0][0] + (pts[k1][0] - pts[k0][0]) * f + nrm[k0][0] * lat;
-              const y = pts[k0][1] + (pts[k1][1] - pts[k0][1]) * f + nrm[k0][1] * lat;
-              cx.beginPath(); cx.arc(x, y, Math.max(1.4, Math.min(2.2, iw * 0.45)), 0, Math.PI * 2);
-              cx.fillStyle = rgba(colors.halo, 0.95); cx.fill();
-            }
-          }
+        for (let i = 0; i <= SAMPLES; i++) {
+          const [x0, y0] = pts[Math.max(0, i - 1)], [x1, y1] = pts[Math.min(SAMPLES, i + 1)], tl = Math.hypot(x1 - x0, y1 - y0) || 1;
+          nrm.push([-(y1 - y0) / tl, (x1 - x0) / tl]);
         }
-        if (net >= labelMin) {
-          const m = SAMPLES >> 1, off = ow / 2 + 9;
+        if (Math.hypot(pts[SAMPLES][0] - pts[0][0], pts[SAMPLES][1] - pts[0][1]) < 3) continue;
+        geoms.push({ a, pts, nrm, w: 10 });
+        const net = netOf(a);
+        if (net >= labelMin && net > 0) {
+          const m = SAMPLES >> 1, off = 12;
           const txt = selected ? signed(a.b === selected ? net : -net) : fmtN(net);
-          labels.push([pts[m][0] + nrm[m][0] * off, pts[m][1] + nrm[m][1] * off, txt, col]);
+          labels.push([pts[m][0] + nrm[m][0] * off, pts[m][1] + nrm[m][1] * off, txt, colorOfArc(a)]);
         }
       }
       cx.font = "700 12px Pretendard, 'Apple SD Gothic Neo', sans-serif";
@@ -1348,7 +1347,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     }
     requestAnimationFrame(frame);
   };
-  requestAnimationFrame(frame);
+  kick();
   recolor();
 
   // 선 위 마우스: 가장 가까운 통로 (띠 폭 안)
@@ -1508,13 +1507,15 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const jsonp = (params: Record<string, string>) => new Promise<any>((ok) => {
     const cb = `__vw${++cbn}`;
     const s = document.createElement("script");
-    const done = (v: any) => { delete (window as any)[cb]; s.remove(); ok(v); };
-    (window as any)[cb] = (d: any) => done(d);
+    const done = (v: any) => { (window as any)[cb] = () => {}; s.remove(); ok(v); }; // 늦게 온 응답이 없는 함수를 부르지 않게
     const q = new URLSearchParams({ service: "search", request: "search", version: "2.0", format: "json", size: "5", key: D.key, domain: location.hostname, callback: cb, ...params });
+    let fin = false;
+    const once = (v: any) => { if (!fin) { fin = true; done(v); } };
+    (window as any)[cb] = once;
+    s.onerror = () => once(null);
     s.src = `https://api.vworld.kr/req/search?${q}`;
-    s.onerror = () => done(null);
     document.head.appendChild(s);
-    setTimeout(() => (window as any)[cb] && done(null), 6000);
+    setTimeout(() => once(null), 6000);
   });
   const qEl = document.getElementById("mp-q") as HTMLInputElement;
   const resEl = document.getElementById("mp-results")!;
@@ -1542,7 +1543,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     hits.forEach((h, i) => {
       const li = document.createElement("li");
       li.setAttribute("role", "option");
-      li.innerHTML = `${h.t}<small>${h.s}</small>`;
+      const sm = document.createElement("small");
+      sm.textContent = h.s;
+      li.append(h.t, sm);
       li.addEventListener("mousedown", (e) => { e.preventDefault(); go(i); });
       resEl.appendChild(li);
     });
