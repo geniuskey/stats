@@ -247,6 +247,17 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     box-shadow: 0 6px 22px rgba(0, 0, 0, 0.14);
   }
   .map-info[hidden] { display: none; }
+  :global(.mp-info-body) { display: grid; gap: 12px; }
+  :global(.mp-info-body[hidden]) { display: none; }
+  :global(.mp-hd) { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
+  :global(.mp-fold) { flex: none; width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); background: var(--surface-1); color: var(--text-secondary); font-size: 15px; line-height: 1; cursor: pointer; }
+  :global(.mp-help) { flex: none; }
+  :global(.mp-help summary) { list-style: none; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border, rgba(127, 127, 127, 0.4)); color: var(--text-muted); font-size: 12px; font-weight: 700; display: grid; place-items: center; cursor: pointer; user-select: none; }
+  :global(.mp-help summary::-webkit-details-marker) { display: none; }
+  :global(.mp-help[open] summary) { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+  :global(.mp-help-body) { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: min(288px, 80vw); box-sizing: border-box; padding: 10px 12px; border-radius: 10px; background: var(--surface-1); border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16); font-size: 13px; line-height: 1.6; color: var(--text-secondary); font-weight: 400; }
+  :global(.mp-help-body p) { margin: 0 0 6px; }
+  :global(.mp-help-body p:last-child) { margin: 0; }
   .map-time .row1 { display: flex; align-items: center; gap: 12px; }
   .map-time .play { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 0; background: var(--text-primary); color: var(--surface-1); font-size: 14px; cursor: pointer; }
   .map-time .track { flex: 1; position: relative; padding-bottom: 14px; }
@@ -423,16 +434,21 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   placeInfo();
   document.querySelector(".map-search")!.after(detailEl); // 고른 지역의 추이는 맨 위에
 
+  // 설명은 접어 두고 ? 를 눌러야 보인다
+  const help = (html: string, label = "도움말") => `<details class="mp-help"><summary aria-label="${label}" title="${label}">?</summary><div class="mp-help-body">${html}</div></details>`;
+  document.addEventListener("click", (e) => { // 바깥을 누르면 열린 도움말을 닫는다
+    for (const d of document.querySelectorAll<HTMLDetailsElement>("details.mp-help[open]")) if (!d.contains(e.target as Node)) d.open = false;
+  });
+  descEl.hidden = true;
   const renderLegend = () => {
     if (isLapse()) {
       const base = resolve("color-mix(in oklab, var(--text-muted) 14%, var(--surface-1))");
       const mix = (c: string) => resolve(`color-mix(in oklab, ${c} 65%, ${base})`);
-      legendEl.innerHTML = `<div class="title">${cur.label}</div><div class="grad" style="height:10px;border-radius:5px;opacity:.75;background:linear-gradient(90deg, ${mix(colors.out)}, ${base}, ${mix(colors.in)})"></div><div class="row" style="justify-content:space-between"><span>← 사람을 잃은 곳</span><span>얻은 곳 →</span></div>`;
-      descEl.textContent = cur.desc;
+      legendEl.innerHTML = `<div class="mp-hd"><span class="title">${cur.label}</span>${help(cur.desc)}</div><div class="grad" style="height:10px;border-radius:5px;opacity:.75;background:linear-gradient(90deg, ${mix(colors.out)}, ${base}, ${mix(colors.in)})"></div><div class="row" style="justify-content:space-between"><span>← 사람을 잃은 곳</span><span>얻은 곳 →</span></div>`;
       for (const b of groupsEl.querySelectorAll("button")) b.setAttribute("aria-pressed", String((b as HTMLElement).dataset.key === cur.key));
       return;
     }
-    legendEl.innerHTML = `<div class="title">${cur.label}</div>`;
+    legendEl.innerHTML = `<div class="mp-hd"><span class="title">${cur.label}</span>${help(cur.desc)}</div>`;
     const rows = [...cur.bins].reverse().map((b) => ({ c: resolve(b.color), l: b.label }));
     rows.push({ c: resolve(NODATA), l: "자료 없음" });
     for (const r of rows) {
@@ -441,7 +457,6 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       row.innerHTML = `<i style="background:${r.c}"></i><span>${r.l}</span>`;
       legendEl.appendChild(row);
     }
-    descEl.textContent = cur.desc;
     for (const b of groupsEl.querySelectorAll("button")) b.setAttribute("aria-pressed", String((b as HTMLElement).dataset.key === cur.key));
   };
 
@@ -862,26 +877,26 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     if (!id) {
       const top = arcs.slice(0, 10), mx = Math.max(1, ...top.map((c) => c.fwd));
       flowEl.innerHTML = `
-        <p class="sum"><strong>${g === "all" ? "사람들" : gl}</strong>이 지역을 넘어 오간 길입니다. 연한 띠는 서로 주고받은 전체, 진한 선은 그중 <strong>더 많이 간 쪽으로 남은 인원(순이동)</strong>입니다. 시군구를 누르면 그곳이 상대마다 얻었는지 잃었는지 보입니다.</p>
+        <div class="mp-hd"><h3>${g === "all" ? "" : `${gl} `}이사 흐름</h3>${help(`<strong>${g === "all" ? "사람들" : gl}</strong>이 지역을 넘어 오간 길입니다. 연한 띠는 서로 주고받은 전체, 진한 선은 그중 <strong>더 많이 간 쪽으로 남은 인원(순이동)</strong>입니다. 시군구를 누르면 그곳이 상대마다 얻었는지 잃었는지 보입니다. ${FW[flowWin].periodLabel} · 단위 명.`)}</div>
         <div class="mp-chips" role="group" aria-label="단위"><button type="button" data-lv="sido" aria-pressed="${natLevel === "sido"}">시도끼리</button><button type="button" data-lv="sgg" aria-pressed="${natLevel === "sgg"}">시군구끼리</button></div>
         <div class="fly">
           <div class="fly-head"><span></span><span class="l">← 반대쪽</span><span class="r">많이 간 쪽 →</span><span class="v">순</span></div>
           ${top.map((c) => fly(`${nm(c.a).split(" ").pop()} → ${nm(c.b).split(" ").pop()}`, c.back, c.fwd, mx, cMute, cIn, fmtN(netOf(c)), cIn, c.b.length === 2 ? "" : c.b)).join("")}
         </div>
-        <p class="hint">${FW[flowWin].periodLabel} · 단위 명</p>`;
+        `;
     } else {
       const { list, inTot, outTot } = regionCorr(id);
       const net = inTot - outTot, top = list.slice(0, 12), mx = Math.max(1, ...top.map((e) => Math.max(e.inn, e.out)));
       const share = inTot + outTot ? (inTot / (inTot + outTot)) * 100 : 50;
       flowEl.innerHTML = `
-        <h3>${D.regions[id].n}</h3>
+        <div class="mp-hd"><h3>${D.regions[id].n}</h3>${help("연 10명 미만 오간 쌍은 빠져 있어 합계가 조금 작을 수 있습니다. 빈 곳을 누르면 전국 흐름으로 돌아갑니다.")}</div>
         <p class="sum">${gl} · ${FW[flowWin].periodLabel}<br>들어옴 <strong style="color:${cIn}">${fmtN(inTot)}</strong> · 나감 <strong style="color:${cOut}">${fmtN(outTot)}</strong> → 순이동 <strong style="color:${net >= 0 ? cIn : cOut}">${signed(net)}명</strong></p>
         <div class="balance" title="들어옴 ${fmtN(inTot)} · 나감 ${fmtN(outTot)}"><span style="width:${100 - share}%;background:${cOut}"></span><span style="width:${share}%;background:${cIn}"></span></div>
         <div class="fly">
           <div class="fly-head"><span>상대 지역</span><span class="l" style="color:${cOut}">← 나감</span><span class="r" style="color:${cIn}">들어옴 →</span><span class="v">순</span></div>
           ${top.map((e) => fly(D.regions[e.p]?.n ?? e.p, e.out, e.inn, mx, cOut, cIn, signed(e.inn - e.out), e.inn >= e.out ? cIn : cOut, e.p)).join("")}
         </div>
-        <p class="hint">연 10명 미만 오간 쌍은 빠져 있어 합계가 조금 작을 수 있습니다. 빈 곳을 누르면 전국 흐름으로. <a href="${D.base}dongne/${id}/">동네 전망 →</a></p>`;
+        <p class="hint"><a href="${D.base}dongne/${id}/">동네 전망 →</a></p>`;
     }
     flowEl.querySelectorAll<HTMLElement>(".fly-row[data-id]").forEach((el) => el.addEventListener("click", () => select(el.dataset.id!, true)));
     flowEl.querySelectorAll<HTMLElement>("[data-lv]").forEach((el) => el.addEventListener("click", () => { natLevel = el.dataset.lv as any; updateArcs(); }));
@@ -1181,12 +1196,12 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     placeFlowPanel(); placeInfo();
     if (!L) { flowEl.innerHTML = `<p class="hint">이동 자료를 불러오는 중…</p>`; infoEl.hidden = true; return; }
     flowEl.innerHTML = `
+      <div class="mp-hd"><h3>타임랩스</h3>${help(`<p>점 하나가 ${fmtN(L.unit)}명입니다. 그달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})을 따라 출발지 땅에서 도착지 땅으로 꼬리를 끌며 흐르고, 꼬리는 <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀝니다. 지역 색은 ${ymTxt(L.months[0])}부터 쌓인 순이동으로, 진할수록 많이 <span style="color:${colors.in}">얻은(파랑)</span>·<span style="color:${colors.out}">잃은(빨강)</span> 곳입니다.</p><p>점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 지역 색·누적 목록은 모든 쌍의 정확한 합계입니다. 점이 뜨고 내리는 자리는 실제로 이사가 많았던 동일수록 자주 뽑힙니다(정확한 주소는 아님).</p>`, "타임랩스 보는 법")}</div>
       <div><h4>나이</h4>
       <div class="mp-chips" role="group" aria-label="나이">${LG_LABEL.map((l, g) => `<button type="button" data-lg="${g}" aria-pressed="${g === lapseGroup}">${l}</button>`).join("")}</div></div>
       <div><h4>길 단위</h4>
       <div class="mp-chips" role="group" aria-label="길 단위"><button type="button" data-ll="sido" aria-pressed="${lapseLevel === "sido"}">시도끼리</button><button type="button" data-ll="sgg" aria-pressed="${lapseLevel === "sgg"}">시군구끼리</button></div></div>
-      <p class="sum">점 하나가 ${fmtN(L.unit)}명입니다. 그달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})을 따라 출발지 땅에서 도착지 땅으로 꼬리를 끌며 흐르고, 꼬리는 <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀝니다. 지역 색은 ${ymTxt(L.months[0])}부터 쌓인 순이동으로, 진할수록 많이 <span style="color:${colors.in}">얻은(파랑)</span>·<span style="color:${colors.out}">잃은(빨강)</span> 곳입니다.</p>
-      <p class="hint">점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 지역 색·누적 목록은 모든 쌍의 정확한 합계입니다. 점이 뜨고 내리는 자리는 실제로 이사가 많았던 동일수록 자주 뽑힙니다(정확한 주소는 아님).</p>`;
+`;
     flowEl.querySelectorAll<HTMLElement>("[data-ll]").forEach((el) => el.addEventListener("click", () => {
       lapseLevel = el.dataset.ll as any;
       clearDots();
@@ -1201,6 +1216,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     }));
     renderLapseInfo();
   }
+  let infoOpen = (() => { try { return localStorage.getItem("mp-info-open") !== "0"; } catch { return true; } })();
   function renderLapseInfo() {
     if (!L || !isLapse()) return;
     infoEl.hidden = false;
@@ -1213,7 +1229,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const routes = monthArcs(lapseMonth).slice(0, 6);
     const short = nmShort;
     infoEl.innerHTML = `
-      <h3>${ymTxt(ym)} · ${LG_DESC[lapseGroup]}</h3>
+      <div class="mp-hd"><h3>${ymTxt(ym)} · ${LG_DESC[lapseGroup]}</h3><button type="button" class="mp-fold" aria-expanded="${infoOpen}" aria-label="${infoOpen ? "접기" : "펼치기"}" title="${infoOpen ? "접기" : "펼치기"}">${infoOpen ? "−" : "+"}</button></div>
+      <div class="mp-info-body" ${infoOpen ? "" : "hidden"}>
       ${cap0 ? `<p class="lapse-cap">${cap0}</p>` : ""}
       ${lapseGroup === 0 && capNet != null ? `<p class="sum">이달 수도권 순유입 <strong style="color:${capNet >= 0 ? colors.in : colors.out}">${signed(capNet)}명</strong></p>` : ""}
       <div><h4>이달 큰 길 (순이동)</h4>
@@ -1221,7 +1238,12 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       <div class="fly">
         <div class="fly-head"><span>${ymTxt(L.months[0])}부터 누적</span><span class="l" style="color:${colors.out}">← 잃음</span><span class="r" style="color:${colors.in}">얻음 →</span><span class="v">명</span></div>
         ${top.map(li).join("")}<div style="height:6px"></div>${bot.map(li).join("")}
-      </div>`;
+      </div></div>`;
+    infoEl.querySelector(".mp-fold")!.addEventListener("click", () => {
+      infoOpen = !infoOpen;
+      try { localStorage.setItem("mp-info-open", infoOpen ? "1" : "0"); } catch {}
+      renderLapseInfo();
+    });
     infoEl.querySelectorAll<HTMLElement>(".fly-row[data-id]").forEach((el) => el.addEventListener("click", () => {
       const c = P[el.dataset.id!]; if (c) map.flyTo({ center: c, zoom: Math.max(map.getZoom(), 9), speed: 1.4 });
     }));
