@@ -24,7 +24,11 @@ import pop as P
 from build_school import jiji
 from regions import SIDO
 
-YEARS = [P.BASE_YEAR, 2030, 2035, 2040, 2045]
+YEARS = [P.BASE_YEAR, 2030, 2035, 2040, 2045]  # 기준연도(현재) + 추계
+PAST = [2015, 2020]                             # 실측 (인구·자원 모두 그해 값)
+SERIES = PAST + YEARS
+OLD_KEYS = {"27|군위군": "47|군위군", "28|미추홀구": "28|남구"}  # 지금 key → 과거 인구 표의 key
+HIRA_Q = {2015: "201504", 2020: "202004"}       # 과거 의원 수는 그해 4분기
 SHORT = {v[0]: k for k, v in SIDO.items()}
 ALIAS = {
     ("26", "진구"): "26|부산진구", ("28", "남구"): "28|미추홀구",
@@ -185,12 +189,28 @@ def build(popr):
     U = set(units)
     by = P.BASE_YEAR
 
+    def actual(src, k, y):
+        """기준연도까지의 1세별 인구. 과거 연도는 지금 경계로 맞춘다:
+        옛 이름(군위군은 2023년 경북→대구, 미추홀구는 2018년 남구에서 개칭)으로 찾고,
+        시도·전국은 지금 시군구를 더한다 (그래야 군위군이 그해 대구·경북 어느 쪽에 들어가는지와 무관)."""
+        t = src.get(y, {})
+        if y == by or (k != "00" and "|" in k):
+            d = t.get(k) or t.get(OLD_KEYS.get(k, ""))
+            return list(d) if d else None
+        parts = [actual(src, u, y) for u in units if k == "00" or u.startswith(k + "|")]
+        if not parts or any(x is None for x in parts):
+            return None
+        return [sum(col) for col in zip(*parts)]
+
     def ages(k, y, a, b, scen="mid"):
-        d = total[y].get(k) if y <= by else proj.get(k, {}).get(scen, {}).get(y)
+        d = actual(total, k, y) if y <= by else proj.get(k, {}).get(scen, {}).get(y)
         return sum(d[a:b + 1]) if d else None
 
     def women(k, y):
-        # 20~44세 여성: 기준연도는 실측, 이후는 총인구 × 기준연도 여성 비중
+        # 20~44세 여성: 기준연도까지는 실측, 이후는 총인구 × 기준연도 여성 비중
+        if y <= by:
+            f = actual(female, k, y)
+            return sum(f[20:45]) if f else None
         f = female[by].get(k)
         t = total[by].get(k)
         if not f or not t:
@@ -207,15 +227,22 @@ def build(popr):
     fac, fac_sido, ltc_year = ltc("DT_35006_N021", {2: "003"}, units=U)
     beds = fac.get(("003", "003"), {})             # 노인의료복지시설 정원
     facs = fac.get(("002", "003"), {})             # 노인의료복지시설 기관 수
-    fac15, _, _ = ltc("DT_35006_N021", {2: "003"}, year="2015", units=U)
-    beds15 = fac15.get(("003", "003"), {})
     cg, cg_sido, _ = ltc("DT_35006_N022", {2: "00107", 3: "350060A01"}, units=U)
     carers = next(iter(cg.values()), {})
+    # 과거 자원 (실측): 요양 정원·요양보호사는 그해, 소아과 의원은 그해 4분기
+    beds_p, carers_p, ped_p = {}, {}, {}
+    for y in PAST:
+        f, _, _ = ltc("DT_35006_N021", {2: "003"}, year=str(y), units=U)
+        beds_p[y] = f.get(("003", "003"), {})
+        c, _, _ = ltc("DT_35006_N022", {2: "00107", 3: "350060A01"}, year=str(y), units=U)
+        carers_p[y] = next(iter(c.values()), {})
+        ped_p[y] = hira("DT_HIRA4G", "1535413102140068HD0.B", prd=HIRA_Q[y], newest=False, units=U)[0]
+    beds15 = beds_p[2015]
     docs_all = jiji("DT_1YL20981", itm="T001")
     w, wlabels, cost_year = cost_weights(total)
 
     def demand(k, y):
-        d = total[y].get(k) if y <= by else proj.get(k, {}).get("mid", {}).get(y)
+        d = actual(total, k, y) if y <= by else proj.get(k, {}).get("mid", {}).get(y)
         if not d:
             return None
         return sum(wi * sum(d[a:b + 1]) for wi, (a, b) in zip(w, AGE_GROUPS) if wi)
@@ -235,15 +262,19 @@ def build(popr):
             g = lambda m, sd=k: sido_sum(m, sd) if any(kk.startswith(sd + "|") for kk in m) else None  # noqa: E731
         else:
             g = lambda m: sum(m.values())  # noqa: E731
-        o75 = {y: ages(k, y, 75, 100) for y in YEARS}
-        kids = {y: ages(k, y, 0, 9) for y in YEARS}
-        wom = {y: women(k, y) for y in YEARS}
-        pop_ = {y: ages(k, y, 0, 100) for y in YEARS}
-        dm = {y: demand(k, y) for y in YEARS}
+        o75 = {y: ages(k, y, 75, 100) for y in SERIES}
+        kids = {y: ages(k, y, 0, 9) for y in SERIES}
+        wom = {y: women(k, y) for y in SERIES}
+        pop_ = {y: ages(k, y, 0, 100) for y in SERIES}
+        dm = {y: demand(k, y) for y in SERIES}
         b, cr, pd, ob, hc = g(beds), g(carers), g(ped), g(obg), g(facs)
         pd0, ob0, b15 = g(ped_old), g(obg_old), g(beds15)
+        bh = {y: g(beds_p[y]) for y in PAST}
+        ch = {y: g(carers_p[y]) for y in PAST}
+        ph = {y: g(ped_p[y]) for y in PAST}
         if level == "sgg":  # 심평원 표는 의원이 없는 시군구를 행으로 내지 않는다 → 0곳
             pd, ob, pd0, ob0 = pd or 0, ob or 0, pd0 or 0, ob0 or 0
+            ph = {y: v or 0 for y, v in ph.items()}
         sd, _, nm = k.partition("|")
         dk = docs_all.get(k) or (docs_all.get("36", {}) if k == "36|세종특별자치시" else {})  # jiji: 시군구 key·시도 코드·'00' 같은 규칙
         docs = dk.get(max(dk)) if dk else None
@@ -259,7 +290,11 @@ def build(popr):
             "old75": {y: rnd(v) for y, v in o75.items()},
             "kids": {y: rnd(v) for y, v in kids.items()},
             "women": {y: rnd(v) for y, v in wom.items()},
-            "demandIdx": {y: round(v / d0, 4) for y, v in dm.items()} if d0 else None,
+            "demandIdx": {y: round(v / d0, 4) if v is not None else None for y, v in dm.items()} if d0 else None,
+            # 연도별 자원: 과거는 실측, 기준연도는 최신 값 (추계 연도는 '지금 그대로'라 싣지 않는다)
+            "bedsHist": {**{y: rnd(v) for y, v in bh.items()}, by: rnd(b)},
+            "carersHist": {**{y: rnd(v) for y, v in ch.items()}, by: rnd(cr)},
+            "pedHist": {**{y: rnd(v) for y, v in ph.items()}, by: rnd(pd)},
             "beds": rnd(b), "beds2015": rnd(b15), "carers": rnd(cr), "facilities": rnd(hc),
             "ped": rnd(pd), "ped2016": rnd(pd0), "obg": rnd(ob), "obg2016": rnd(ob0),
             "docs": rnd(docs), "docsYear": docs_year,
@@ -272,11 +307,15 @@ def build(popr):
             r["bedsGap2035"] = rnd(o75[2035] * per - b)
             r["bedsGap2045"] = rnd(o75[2045] * per - b)
             r["bedsPer100_2035"] = round(b / o75[2035] * 100, 2) if o75[2035] else None
+        # 75세 100명당 정원: 과거는 그해 정원 ÷ 그해 75세 이상, 이후는 지금 정원 그대로
+        bseries = {**bh, **{y: b for y in YEARS}}
+        r["bedsPer100ByYear"] = {y: round(bseries[y] / o75[y] * 100, 2) if bseries.get(y) is not None and o75[y] else None for y in SERIES}
         if cr is not None and old_now:
             r["carersPer100"] = round(cr / old_now * 100, 2)
             r["carersGap2035"] = rnd(o75[2035] * cr / old_now - cr)
         if pd is not None:
-            r["kidsPerPed"] = {y: rnd(kids[y] / pd) if pd else None for y in YEARS}
+            pseries = {**ph, **{y: pd for y in YEARS}}  # 과거는 그해 의원 수, 이후는 지금 그대로
+            r["kidsPerPed"] = {y: rnd(kids[y] / pseries[y]) if pseries.get(y) and kids[y] is not None else None for y in SERIES}
         if ob is not None:
             r["womenPerObg"] = {y: rnd(wom[y] / ob) if ob and wom[y] else None for y in YEARS}
         if docs and d0:
@@ -301,7 +340,8 @@ def build(popr):
     gap_regions = [r for r in sgg if r["old75"][by] and r["old75"][2035] >= 1.5 * r["old75"][by]]
     return {
         "meta": {
-            "baseYear": by, "years": YEARS, "ltcYear": ltc_year, "clinicPeriod": ped_prd, "clinicPeriodOld": ped_prd_old,
+            "baseYear": by, "years": SERIES, "pastYears": PAST, "projYears": YEARS[1:],
+            "clinicPeriodsPast": HIRA_Q, "ltcYear": ltc_year, "clinicPeriod": ped_prd, "clinicPeriodOld": ped_prd_old,
             "costYear": cost_year, "costWeights": [rnd(x) for x in w], "costLabels": wlabels,
             "coverage": {"ped": coverage(ped, ped_sido), "clinics": coverage(cli, cli_sido)},
             "sources": [
