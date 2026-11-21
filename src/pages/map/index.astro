@@ -963,6 +963,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   let lapseColors: string[] = [];
   const toM = (lng: number, lat: number): [number, number] => [(lng + 180) / 360, (1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2];
   let jit: Record<string, [number, number, number]> = {};
+  const POOL = 40;
+  let pool: Record<string, number[]> = {}; // 시군구 → 땅 안 무작위 점 [mx, my, ...]
   let cum: Float64Array[][] = []; // [묶음][지역] → 달까지 누적 순이동
   let cumMax: number[] = [];
   let bigMap = new Map<string, number>();
@@ -980,6 +982,29 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       const walk = (c: any) => (typeof c[0] === "number" ? (b[0] = Math.min(b[0], c[0]), b[1] = Math.min(b[1], c[1]), b[2] = Math.max(b[2], c[0]), b[3] = Math.max(b[3], c[1])) : c.forEach(walk));
       walk(f.geometry.coordinates);
     }
+    // 시군구마다 땅 안의 무작위 점을 미리 뽑아 둔다(면적 균등, 경계 안 판정)
+    const inRing = (r: number[][], x: number, y: number) => {
+      let inside = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, yi] = r[i], [xj, yj] = r[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const polysOf: Record<string, number[][][][]> = {}; // 한 시군구가 여러 조각이어도 하나로
+    for (const f of geo.features) (polysOf[f.properties.id] ??= []).push(...(f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates));
+    for (const [id, polys] of Object.entries(polysOf)) {
+      const b = bb[id];
+      if (!b) continue;
+      const out: number[] = [];
+      for (let t = 0; t < 4000 && out.length < POOL * 2; t++) {
+        const x = b[0] + rnd() * (b[2] - b[0]), y = b[1] + rnd() * (b[3] - b[1]);
+        if (polys.some((pg) => inRing(pg[0], x, y) && !pg.slice(1).some((h) => inRing(h, x, y)))) out.push(...toM(x, y));
+      }
+      if (out.length) pool[id] = out;
+    }
     jit = Object.fromEntries(Object.entries(P).map(([id, c]) => {
       const b = bb[id] ?? [c[0], c[1], c[0], c[1]];
       const [mx, my] = toM(c[0], c[1]);
@@ -989,7 +1014,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   // 이달의 길: 순이동이 큰 시군구 쌍을 곡선으로 (출발 빨강 → 도착 파랑 그라데이션), 점은 그 위를 꼬리 달고 흐른다
   const TOP_ARCS = 60;
   type LArc = { a: string; b: string; n: number; mx0: number; my0: number; mx1: number; my1: number; cx: number; cy: number; born: number; dying?: number };
-  type Dot = { arc: LArc; t0: number; dur: number };
+  type Dot = { arc: LArc; t0: number; dur: number; x0: number; y0: number; qx: number; qy: number; x1: number; y1: number };
   let larcs: LArc[] = [];
   let dots: Dot[] = [];
   const clearDots = () => { dots = []; larcs = []; };
@@ -1000,19 +1025,27 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const monthArcs = (i: number) => {
     if (lapseLevel === "sido") {
       // 시도끼리: 시도를 넘는 쌍의 순이동을 더해 시도 쌍마다 다시 서로 뺀다
-      const net = new Map<string, number>();
+      // 구성(comp): 그 시도 쌍을 이루는 시군구 쌍과 그 순이동 → 점의 출발·도착 시군구를 이 비중대로 뽑는다
+      const net = new Map<string, { v: number; comp: [string, string, number][] }>();
       for (let p = 0; p < L.pairs.length; p++) {
         const c = decode(L.dots[p][lapseGroup][i]) || bigMap.get(`${p},${lapseGroup},${i}`) || 0;
         if (!c) continue;
-        const sa = L.ids[L.pairs[p][0]].slice(0, 2), sb = L.ids[L.pairs[p][1]].slice(0, 2);
+        const ia = L.ids[L.pairs[p][0]], ib = L.ids[L.pairs[p][1]];
+        const sa = ia.slice(0, 2), sb = ib.slice(0, 2);
         if (sa === sb) continue;
         const [x, y, v] = sa < sb ? [sa, sb, c] : [sb, sa, -c];
-        net.set(`${x}>${y}`, (net.get(`${x}>${y}`) ?? 0) + v);
+        const e = net.get(`${x}>${y}`) ?? { v: 0, comp: [] };
+        e.v += v;
+        e.comp.push(c > 0 ? [ia, ib, c] : [ib, ia, -c]);
+        net.set(`${x}>${y}`, e);
       }
-      return [...net].map(([k, v]) => { const [x, y] = k.split(">"); return v > 0 ? { a: x, b: y, c: v } : { a: y, b: x, c: -v }; })
-        .filter((r) => r.c > 0).sort((x, y) => y.c - x.c).slice(0, 25);
+      return [...net].map(([k, e]) => {
+        const [x, y] = k.split(">");
+        const r = e.v > 0 ? { a: x, b: y, c: e.v } : { a: y, b: x, c: -e.v };
+        return { ...r, comp: e.comp.filter((q) => q[0].slice(0, 2) === r.a) }; // 순이동 방향과 같은 쪽 쌍만
+      }).filter((r) => r.c > 0).sort((x, y) => y.c - x.c).slice(0, 25);
     }
-    const list: { a: string; b: string; c: number }[] = [];
+    const list: { a: string; b: string; c: number; comp?: [string, string, number][] }[] = [];
     for (let p = 0; p < L.pairs.length; p++) {
       const c = decode(L.dots[p][lapseGroup][i]) || bigMap.get(`${p},${lapseGroup},${i}`) || 0;
       if (!c) continue;
@@ -1032,8 +1065,22 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       const dx = B[0] - A[0], dy = B[1] - A[1];
       const arc: LArc = { a: m.a, b: m.b, n: m.c * L.unit, mx0: A[0], my0: A[1], mx1: B[0], my1: B[1], cx: (A[0] + B[0]) / 2 - dy * 0.22, cy: (A[1] + B[1]) / 2 + dx * 0.22, born: start };
       larcs.push(arc);
+      const comp = m.comp?.length ? m.comp : [[m.a, m.b, m.c] as [string, string, number]];
+      const tot = comp.reduce((t, q) => t + q[2], 0);
+      const pick = (r: number) => { let acc = 0; for (const q of comp) if ((acc += q[2]) >= r * tot) return q; return comp[comp.length - 1]; };
+      const pt = (id: string, r: number): [number, number] => {
+        const pl = pool[id];
+        if (pl) { const j = Math.floor(r * (pl.length / 2)) * 2; return [pl[j], pl[j + 1]]; }
+        const c = jit[id] ?? A; return [c[0], c[1]];
+      };
       const k = Math.min(40, m.c);
-      for (let j = 0; j < k; j++) dots.push({ arc, t0: start + ((j + sc(++n) * 0.8) / k) * monthDur * 0.9, dur: 1100 + sc(n + 0.5) * 300 });
+      for (let j = 0; j < k; j++) {
+        const q = pick(sc(++n));
+        const [x0, y0] = pt(q[0], sc(n + 0.21)), [x1, y1] = pt(q[1], sc(n + 0.37));
+        // 가운데는 길(선) 쪽으로 모이고 양 끝은 땅에 흩어진다
+        const qx = arc.cx + ((x0 - A[0]) + (x1 - B[0])) * 0.25, qy = arc.cy + ((y0 - A[1]) + (y1 - B[1])) * 0.25;
+        dots.push({ arc, t0: start + ((j + sc(n + 0.5) * 0.8) / k) * monthDur * 0.9, dur: 1100 + sc(n + 0.7) * 300, x0, y0, qx, qy, x1, y1 });
+      }
     }
   }
   const ymTxt = (ym: string) => `${ym.slice(0, 4)}.${ym.slice(4)}`;
@@ -1102,7 +1149,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       dots[w++] = d;
       if (u < 0) continue;
       const e = u < 0.5 ? 2 * u * u : 1 - (2 - 2 * u) * (2 - 2 * u) / 2;
-      const [hx, hy] = bez(d.arc, e), [tx, ty] = bez(d.arc, Math.max(0, e - 0.12));
+      const dz = (t: number): [number, number] => { const v = 1 - t; return [X(v * v * d.x0 + 2 * v * t * d.qx + t * t * d.x1), Y(v * v * d.y0 + 2 * v * t * d.qy + t * t * d.y1)]; };
+      const [hx, hy] = dz(e), [tx, ty] = dz(Math.max(0, e - 0.12));
       const tg = cx.createLinearGradient(tx, ty, hx, hy);
       tg.addColorStop(0, rgba(colors.ink, 0)); tg.addColorStop(1, rgba(colors.ink, 0.8));
       cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(hx, hy);
