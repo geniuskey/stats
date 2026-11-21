@@ -348,6 +348,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const FLOW_G: Record<string, string> = { rate: "all", kidsRate: "kids", youthRate: "youth", midRate: "mid", preRate: "pre", oldRate: "old" };
   const isFlow = () => FLOW_G[cur.key] != null;
   const isLapse = () => cur.key === "lapse";
+  const IN_C = "var(--series-1)";
+  const OUT_C = "var(--series-2)";
+  const fillState = new Map<string, number>(); // 타임랩스: 지도 feature-state에 넣어 둔 값(스타일을 다시 만들면 비운다)
   let F: { ids: string[]; groups: string[]; rows: number[][]; net?: Record<string, number[]> } | null = null; // 지금 기간의 이사 흐름
 
   // CSS 색(var·color-mix 포함) → rgb: 지도 엔진은 CSS 변수를 모른다
@@ -421,6 +424,14 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   document.querySelector(".map-search")!.after(detailEl); // 고른 지역의 추이는 맨 위에
 
   const renderLegend = () => {
+    if (isLapse()) {
+      const base = resolve("color-mix(in oklab, var(--text-muted) 14%, var(--surface-1))");
+      const mix = (c: string) => resolve(`color-mix(in oklab, ${c} 65%, ${base})`);
+      legendEl.innerHTML = `<div class="title">${cur.label}</div><div class="grad" style="height:10px;border-radius:5px;opacity:.75;background:linear-gradient(90deg, ${mix(colors.out)}, ${base}, ${mix(colors.in)})"></div><div class="row" style="justify-content:space-between"><span>← 사람을 잃은 곳</span><span>얻은 곳 →</span></div>`;
+      descEl.textContent = cur.desc;
+      for (const b of groupsEl.querySelectorAll("button")) b.setAttribute("aria-pressed", String((b as HTMLElement).dataset.key === cur.key));
+      return;
+    }
     legendEl.innerHTML = `<div class="title">${cur.label}</div>`;
     const rows = [...cur.bins].reverse().map((b) => ({ c: resolve(b.color), l: b.label }));
     rows.push({ c: resolve(NODATA), l: "자료 없음" });
@@ -567,7 +578,12 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     ? ["interpolate", ["linear"], ["zoom"], 7, 0.55, 10, 0.45, 12, 0.32, 14, 0.22]
     : ["interpolate", ["linear"], ["zoom"], 7, 0.9, 10, 0.72, 12, 0.5, 14, 0.35]);
   const fillColor = () => {
-    if (isLapse()) return resolve("color-mix(in oklab, var(--text-muted) 14%, var(--surface-1))");
+    if (isLapse()) {
+      // 누적 순이동을 지역 색의 옅고 진함으로: feature-state v ∈ [-1, 1] (끝 색도 바탕과 섞어 너무 진하지 않게)
+      const base = resolve("color-mix(in oklab, var(--text-muted) 14%, var(--surface-1))");
+      const cin = resolve(`color-mix(in oklab, ${IN_C} 65%, ${base})`), cout = resolve(`color-mix(in oklab, ${OUT_C} 65%, ${base})`);
+      return ["interpolate", ["linear"], ["coalesce", ["feature-state", "v"], 0], -1, cout, 0, base, 1, cin];
+    }
     const expr: any[] = ["match", ["get", "id"]];
     const colors = cur.bins.map((b) => resolve(b.color));
     const none = resolve(NODATA);
@@ -580,6 +596,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   };
 
   async function buildStyle() {
+    fillState.clear();
     const theme = isDark() ? "dark" : "light";
     styleCache[theme] ??= await fetch(STYLE_URL[theme]).then((r) => r.json());
     const st = structuredClone(styleCache[theme]);
@@ -643,6 +660,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const paint = () => {
     if (!map.getLayer("sgg-fill")) return;
     map.setPaintProperty("sgg-fill", "fill-color", fillColor());
+    fillState.clear();
     map.setPaintProperty("sgg-fill", "fill-opacity", fillOpacity());
     map.setPaintProperty("sgg-line", "line-opacity", cur.level === "sido" ? 0 : 1);
     map.setPaintProperty("sido-line", "line-width", cur.level === "sido" ? ["interpolate", ["linear"], ["zoom"], 6, 1.4, 10, 2.4] : ["interpolate", ["linear"], ["zoom"], 6, 0.8, 10, 1.8]);
@@ -885,8 +903,6 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     return `${head}${cur.label} ${show(cur, valOf(cur, id))}${cur.time ? ` <span style="opacity:.7">${cur.yearLabels?.[yearOf(cur)] ?? yearOf(cur)}</span>` : ""}`;
   };
 
-  const IN_C = "var(--series-1)";
-  const OUT_C = "var(--series-2)";
   const canvas = document.getElementById("mp-arcs") as HTMLCanvasElement;
   const cx = canvas.getContext("2d")!;
   const sizeCanvas = () => {
@@ -1084,6 +1100,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const prev = i > 0 ? c[i - 1] : 0, prog = Math.max(0, Math.min(1, (now - monthStart) / monthDur));
     return prev + (c[i] - prev) * prog;
   };
+  let lastFill = 0;
   function drawLapse(now: number) {
     if (!L) return;
     const RA = [126, 35], RB = [129.5, 38];
@@ -1092,23 +1109,20 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const ox = a.x - ma[0] * sx, oy = a.y - ma[1] * sy;
     const X = (m: number) => ox + m * sx, Y = (m: number) => oy + m * sy;
     const z = map.getZoom(), RMAX = 30 * Math.pow(2, (z - 6.2) / 2);
-    // 1) 누적 원 (옅게: 길이 주인공)
-    const circ: [number, number, number, number, string][] = [];
+    // 1) 누적 순이동 → 지역 색(옅고 진함). 1초에 8번쯤, 바뀐 곳만 갱신
+    const circ: [number, number, number, number, string][] = []; // 이름표용 [x, y, 0, v, id]
+    const doFill = now - lastFill > 120;
+    if (doFill) lastFill = now;
     for (let r = 0; r < L.ids.length; r++) {
-      const j = jit[L.ids[r]];
-      if (!j) continue;
-      const v = cumNow(r, now);
-      const rad = RMAX * Math.sqrt(Math.abs(v) / cumMax[lapseGroup]);
-      if (rad < 1.2) continue;
-      circ.push([X(j[0]), Y(j[1]), rad, v, L.ids[r]]);
+      const id = L.ids[r], v = cumNow(r, now);
+      if (doFill) {
+        const t = Math.sign(v) * Math.sqrt(Math.abs(v) / cumMax[lapseGroup]), q = Math.round(t * 100) / 100;
+        if (fillState.get(id) !== q) { fillState.set(id, q); map.setFeatureState({ source: "sgg", id }, { v: q }); }
+      }
+      const j = jit[id];
+      if (j) circ.push([X(j[0]), Y(j[1]), 0, v, id]);
     }
-    circ.sort((p, q) => q[2] - p[2]);
-    for (const [x, y, rad, v] of circ) {
-      const col = v > 0 ? colors.in : colors.out;
-      cx.beginPath(); cx.arc(x, y, rad, 0, 6.283);
-      cx.fillStyle = rgba(col, 0.12); cx.fill();
-      cx.strokeStyle = rgba(col, 0.5); cx.lineWidth = 1; cx.stroke();
-    }
+    circ.sort((p, q) => Math.abs(q[3]) - Math.abs(p[3]));
     // 2) 이달의 길
     const maxN = Math.max(1, ...larcs.filter((l) => l.dying == null).map((l) => l.n));
     larcs = larcs.filter((l) => l.dying == null || now - l.dying < 600);
@@ -1152,9 +1166,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     for (const [x, y, rad, v, id] of [...pos, ...neg].sort((p, q) => Math.abs(q[3]) - Math.abs(p[3]))) {
       const t = `${(D.regions[id]?.n ?? id).split(" ").pop()} ${v > 0 ? "+" : "−"}${man(Math.abs(Math.round(v)))}`;
       const tw = cx.measureText(t).width;
-      let ty = y - rad - 9;
+      let ty = y - rad - 2;
       const hit = (yy: number) => placed.some(([px, py, pw]) => Math.abs(px - x) < (pw + tw) / 2 + 4 && Math.abs(py - yy) < 15);
-      if (hit(ty)) { ty = y + rad + 10; if (hit(ty)) continue; }
+      if (hit(ty)) { ty = y + rad + 14; if (hit(ty)) continue; }
       placed.push([x, ty, tw]);
       cx.lineWidth = 3.5; cx.strokeStyle = colors.halo; cx.strokeText(t, x, ty);
       cx.fillStyle = v > 0 ? colors.in : colors.out; cx.fillText(t, x, ty);
@@ -1171,8 +1185,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       <div class="mp-chips" role="group" aria-label="나이">${LG_LABEL.map((l, g) => `<button type="button" data-lg="${g}" aria-pressed="${g === lapseGroup}">${l}</button>`).join("")}</div></div>
       <div><h4>길 단위</h4>
       <div class="mp-chips" role="group" aria-label="길 단위"><button type="button" data-ll="sido" aria-pressed="${lapseLevel === "sido"}">시도끼리</button><button type="button" data-ll="sgg" aria-pressed="${lapseLevel === "sgg"}">시군구끼리</button></div></div>
-      <p class="sum">점 하나가 ${fmtN(L.unit)}명입니다. 그달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})을 따라 출발지 땅에서 도착지 땅으로 꼬리를 끌며 흐르고, 꼬리는 <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀝니다. 원은 ${ymTxt(L.months[0])}부터 쌓인 순이동입니다.</p>
-      <p class="hint">점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 원·누적 목록은 모든 쌍의 정확한 합계입니다. 점이 뜨고 내리는 자리는 실제로 이사가 많았던 동일수록 자주 뽑힙니다(정확한 주소는 아님).</p>`;
+      <p class="sum">점 하나가 ${fmtN(L.unit)}명입니다. 그달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})을 따라 출발지 땅에서 도착지 땅으로 꼬리를 끌며 흐르고, 꼬리는 <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀝니다. 지역 색은 ${ymTxt(L.months[0])}부터 쌓인 순이동으로, 진할수록 많이 <span style="color:${colors.in}">얻은(파랑)</span>·<span style="color:${colors.out}">잃은(빨강)</span> 곳입니다.</p>
+      <p class="hint">점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 지역 색·누적 목록은 모든 쌍의 정확한 합계입니다. 점이 뜨고 내리는 자리는 실제로 이사가 많았던 동일수록 자주 뽑힙니다(정확한 주소는 아님).</p>`;
     flowEl.querySelectorAll<HTMLElement>("[data-ll]").forEach((el) => el.addEventListener("click", () => {
       lapseLevel = el.dataset.ll as any;
       clearDots();
