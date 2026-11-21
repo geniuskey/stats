@@ -242,14 +242,13 @@ def build():
     ab, am, at = nat_a["births"], nat_a["marriages"], nat_a["tfr"]
     ly, lm = latest_month(mb)                  # 최신 월 (예: 2026, 8)
     last_annual = max(ab)                      # 확정 연간 (예: 2025)
-    year = ly if lm < 12 else ly + 1
-    if lm == 12 and year - 1 not in ab:        # 12월까지 나왔지만 연간 확정 전
-        year = ly
+    # 기준 연도는 늘 최신 월자료가 있는 해. 12월까지 나왔으면(연간 확정 전후 모두) 월 합계가 곧 연간이고,
+    # 다음 해 1월 자료가 나오면 그때 다음 해로 넘어간다 (월자료 없는 해를 기준으로 잡으면 KeyError).
+    year, M = ly, lm
     full = complete_years(mb)
 
     bt_b = backtest_annual(mb, ab, full)
     bt_m = backtest_annual(mm, am, complete_years(mm))
-    M = lm if year == ly else 12
 
     if M < 12:
         nb = nowcast(mb, ab, year, M, bt_b)

@@ -355,7 +355,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const byKey = Object.fromEntries(all.map((m) => [m.key, m]));
   const groupOf = Object.fromEntries(groups.flatMap((g) => g.metrics.map((m) => [m.key, g])));
   let cur: Metric = byKey[new URLSearchParams(location.search).get("m") ?? ""] ?? byKey["youthRate"] ?? all[0];
-  let selected: string | null = new URLSearchParams(location.search).get("r");
+  // 없는 코드(옛 공유 링크·오타)는 버린다: 그대로 두면 패널이 멈추고 innerHTML에도 들어간다
+  const rParam = new URLSearchParams(location.search).get("r");
+  let selected: string | null = rParam && Object.hasOwn(D.regions, rParam) ? rParam : null;
   const FLOW_G: Record<string, string> = { rate: "all", kidsRate: "kids", youthRate: "youth", midRate: "mid", preRate: "pre", oldRate: "old" };
   const isFlow = () => FLOW_G[cur.key] != null;
   const isLapse = () => cur.key === "lapse";

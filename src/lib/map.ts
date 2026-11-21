@@ -215,9 +215,16 @@ export function mountMap(root: HTMLElement) {
     };
     row(m.label, val == null ? "자료 없음" : fmt(val, m.format), true);
     // 같은 시점의 다른 지표
+    // 지표마다 연도 범위가 달라(예: 2025~ 와 2015~) 순번이 아니라 같은 연도(label)로 찾는다. 그 해가 없으면 뺀다.
+    const label = m.frames?.labels[fi];
     cfg.metrics.forEach((o, j) => {
       if (j === mi) return;
-      const ov = valuesAt(o, Math.min(fi, (o.frames?.values.length ?? 1) - 1))[id];
+      let oi = 0;
+      if (o.frames) {
+        oi = label != null ? o.frames.labels.indexOf(label) : (o.frames.start ?? o.frames.labels.length - 1);
+        if (oi < 0) return;
+      }
+      const ov = valuesAt(o, oi)[id];
       if (ov != null) row(o.label, fmt(ov, o.format));
     });
     if (val != null) {

@@ -100,10 +100,17 @@ def build():
         return None
     tm = json.loads(mf.read_text())["months"]
     rm = json.loads((MOLIT / "rent" / "manifest.json").read_text())["months"]
-    fetched = date.fromisoformat(min(max(v["fetched"]) for v in list(tm.values()) + list(rm.values())))
+    # 수집기는 확정된 달을 다시 받지 않으므로, 전체의 min을 기준으로 잡으면 가장 오래된 달의 수집일에 묶여
+    # 창이 앞으로 나가지 않는다. 달마다 그 달의 가장 이른 수집일이 신고 기한을 넘겼는지 따로 본다.
+    fetched = date.fromisoformat(max(v["fetched"][-1] for v in list(tm.values()) + list(rm.values())))
     complete = sorted(ym for ym in tm if tm[ym]["complete"] and ym in rm and rm[ym]["complete"])
+
+    def reported(ym: str) -> bool:  # 이 달의 모든 호출이 신고 기한 뒤에 받은 것인가
+        first = date.fromisoformat(min(tm[ym]["fetched"][0], rm[ym]["fetched"][0]))
+        return month_end(ym) + timedelta(days=REPORT_DAYS) <= first
+
     # 신고 기한이 지난 마지막 달
-    last = max(ym for ym in complete if month_end(ym) + timedelta(days=REPORT_DAYS) <= fetched)
+    last = max(ym for ym in complete if reported(ym))
     win = [ym_add(last, -k) for k in range(12)][::-1]
     prev = [ym_add(last, -k) for k in range(12, 24)][::-1]
     if any(ym not in complete for ym in win + prev):
