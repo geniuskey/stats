@@ -122,6 +122,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       <div id="mp-map" class="map-canvas" role="region" aria-label="대한민국 지도"></div>
       <canvas id="mp-arcs" class="map-arcs" aria-hidden="true"></canvas>
       <div class="map-flowlegend" id="mp-flowlegend" hidden></div>
+      <aside class="map-info map-flow" id="mp-info" hidden aria-label="이달의 이동" aria-live="polite"></aside>
       <div class="map-tip" id="mp-tip" hidden></div>
       <div class="map-year" id="mp-year" hidden aria-live="polite"><b></b><span></span></div>
       <div class="map-time" id="mp-time" hidden>
@@ -237,6 +238,14 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); border-radius: 14px; padding: 10px 14px;
     box-shadow: 0 6px 22px rgba(0, 0, 0, 0.14); display: grid; gap: 8px;
   }
+  .map-info {
+    position: absolute; right: 12px; top: 12px; z-index: 3; width: 300px; box-sizing: border-box;
+    max-height: calc(100% - 150px); overflow-y: auto; align-content: start;
+    background: color-mix(in oklab, var(--surface-1) 93%, transparent); backdrop-filter: blur(8px);
+    border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); border-radius: 14px; padding: 14px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.14);
+  }
+  .map-info[hidden] { display: none; }
   .map-time .row1 { display: flex; align-items: center; gap: 12px; }
   .map-time .play { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 0; background: var(--text-primary); color: var(--surface-1); font-size: 14px; cursor: pointer; }
   .map-time .track { flex: 1; position: relative; padding-bottom: 14px; }
@@ -317,6 +326,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     .map-page { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
     .map-side { order: 2; border-right: 0; max-height: none; }
     .map-wrap { order: 1; height: 62vh; }
+    .map-info { position: static; width: auto; max-height: none; box-shadow: none; backdrop-filter: none; background: var(--surface-1); }
   }
 </style>
 
@@ -395,12 +405,18 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const detailEl = document.getElementById("mp-detail")!;
   const tip = document.getElementById("mp-tip")!;
   const flowEl = document.getElementById("mp-flow")!;
+  const infoEl = document.getElementById("mp-info")!;
+  // 좁은 화면에선 정보 카드를 지도 위에 띄우지 않고 사이드 설정 아래로
+  const narrowMQ = matchMedia("(max-width: 760px)");
+  const placeInfo = () => { if (narrowMQ.matches) flowEl.after(infoEl); else document.getElementById("mp-flowlegend")!.after(infoEl); };
+  narrowMQ.addEventListener("change", placeInfo);
   // 흐름·타임랩스 패널은 누른 버튼이 있는 묶음 바로 아래
   const placeFlowPanel = () => {
     const btn = groupsEl.querySelector<HTMLElement>(`button[data-key="${cur.key}"]`);
     (btn?.closest(".mp-group") ?? groupsEl.firstElementChild)?.after(flowEl);
   };
   placeFlowPanel();
+  placeInfo();
   document.querySelector(".map-search")!.after(detailEl); // 고른 지역의 추이는 맨 위에
 
   const renderLegend = () => {
@@ -419,6 +435,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
 
   const renderDetail = (id: string | null) => {
     if (isLapse()) { detailEl.hidden = true; renderLapse(); return; }
+    infoEl.hidden = true;
     if (isFlow()) { detailEl.hidden = true; renderFlow(id); return; }
     flowEl.hidden = true;
     if (!id) { detailEl.hidden = true; return; }
@@ -620,7 +637,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   });
   map.touchZoomRotate.disableRotation();
   (window as any).__map = map; // 디버깅·자동 점검용
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right"); // 오른쪽 위는 정보 카드 자리
 
   const paint = () => {
     if (!map.getLayer("sgg-fill")) return;
@@ -1110,30 +1127,18 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       cx.fillStyle = v > 0 ? colors.in : colors.out; cx.fillText(t, x, ty);
     }
   }
+  // 설정(나이·길 단위·읽는 법)은 사이드바, 그달의 정보는 지도 오른쪽 카드
   function renderLapse() {
     flowEl.hidden = false;
     detailEl.hidden = true;
-    if (!L) { flowEl.innerHTML = `<p class="hint">이동 자료를 불러오는 중…</p>`; return; }
-    const ym = L.months[lapseMonth], idx = D.monthly.months.indexOf(ym), cap0 = captionOf(ym);
-    const rows = L.ids.map((id: string, r: number) => [id, cum[lapseGroup][r][lapseMonth]] as [string, number]).sort((p: any, q: any) => q[1] - p[1]);
-    const top = rows.slice(0, 5), bot = rows.slice(-5).reverse();
-    const mx = Math.max(1, ...[...top, ...bot].map((r: any) => Math.abs(r[1])));
-    const li = (r: [string, number]) => `<div class="fly-row" data-id="${r[0]}"><span class="nm">${D.regions[r[0]]?.n ?? r[0]}</span><span class="l">${r[1] < 0 ? `<span style="width:${(-r[1] / mx) * 100}%;background:${colors.out}"></span>` : ""}</span><span class="r">${r[1] > 0 ? `<span style="width:${(r[1] / mx) * 100}%;background:${colors.in}"></span>` : ""}</span><span class="v" style="color:${r[1] >= 0 ? colors.in : colors.out}">${r[1] > 0 ? "+" : r[1] < 0 ? "−" : ""}${man(Math.abs(r[1]))}</span></div>`;
-    const capNet = D.monthly.capNet[idx];
-    const routes = monthArcs(lapseMonth).slice(0, 6);
-    const short = nmShort;
+    placeFlowPanel(); placeInfo();
+    if (!L) { flowEl.innerHTML = `<p class="hint">이동 자료를 불러오는 중…</p>`; infoEl.hidden = true; return; }
     flowEl.innerHTML = `
-      <h3>${ymTxt(ym)}까지, 사람들이 모인 곳</h3>
-      <div class="mp-chips" role="group" aria-label="나이">${LG_LABEL.map((l, g) => `<button type="button" data-lg="${g}" aria-pressed="${g === lapseGroup}">${l}</button>`).join("")}</div>
-      ${cap0 ? `<p class="lapse-cap">${cap0}</p>` : ""}
-      <p class="sum">선은 이달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})로, <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀌고 점 하나가 ${fmtN(L.unit)}명입니다. 원은 ${ymTxt(L.months[0])}부터 쌓인 순이동입니다.${lapseGroup === 0 && capNet != null ? ` 이달 수도권 순유입 <strong style="color:${capNet >= 0 ? colors.in : colors.out}">${signed(capNet)}명</strong>.` : ""}</p>
-      <div class="mp-chips" role="group" aria-label="길 단위"><button type="button" data-ll="sido" aria-pressed="${lapseLevel === "sido"}">시도끼리</button><button type="button" data-ll="sgg" aria-pressed="${lapseLevel === "sgg"}">시군구끼리</button></div>
-      <div><h4>이달 큰 길 (${LG_DESC[lapseGroup]}, 순이동)</h4>
-        ${routes.map((r) => `<div class="route"><span class="nm"><span style="color:${colors.out}">${short(r.a)}</span> → <span style="color:${colors.in}">${short(r.b)}</span></span><b>${fmtN(r.c * L.unit)}</b></div>`).join("")}</div>
-      <div class="fly">
-        <div class="fly-head"><span>${LG_DESC[lapseGroup]} · 누적</span><span class="l" style="color:${colors.out}">← 잃음</span><span class="r" style="color:${colors.in}">얻음 →</span><span class="v">명</span></div>
-        ${top.map(li).join("")}<div style="height:6px"></div>${bot.map(li).join("")}
-      </div>
+      <div><h4>나이</h4>
+      <div class="mp-chips" role="group" aria-label="나이">${LG_LABEL.map((l, g) => `<button type="button" data-lg="${g}" aria-pressed="${g === lapseGroup}">${l}</button>`).join("")}</div></div>
+      <div><h4>길 단위</h4>
+      <div class="mp-chips" role="group" aria-label="길 단위"><button type="button" data-ll="sido" aria-pressed="${lapseLevel === "sido"}">시도끼리</button><button type="button" data-ll="sgg" aria-pressed="${lapseLevel === "sgg"}">시군구끼리</button></div></div>
+      <p class="sum">선은 그달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})로, <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀌고 점 하나가 ${fmtN(L.unit)}명입니다. 원은 ${ymTxt(L.months[0])}부터 쌓인 순이동입니다.</p>
       <p class="hint">선·점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 원·누적 목록은 모든 쌍의 정확한 합계입니다.</p>`;
     flowEl.querySelectorAll<HTMLElement>("[data-ll]").forEach((el) => el.addEventListener("click", () => {
       lapseLevel = el.dataset.ll as any;
@@ -1147,7 +1152,30 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       spawnMonth(lapseMonth, performance.now());
       renderTime(); renderLapse();
     }));
-    flowEl.querySelectorAll<HTMLElement>(".fly-row[data-id]").forEach((el) => el.addEventListener("click", () => {
+    renderLapseInfo();
+  }
+  function renderLapseInfo() {
+    if (!L || !isLapse()) return;
+    infoEl.hidden = false;
+    const ym = L.months[lapseMonth], idx = D.monthly.months.indexOf(ym), cap0 = captionOf(ym);
+    const rows = L.ids.map((id: string, r: number) => [id, cum[lapseGroup][r][lapseMonth]] as [string, number]).sort((p: any, q: any) => q[1] - p[1]);
+    const top = rows.slice(0, 5), bot = rows.slice(-5).reverse();
+    const mx = Math.max(1, ...[...top, ...bot].map((r: any) => Math.abs(r[1])));
+    const li = (r: [string, number]) => `<div class="fly-row" data-id="${r[0]}"><span class="nm">${D.regions[r[0]]?.n ?? r[0]}</span><span class="l">${r[1] < 0 ? `<span style="width:${(-r[1] / mx) * 100}%;background:${colors.out}"></span>` : ""}</span><span class="r">${r[1] > 0 ? `<span style="width:${(r[1] / mx) * 100}%;background:${colors.in}"></span>` : ""}</span><span class="v" style="color:${r[1] >= 0 ? colors.in : colors.out}">${r[1] > 0 ? "+" : r[1] < 0 ? "−" : ""}${man(Math.abs(r[1]))}</span></div>`;
+    const capNet = D.monthly.capNet[idx];
+    const routes = monthArcs(lapseMonth).slice(0, 6);
+    const short = nmShort;
+    infoEl.innerHTML = `
+      <h3>${ymTxt(ym)} · ${LG_DESC[lapseGroup]}</h3>
+      ${cap0 ? `<p class="lapse-cap">${cap0}</p>` : ""}
+      ${lapseGroup === 0 && capNet != null ? `<p class="sum">이달 수도권 순유입 <strong style="color:${capNet >= 0 ? colors.in : colors.out}">${signed(capNet)}명</strong></p>` : ""}
+      <div><h4>이달 큰 길 (순이동)</h4>
+        ${routes.map((r) => `<div class="route"><span class="nm"><span style="color:${colors.out}">${short(r.a)}</span> → <span style="color:${colors.in}">${short(r.b)}</span></span><b>${fmtN(r.c * L.unit)}</b></div>`).join("")}</div>
+      <div class="fly">
+        <div class="fly-head"><span>${ymTxt(L.months[0])}부터 누적</span><span class="l" style="color:${colors.out}">← 잃음</span><span class="r" style="color:${colors.in}">얻음 →</span><span class="v">명</span></div>
+        ${top.map(li).join("")}<div style="height:6px"></div>${bot.map(li).join("")}
+      </div>`;
+    infoEl.querySelectorAll<HTMLElement>(".fly-row[data-id]").forEach((el) => el.addEventListener("click", () => {
       const c = P[el.dataset.id!]; if (c) map.flyTo({ center: c, zoom: Math.max(map.getZoom(), 9), speed: 1.4 });
     }));
   }
@@ -1156,6 +1184,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     lapseColors = LG_VARS.map(resolve);
     clearDots();
     setLapseMonth(lapseMonth, performance.now());
+    renderLapse();
   }
   const setLapseMonth = (i: number, start = performance.now()) => {
     lapseMonth = i;
@@ -1163,7 +1192,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     monthDur = captionOf(L.months[i]) ? MONTH_MS * 2.6 : MONTH_MS; // 자막이 있는 달은 천천히
     spawnMonth(i, start);
     renderTime();
-    renderLapse();
+    renderLapseInfo();
   };
 
   const frame = (now: number) => {
