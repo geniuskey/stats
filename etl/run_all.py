@@ -70,6 +70,8 @@ def move():
     r = build_move.build()
     if r is not None:
         write("move", r)
+        import build_move_pts  # 타임랩스 점의 출발·도착 위치(행정동 비중)
+        build_move_pts.build()
 
 
 @module

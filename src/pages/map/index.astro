@@ -87,6 +87,7 @@ const payload = {
   })),
   sidoNames: Object.fromEntries(regs.map((r) => [r.sidoCode, r.sido])),
   lapse: `${base}data/move_lapse.json`,
+  movePts: `${base}data/move_pts.json`,
   monthly: { months: (move as any).monthly.months, capNet: (move as any).monthly.capNet, interSgg: (move as any).monthly.interSgg },
   lapseCaptions: {
     "02": "2월: 새 학기·첫 직장 이사. 해마다 이동이 가장 많고 수도권 순유입도 가장 큰 달입니다.",
@@ -963,14 +964,13 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   let lapseColors: string[] = [];
   const toM = (lng: number, lat: number): [number, number] => [(lng + 180) / 360, (1 - Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) / Math.PI) / 2];
   let jit: Record<string, [number, number, number]> = {};
-  const POOL = 40;
-  let pool: Record<string, number[]> = {}; // 시군구 → 땅 안 무작위 점 [mx, my, ...]
+  let poolOut: Record<string, number[]> = {}, poolIn: Record<string, number[]> = {}; // 시군구 → 출발/도착 점 [mx, my, ...]
   let cum: Float64Array[][] = []; // [묶음][지역] → 달까지 누적 순이동
   let cumMax: number[] = [];
   let bigMap = new Map<string, number>();
   const decode = (ch: string) => { if (ch === "0") return 0; const c = ch.charCodeAt(0); return c >= 97 ? c - 96 : -(c - 64); };
   const loadLapse = () => (lapseLoading ??= (async () => {
-    const [l] = await Promise.all([fetch(D.lapse).then((r) => r.json()), loadPts()]);
+    const [l, mpts] = await Promise.all([fetch(D.lapse).then((r) => r.json()), fetch(D.movePts).then((r) => (r.ok ? r.json() : null)).catch(() => null), loadPts()]);
     L = l;
     lapseMonth = L.months.length - 1;
     bigMap = new Map(L.big.map((b: number[]) => [`${b[0]},${b[1]},${b[2]}`, b[3]]));
@@ -982,28 +982,10 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       const walk = (c: any) => (typeof c[0] === "number" ? (b[0] = Math.min(b[0], c[0]), b[1] = Math.min(b[1], c[1]), b[2] = Math.max(b[2], c[0]), b[3] = Math.max(b[3], c[1])) : c.forEach(walk));
       walk(f.geometry.coordinates);
     }
-    // 시군구마다 땅 안의 무작위 점을 미리 뽑아 둔다(면적 균등, 경계 안 판정)
-    const inRing = (r: number[][], x: number, y: number) => {
-      let inside = false;
-      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-        const [xi, yi] = r[i], [xj, yj] = r[j];
-        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-      }
-      return inside;
-    };
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const polysOf: Record<string, number[][][][]> = {}; // 한 시군구가 여러 조각이어도 하나로
-    for (const f of geo.features) (polysOf[f.properties.id] ??= []).push(...(f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates));
-    for (const [id, polys] of Object.entries(polysOf)) {
-      const b = bb[id];
-      if (!b) continue;
-      const out: number[] = [];
-      for (let t = 0; t < 4000 && out.length < POOL * 2; t++) {
-        const x = b[0] + rnd() * (b[2] - b[0]), y = b[1] + rnd() * (b[3] - b[1]);
-        if (polys.some((pg) => inRing(pg[0], x, y) && !pg.slice(1).some((h) => inRing(h, x, y)))) out.push(...toM(x, y));
-      }
-      if (out.length) pool[id] = out;
+    // 시군구마다 출발·도착 점: 실제로 사람이 드나든 행정동 비중대로 뽑아 둔 점(ETL: build_move_pts.py)
+    if (mpts) for (const [id, [o, i]] of Object.entries(mpts.pts as Record<string, number[][]>)) {
+      const conv = (f: number[]) => { const r: number[] = []; for (let k = 0; k < f.length; k += 2) r.push(...toM(mpts.x0 + f[k] / mpts.q, mpts.y0 + f[k + 1] / mpts.q)); return r; };
+      poolOut[id] = conv(o); poolIn[id] = conv(i);
     }
     jit = Object.fromEntries(Object.entries(P).map(([id, c]) => {
       const b = bb[id] ?? [c[0], c[1], c[0], c[1]];
@@ -1078,14 +1060,14 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       if (arc.dying != null) continue;
       const comp = arc.comp, tot = comp.reduce((t, q) => t + q[2], 0);
       const pick = (r: number) => { let acc = 0; for (const q of comp) if ((acc += q[2]) >= r * tot) return q; return comp[comp.length - 1]; };
-      const pt = (id: string, r: number, f: [number, number]): [number, number] => {
+      const pt = (pool: Record<string, number[]>, id: string, r: number, f: [number, number]): [number, number] => {
         const pl = pool[id];
         if (pl) { const j = Math.floor(r * (pl.length / 2)) * 2; return [pl[j], pl[j + 1]]; }
         const c = jit[id]; return c ? [c[0], c[1]] : f;
       };
       for (let j = 0; j < arc.k; j++) {
         const q = pick(sc());
-        const [x0, y0] = pt(q[0], sc(), [arc.mx0, arc.my0]), [x1, y1] = pt(q[1], sc(), [arc.mx1, arc.my1]);
+        const [x0, y0] = pt(poolOut, q[0], sc(), [arc.mx0, arc.my0]), [x1, y1] = pt(poolIn, q[1], sc(), [arc.mx1, arc.my1]);
         // 가운데는 길(선) 쪽으로 모이고 양 끝은 땅에 흩어진다
         const qx = arc.cx + ((x0 - arc.mx0) + (x1 - arc.mx1)) * 0.25, qy = arc.cy + ((y0 - arc.my0) + (y1 - arc.my1)) * 0.25;
         const len = Math.hypot(x1 - x0, y1 - y0);
@@ -1190,7 +1172,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       <div><h4>길 단위</h4>
       <div class="mp-chips" role="group" aria-label="길 단위"><button type="button" data-ll="sido" aria-pressed="${lapseLevel === "sido"}">시도끼리</button><button type="button" data-ll="sgg" aria-pressed="${lapseLevel === "sgg"}">시군구끼리</button></div></div>
       <p class="sum">점 하나가 ${fmtN(L.unit)}명입니다. 그달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})을 따라 출발지 땅에서 도착지 땅으로 꼬리를 끌며 흐르고, 꼬리는 <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀝니다. 원은 ${ymTxt(L.months[0])}부터 쌓인 순이동입니다.</p>
-      <p class="hint">점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 원·누적 목록은 모든 쌍의 정확한 합계입니다.</p>`;
+      <p class="hint">점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 원·누적 목록은 모든 쌍의 정확한 합계입니다. 점이 뜨고 내리는 자리는 실제로 이사가 많았던 동일수록 자주 뽑힙니다(정확한 주소는 아님).</p>`;
     flowEl.querySelectorAll<HTMLElement>("[data-ll]").forEach((el) => el.addEventListener("click", () => {
       lapseLevel = el.dataset.ll as any;
       clearDots();
