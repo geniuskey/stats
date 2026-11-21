@@ -1013,12 +1013,14 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   })());
   // 이달의 길: 순이동이 큰 시군구 쌍을 곡선으로 (출발 빨강 → 도착 파랑 그라데이션), 점은 그 위를 꼬리 달고 흐른다
   const TOP_ARCS = 60;
-  type LArc = { a: string; b: string; n: number; mx0: number; my0: number; mx1: number; my1: number; cx: number; cy: number; born: number; dying?: number };
+  type LArc = { a: string; b: string; n: number; k: number; comp: [string, string, number][]; mx0: number; my0: number; mx1: number; my1: number; cx: number; cy: number; born: number; dying?: number };
   type Dot = { arc: LArc; t0: number; dur: number; x0: number; y0: number; qx: number; qy: number; x1: number; y1: number };
   let larcs: LArc[] = [];
   let dots: Dot[] = [];
-  const clearDots = () => { dots = []; larcs = []; };
-  const anyDots = (now: number) => dots.some((d) => now < d.t0 + d.dur);
+  // 점은 달과 상관없이 끊기지 않고 흐른다: CYCLE마다 지금 길들에 점을 고르게 흘려 보낸다
+  const CYCLE = MONTH_MS;
+  let nextCycle = Infinity;
+  const clearDots = () => { dots = []; larcs = []; nextCycle = Infinity; };
   let lapseLevel: "sido" | "sgg" = "sido";
   const nmShort = (id: string) => (id.length === 2 ? D.sidoNames[id] : (D.regions[id]?.n ?? id));
   const sidoM = (sd: string): [number, number, number] | null => { const c = SP[sd]; if (!c) return null; const [mx, my] = toM(c[0], c[1]); return [mx, my, 0]; };
@@ -1054,32 +1056,41 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     }
     return list.sort((x, y) => y.c - x.c).slice(0, TOP_ARCS);
   };
+  // 달이 바뀌면 길만 바꾼다(지난 길은 서서히 사라짐). 날고 있는 점은 끝까지 날고, 아직 안 뜬 점만 거둔다
   function spawnMonth(i: number, start: number) {
     if (!L) return;
-    const sc = (k: number) => { const x = Math.sin(k * 78.233 + start * 0.001) * 43758.5453; return x - Math.floor(x); };
-    for (const a of larcs) if (a.dying == null) a.dying = start; // 지난달 길은 서서히 사라진다
-    let n = 0;
+    for (const a of larcs) if (a.dying == null) a.dying = start;
+    dots = dots.filter((d) => d.t0 <= start);
     for (const m of monthArcs(i)) {
       const A = m.a.length === 2 ? sidoM(m.a) : jit[m.a], B = m.b.length === 2 ? sidoM(m.b) : jit[m.b];
       if (!A || !B) continue;
       const dx = B[0] - A[0], dy = B[1] - A[1];
-      const arc: LArc = { a: m.a, b: m.b, n: m.c * L.unit, mx0: A[0], my0: A[1], mx1: B[0], my1: B[1], cx: (A[0] + B[0]) / 2 - dy * 0.22, cy: (A[1] + B[1]) / 2 + dx * 0.22, born: start };
-      larcs.push(arc);
-      const comp = m.comp?.length ? m.comp : [[m.a, m.b, m.c] as [string, string, number]];
-      const tot = comp.reduce((t, q) => t + q[2], 0);
+      larcs.push({ a: m.a, b: m.b, n: m.c * L.unit, k: Math.min(40, m.c), comp: m.comp?.length ? m.comp : [[m.a, m.b, m.c]],
+        mx0: A[0], my0: A[1], mx1: B[0], my1: B[1], cx: (A[0] + B[0]) / 2 - dy * 0.22, cy: (A[1] + B[1]) / 2 + dx * 0.22, born: start });
+    }
+    spawnCycle(start);
+  }
+  let cycSeed = 1;
+  function spawnCycle(start: number) {
+    nextCycle = start + CYCLE;
+    const sc = () => { const x = Math.sin(++cycSeed * 78.233) * 43758.5453; return x - Math.floor(x); };
+    for (const arc of larcs) {
+      if (arc.dying != null) continue;
+      const comp = arc.comp, tot = comp.reduce((t, q) => t + q[2], 0);
       const pick = (r: number) => { let acc = 0; for (const q of comp) if ((acc += q[2]) >= r * tot) return q; return comp[comp.length - 1]; };
-      const pt = (id: string, r: number): [number, number] => {
+      const pt = (id: string, r: number, f: [number, number]): [number, number] => {
         const pl = pool[id];
         if (pl) { const j = Math.floor(r * (pl.length / 2)) * 2; return [pl[j], pl[j + 1]]; }
-        const c = jit[id] ?? A; return [c[0], c[1]];
+        const c = jit[id]; return c ? [c[0], c[1]] : f;
       };
-      const k = Math.min(40, m.c);
-      for (let j = 0; j < k; j++) {
-        const q = pick(sc(++n));
-        const [x0, y0] = pt(q[0], sc(n + 0.21)), [x1, y1] = pt(q[1], sc(n + 0.37));
+      for (let j = 0; j < arc.k; j++) {
+        const q = pick(sc());
+        const [x0, y0] = pt(q[0], sc(), [arc.mx0, arc.my0]), [x1, y1] = pt(q[1], sc(), [arc.mx1, arc.my1]);
         // 가운데는 길(선) 쪽으로 모이고 양 끝은 땅에 흩어진다
-        const qx = arc.cx + ((x0 - A[0]) + (x1 - B[0])) * 0.25, qy = arc.cy + ((y0 - A[1]) + (y1 - B[1])) * 0.25;
-        dots.push({ arc, t0: start + ((j + sc(n + 0.5) * 0.8) / k) * monthDur * 0.9, dur: 1100 + sc(n + 0.7) * 300, x0, y0, qx, qy, x1, y1 });
+        const qx = arc.cx + ((x0 - arc.mx0) + (x1 - arc.mx1)) * 0.25, qy = arc.cy + ((y0 - arc.my0) + (y1 - arc.my1)) * 0.25;
+        const len = Math.hypot(x1 - x0, y1 - y0);
+        // 거리에 비례한 시간 = 모든 점이 같은 속력으로
+        dots.push({ arc, t0: start + ((j + sc()) / arc.k) * CYCLE, dur: Math.min(3400, 900 + (len / 0.01) * 1700) * (0.9 + sc() * 0.2), x0, y0, qx, qy, x1, y1 });
       }
     }
   }
@@ -1124,23 +1135,10 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       return [X(u * u * l.mx0 + 2 * u * t * l.cx + t * t * l.mx1), Y(u * u * l.my0 + 2 * u * t * l.cy + t * t * l.my1)];
     };
     cx.lineCap = "round";
-    for (const l of [...larcs].sort((p, q) => p.n - q.n)) {
-      const fade = Math.min(1, (now - l.born) / 400) * (l.dying != null ? Math.max(0, 1 - (now - l.dying) / 600) : 1);
-      if (fade <= 0) continue;
-      const [x0, y0] = bez(l, 0), [x1, y1] = bez(l, 1), [qx, qy] = [X(l.cx), Y(l.cy)];
-      if (Math.hypot(x1 - x0, y1 - y0) < 4) continue;
-      const g = cx.createLinearGradient(x0, y0, x1, y1);
-      g.addColorStop(0, rgba(colors.out, 0.75 * fade)); g.addColorStop(1, rgba(colors.in, 0.85 * fade));
-      const wd = 1 + 7 * Math.sqrt(l.n / maxN);
-      cx.beginPath(); cx.moveTo(x0, y0); cx.quadraticCurveTo(qx, qy, x1, y1);
-      cx.strokeStyle = g; cx.lineWidth = wd; cx.stroke();
-      // 도착지 화살촉
-      const [bx, by] = bez(l, 0.93), ang = Math.atan2(y1 - by, x1 - bx), ah = 5 + wd;
-      cx.beginPath(); cx.moveTo(x1, y1);
-      cx.lineTo(x1 - ah * Math.cos(ang - 0.5), y1 - ah * Math.sin(ang - 0.5));
-      cx.lineTo(x1 - ah * Math.cos(ang + 0.5), y1 - ah * Math.sin(ang + 0.5));
-      cx.closePath(); cx.fillStyle = rgba(colors.in, 0.9 * fade); cx.fill();
-    }
+    // 2) 길(선)은 그리지 않는다 — 점의 꼬리가 길을 대신한다
+    const ca = colors.out.match(/[\d.]+/g)!.slice(0, 3).map(Number), cb = colors.in.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+    const mixC = (t: number, al: number) => `rgba(${ca.map((v, k) => Math.round(v + (cb[k] - v) * t)).join(",")},${al})`;
+    const TAIL = 0.38, SEG = 9;
     // 3) 점: 꼬리 달린 혜성 (하나 = unit명)
     let w = 0;
     for (let i = 0; i < dots.length; i++) {
@@ -1148,15 +1146,20 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       if (u > 1) continue;
       dots[w++] = d;
       if (u < 0) continue;
-      const e = u < 0.5 ? 2 * u * u : 1 - (2 - 2 * u) * (2 - 2 * u) / 2;
+      const e = u; // 같은 속력 (멈칫하는 가감속 없음), 뜰 때·내릴 때는 투명도로
+      const al = Math.min(1, u / 0.08, (1 - u) / 0.12);
       const dz = (t: number): [number, number] => { const v = 1 - t; return [X(v * v * d.x0 + 2 * v * t * d.qx + t * t * d.x1), Y(v * v * d.y0 + 2 * v * t * d.qy + t * t * d.y1)]; };
-      const [hx, hy] = dz(e), [tx, ty] = dz(Math.max(0, e - 0.12));
-      const tg = cx.createLinearGradient(tx, ty, hx, hy);
-      tg.addColorStop(0, rgba(colors.ink, 0)); tg.addColorStop(1, rgba(colors.ink, 0.8));
-      cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(hx, hy);
-      cx.strokeStyle = tg; cx.lineWidth = 2; cx.stroke();
-      cx.beginPath(); cx.arc(hx, hy, 2.3, 0, 6.283);
-      cx.fillStyle = colors.ink; cx.fill();
+      // 긴 꼬리: 지나온 곡선을 따라 여러 토막으로, 뒤로 갈수록 옅고 가늘게. 색은 출발(빨강)→도착(파랑)
+      let [px, py] = dz(Math.max(0, e - TAIL));
+      for (let s2 = 1; s2 <= SEG; s2++) {
+        const t = Math.max(0, e - TAIL * (1 - s2 / SEG)), f = s2 / SEG;
+        const [qx2, qy2] = dz(t);
+        cx.beginPath(); cx.moveTo(px, py); cx.lineTo(qx2, qy2);
+        cx.strokeStyle = mixC(t, 0.75 * f * f * al); cx.lineWidth = 0.6 + 1.6 * f; cx.stroke();
+        px = qx2; py = qy2;
+      }
+      cx.beginPath(); cx.arc(px, py, 2.2, 0, 6.283);
+      cx.fillStyle = mixC(e, al); cx.fill();
     }
     dots.length = w;
     // 4) 이름표: 누적 상·하위 (겹치면 생략)
@@ -1186,8 +1189,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       <div class="mp-chips" role="group" aria-label="나이">${LG_LABEL.map((l, g) => `<button type="button" data-lg="${g}" aria-pressed="${g === lapseGroup}">${l}</button>`).join("")}</div></div>
       <div><h4>길 단위</h4>
       <div class="mp-chips" role="group" aria-label="길 단위"><button type="button" data-ll="sido" aria-pressed="${lapseLevel === "sido"}">시도끼리</button><button type="button" data-ll="sgg" aria-pressed="${lapseLevel === "sgg"}">시군구끼리</button></div></div>
-      <p class="sum">선은 그달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})로, <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀌고 점 하나가 ${fmtN(L.unit)}명입니다. 원은 ${ymTxt(L.months[0])}부터 쌓인 순이동입니다.</p>
-      <p class="hint">선·점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 원·누적 목록은 모든 쌍의 정확한 합계입니다.</p>`;
+      <p class="sum">점 하나가 ${fmtN(L.unit)}명입니다. 그달 순이동이 큰 길(${lapseLevel === "sido" ? "시도끼리 25개" : `시군구끼리 ${TOP_ARCS}개`})을 따라 출발지 땅에서 도착지 땅으로 꼬리를 끌며 흐르고, 꼬리는 <span style="color:${colors.out}">출발(빨강)</span>에서 <span style="color:${colors.in}">도착(파랑)</span>으로 색이 바뀝니다. 원은 ${ymTxt(L.months[0])}부터 쌓인 순이동입니다.</p>
+      <p class="hint">점은 연평균 ${L.minYear}명 이상 오간 시군구 쌍(20명 단위로 반올림)으로 계산한 그달 순이동 상위 길, 원·누적 목록은 모든 쌍의 정확한 합계입니다.</p>`;
     flowEl.querySelectorAll<HTMLElement>("[data-ll]").forEach((el) => el.addEventListener("click", () => {
       lapseLevel = el.dataset.ll as any;
       clearDots();
@@ -1249,7 +1252,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     geoms = [];
     if (isLapse()) {
       drawLapse(now);
-      if (!playTimer && L && !anyDots(now)) spawnMonth(lapseMonth, now + 200); // 멈춰 있으면 그 달 점을 되풀이 (원은 그대로)
+      if (L && now >= nextCycle) spawnCycle(now - nextCycle > CYCLE ? now : nextCycle); // 재생 중이든 멈춤이든 점은 계속 흐른다
     }
     if (arcs.length) {
       const sec = now / 1000;
