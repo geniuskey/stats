@@ -1386,6 +1386,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   const ticksEl = document.getElementById("mp-ticks")!;
   const scenEl = document.getElementById("mp-scen")!;
   let playTimer = 0;
+  // 시점이 몇 개뿐이면(4~5년) 재생은 의미가 없어 슬라이더만 둔다
+  const MIN_PLAY = 7;
+  const showPlay = (n: number) => { playEl.hidden = n < MIN_PLAY; if (playEl.hidden && playTimer) stopPlay(); };
   function stopPlay() { clearInterval(playTimer); clearTimeout(playTimer); playTimer = 0; playEl.textContent = "▶"; playEl.setAttribute("aria-label", "재생"); }
   const setYear = (y: number) => {
     yearSel[cur.key] = y;
@@ -1408,6 +1411,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       timeEl.hidden = false; yearEl.hidden = false; scenEl.hidden = true; scenEl.innerHTML = "";
       rangeEl.max = String(n - 1);
       rangeEl.value = String(lapseMonth);
+      showPlay(n);
       ticksEl.innerHTML = ms.map((m, k) => (k === 0 || k === n - 1 || (m.endsWith("01") && k > n * 0.1 && k < n * 0.9)) ? `<span style="left:${(k / (n - 1)) * 100}%">${k === 0 || k === n - 1 ? ymTxt(m) : m.slice(0, 4)}</span>` : "").join("");
       yearEl.classList.remove("proj");
       yearEl.querySelector("b")!.textContent = ymTxt(ms[lapseMonth]);
@@ -1418,6 +1422,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
       timeEl.hidden = false; yearEl.hidden = false; scenEl.hidden = true; scenEl.innerHTML = "";
       rangeEl.max = String(FW.length - 1);
       rangeEl.value = String(flowWin);
+      showPlay(FW.length);
       ticksEl.innerHTML = FW.map((w, k) => `<span style="left:${FW.length > 1 ? (k / (FW.length - 1)) * 100 : 0}%">${w.label}</span>`).join("");
       yearEl.classList.remove("proj");
       yearEl.querySelector("b")!.textContent = FW[flowWin].label;
@@ -1429,10 +1434,12 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     timeEl.hidden = false; yearEl.hidden = false;
     rangeEl.max = String(ys.length - 1);
     rangeEl.value = String(i);
+    showPlay(ys.length);
     const pf = ys.findIndex((x) => x >= cur.projFrom);
     const pct = (k: number) => (ys.length > 1 ? (k / (ys.length - 1)) * 100 : 0);
     rangeEl.style.background = "";
-    const marks = [0, pf, ys.length - 1].filter((k, j, a) => k >= 0 && a.indexOf(k) === j);
+    // 시점이 적으면 눈금마다 연도를 다 적는다
+    const marks = ys.length < MIN_PLAY ? ys.map((_, k) => k) : [0, pf, ys.length - 1].filter((k, j, a) => k >= 0 && a.indexOf(k) === j);
     const yl = (yy: number) => cur.yearLabels?.[yy] ?? String(yy);
     ticksEl.innerHTML = marks.map((k) => `<span class="${k === pf ? "proj" : ""}" style="left:${pct(k)}%">${yl(ys[k])}${k === pf ? " 추계" : ""}</span>`).join("");
     const proj = y >= cur.projFrom;

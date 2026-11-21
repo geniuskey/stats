@@ -1103,7 +1103,7 @@ pre.formula {
 .player-ticks { position: absolute; left: 9px; right: 9px; bottom: 0; height: 14px; font-size: 11px; color: var(--text-muted); }
 .player-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .player-ticks span:first-child { transform: none; }
-.player-ticks span:nth-child(2) { transform: translateX(-100%); }
+.player-ticks span.end { transform: translateX(-100%); }
 .player-ticks span.proj { color: var(--text-secondary); }
 .player-label {
   flex: none;
