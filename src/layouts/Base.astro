@@ -33,6 +33,14 @@ const ld = title === "홈"
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Google Tag Manager -->
+    <script is:inline async src="https://www.googletagmanager.com/gtm.js?id=GTM-MCRXH58R"></script>
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      dataLayer.push({ "gtm.start": new Date().getTime(), event: "gtm.js" });
+    </script>
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
@@ -95,7 +103,7 @@ const ld = title === "홈"
         </nav>
         <button class="menu-btn" type="button" aria-controls="site-nav" aria-expanded="false" id="menu-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
-          메뉴
+          <span id="menu-label">메뉴</span>
         </button>
         <button class="theme-btn" type="button" aria-label="다크 모드 전환" id="theme-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
@@ -137,6 +145,7 @@ const ld = title === "홈"
       const setMenu = (on: boolean) => {
         header.classList.toggle("menu-open", on);
         menuBtn.setAttribute("aria-expanded", String(on));
+        document.getElementById("menu-label")!.textContent = on ? "닫기" : "메뉴";
         groups.forEach((g) => (g.open = on));
       };
       groups.forEach((g) => {

@@ -83,7 +83,7 @@ const lastVac = c.vacancyRate ? Object.entries(c.vacancyRate).at(-1) : null;
           지속가능성 지수는 <strong>{m.index}</strong>로 전국 {d.regions.length}곳 중 {m.rank}위, {r.sido} {sidoPeers.length}곳 중 {rankInSido}위입니다.
         </p>
       </div>
-      <KoreaMap level="sgg" only={r.sidoCode} highlight={r.id} metrics={peerMetrics} names={dongneNames(peers)} notes={dongneNotes(peers)} links={dongneLinks(base, peers)} rank={false} compact title={`${r.sido} 안에서 ${r.name}`} sub="굵은 선이 이 지역 · 다른 시군구를 누르면 이동" />
+      <KoreaMap level="sgg" only={r.sidoCode} highlight={r.id} metrics={peerMetrics} names={dongneNames(peers)} notes={dongneNotes(peers)} links={dongneLinks(base, peers)} rank={false} compact h={2} title={`${r.sido} 안에서 ${r.name}`} sub="굵은 선이 이 지역 · 다른 시군구를 누르면 이동" />
     </section>
     <div class="grid grid-4">
       <Stat label="지속가능성 지수" value={String(m.index)} note={`전국 ${m.rank}위 · 50 = 평균`} />

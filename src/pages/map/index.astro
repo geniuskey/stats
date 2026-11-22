@@ -108,6 +108,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
 ---
 <Base title="지도로 보기" active="map" description="누가 어디서 어디로 이사 가는지, 나이별 이동의 흐름을 지도 위에서 봅니다. 시군구별 인구 전망·집값 부담·전세가율도 함께.">
   <div class="map-page">
+    <h1 class="sr-only">지도로 보기</h1>
     <aside class="map-side" aria-label="지표 선택">
       <div class="map-search">
         <input type="search" id="mp-q" placeholder="동네·아파트·주소 검색" autocomplete="off" aria-label="장소 검색" />
@@ -252,7 +253,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   :global(.mp-hd) { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
   :global(.mp-fold) { flex: none; width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); background: var(--surface-1); color: var(--text-secondary); font-size: 15px; line-height: 1; cursor: pointer; }
   :global(.mp-help) { flex: none; }
-  :global(.mp-help summary) { list-style: none; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border, rgba(127, 127, 127, 0.4)); color: var(--text-muted); font-size: 12px; font-weight: 700; display: grid; place-items: center; cursor: pointer; user-select: none; }
+  :global(.mp-help summary) { list-style: none; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border, rgba(127, 127, 127, 0.4)); color: var(--text-muted); font-size: 12px; font-weight: 700; display: grid; place-items: center; cursor: pointer; user-select: none; }
   :global(.mp-help summary::-webkit-details-marker) { display: none; }
   :global(.mp-help[open] summary) { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
   :global(.mp-help-body) { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: min(288px, 80vw); box-sizing: border-box; padding: 10px 12px; border-radius: 10px; background: var(--surface-1); border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16); font-size: 13px; line-height: 1.6; color: var(--text-secondary); font-weight: 400; }
@@ -264,6 +265,9 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
   .map-time input[type="range"] { width: 100%; margin: 0; accent-color: var(--series-2); }
   :global(.map-time .ticks) { position: absolute; left: 0; right: 0; bottom: 0; height: 12px; font-size: 11px; color: var(--text-muted); }
   :global(.map-time .ticks span) { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  /* 양 끝 눈금 글자는 카드 밖으로 나가지 않게 안쪽으로 붙인다 */
+  :global(.map-time .ticks span[style^="left:0%"]) { transform: none; }
+  :global(.map-time .ticks span[style^="left:100%"]) { transform: translateX(-100%); }
   :global(.map-time .ticks span.proj) { color: var(--series-2); font-weight: 600; }
   :global(.map-time .scen) { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: var(--text-secondary); }
   :global(.map-time .scen .mp-chips button) { font-size: 12px; padding: 3px 9px; }
@@ -335,6 +339,8 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     :global(.map-year b) { font-size: 22px; }
     :global(.map-year span) { font-size: 12px; }
     .map-time { bottom: 30px; padding: 8px 10px; }
+    /* 휴대폰에선 확대·축소 버튼이 연도 카드에 가려진다. 두 손가락으로 확대하면 되므로 숨긴다 */
+    @media (pointer: coarse) { :global(.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group) { display: none; } }
     .map-page { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
     .map-side { order: 2; border-right: 0; max-height: none; }
     .map-wrap { order: 1; height: 62vh; }

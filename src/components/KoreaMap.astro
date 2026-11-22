@@ -20,6 +20,7 @@ export interface MapMetric {
   frames?: { labels: (string | number)[]; values: Record<string, number | null>[]; start?: number; projFrom?: number };
 }
 interface Props {
+  h?: 2 | 3;
   level?: "sgg" | "sido";
   metrics: MapMetric[];
   names: Record<string, string>;
@@ -37,7 +38,9 @@ interface Props {
   id?: string;
   compact?: boolean;
 }
-const { level = "sgg", metrics, names, links = {}, notes = {}, highlight, only, zoom = level === "sgg" && !only, rank = level === "sido" ? 17 : 8, title, sub, autoplay = false, speed, id, compact = false } = Astro.props;
+const { level = "sgg", metrics, names, links = {}, notes = {}, highlight, only, zoom = level === "sgg" && !only, rank = level === "sido" ? 17 : 8, title, sub, autoplay = false, speed, id, compact = false, h = 3 } = Astro.props;
+// 페이지에서 h1 바로 다음에 오는 카드면 h={2}로 제목 단계를 건너뛰지 않게 한다
+const H = h === 2 ? "h2" : "h3";
 const G = geo as any;
 const shapes: Record<string, any> = level === "sgg" ? G.sgg : G.sido;
 const ids = Object.keys(shapes).filter((k) => (only ? shapes[k].sido === only : true));
@@ -72,7 +75,7 @@ const SIDO_NAMES: Record<string, string> = { "11": "서울", "26": "부산", "27
 const hasRank = rank !== false && !only;
 ---
 <figure class={`card kmap ${compact ? "kmap-compact" : ""}`} style="margin:0" id={id} data-kmap>
-  {title && <h3 class="card-title">{title}</h3>}
+  {title && <H class="card-title">{title}</H>}
   {sub && <p class="card-sub">{sub}</p>}
   {(metrics.length > 1 || zoom) && (
     <div class="kmap-controls">

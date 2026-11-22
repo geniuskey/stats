@@ -107,7 +107,7 @@ const demBars = (key: "top" | "bottom") => {
           시군구 229곳의 연령별 인구 추계에 요양 정원·요양보호사·의사·소아과 통계와 연령별 진료비를 결합해, 동네마다 어떤 돌봄이 얼마나 모자라게 될지 계산했습니다.
         </p>
       </div>
-      <ChartSwitch views={[{ label: "수요 지수", spec: demandSpec }]} table={demandTable} title={`인구는 줄어도 의료 수요는 는다 (${by} = 1)`} sub={`의료 수요 지수 = 연령별 1인당 진료비 × 연령별 인구 (전국 · ${pastYears.join("·")} 실측, ${by + 1}~ 중위 추계)`} />
+      <ChartSwitch views={[{ label: "수요 지수", spec: demandSpec }]} table={demandTable} h={2} title={`인구는 줄어도 의료 수요는 는다 (${by} = 1)`} sub={`의료 수요 지수 = 연령별 1인당 진료비 × 연령별 인구 (전국 · ${pastYears.join("·")} 실측, ${by + 1}~ 중위 추계)`} />
     </section>
 
     <div class="grid grid-4">

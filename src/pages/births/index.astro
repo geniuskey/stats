@@ -125,12 +125,12 @@ const log = d.log as any[];
         <div class="eyebrow">올해 아기는 몇 명 태어날까? · 월별 출생 × 혼인 × 과거 오차</div>
         <h1>{year}년 아기, 약 {man(h.births)}명이 태어납니다</h1>
         <p class="lede">
-          통계청의 연간 출생 통계는 이듬해 2월에야 확정됩니다. 하지만 매달 나오는 출생아 수만으로도 올해 숫자를 꽤 정확히 짐작할 수 있습니다.
+          통계청의 연간 출생 통계는 이듬해 2월에야 확정됩니다. 하지만 매달 나오는 출생아 수만으로도 올해 숫자를 꽤 정확히 짐작할 수 있습니다.{" "}
           {asofLabel}까지의 월별 자료로 <strong>{year}년 출생아와 합계출산율을 미리 계산</strong>하고, 혼인 건수로 <strong>{nextYear}년 출생아</strong>까지 예측했습니다.
         </p>
         <p class="lede" style="font-size:16px">이 계산법은 1995년부터 해마다 "그해 {M}월까지만 알았다면" 조건으로 다시 돌려 봤습니다. 평균 오차는 <strong>{pct(h.mae, 1)}</strong>입니다.</p>
       </div>
-      <Chart spec={annualSpec} title="출생아 수: 확정치와 나우캐스트" sub={`${LA}년까지 확정, ${year}년은 ${asofLabel} 자료 기준 추정, ${nextYear}년은 혼인 시차 모형 예측`} />
+      <Chart spec={annualSpec} h={2} title="출생아 수: 확정치와 나우캐스트" sub={`${LA}년까지 확정, ${year}년은 ${asofLabel} 자료 기준 추정, ${nextYear}년은 혼인 시차 모형 예측`} />
     </section>
 
     <div class="grid grid-4">

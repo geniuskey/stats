@@ -7,18 +7,21 @@ interface View {
   note?: string;
 }
 interface Props {
+  h?: 2 | 3;
   views: View[];
   table?: { headers: string[]; rows: (string | number)[][] };
   title?: string;
   sub?: string;
   id?: string;
 }
-const { views, table, title, sub, id } = Astro.props;
+const { views, table, title, sub, id, h = 3 } = Astro.props;
+// 페이지에서 h1 바로 다음에 오는 카드면 h={2}로 제목 단계를 건너뛰지 않게 한다
+const H = h === 2 ? "h2" : "h3";
 ---
 <figure class="card chart-switch" style="margin:0" id={id} data-switch>
   <div class="cs-head">
     <div>
-      {title && <h3 class="card-title">{title}</h3>}
+      {title && <H class="card-title">{title}</H>}
       {sub && <p class="card-sub">{sub}</p>}
     </div>
     <div class="seg seg-sm" role="tablist" aria-label="차트 형태" hidden={views.length < 2}>

@@ -5,7 +5,7 @@
   --surface-2: #f3f2ee;
   --text-primary: #0b0b0b;
   --text-secondary: #52514e;
-  --text-muted: #898781;
+  --text-muted: #6c6b66;
   --grid: #e1e0d9;
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, 0.1);
@@ -48,7 +48,7 @@
     --surface-2: #232321;
     --text-primary: #f0efec;
     --text-secondary: #c3c2b7;
-    --text-muted: #898781;
+    --text-muted: #93918a;
     --grid: #2c2c2a;
     --axis: #383835;
     --border: rgba(255, 255, 255, 0.1);
@@ -84,7 +84,7 @@
   --surface-2: #232321;
   --text-primary: #f0efec;
   --text-secondary: #c3c2b7;
-  --text-muted: #898781;
+  --text-muted: #93918a;
   --grid: #2c2c2a;
   --axis: #383835;
   --border: rgba(255, 255, 255, 0.1);
@@ -292,7 +292,7 @@ p {
   font-weight: 600;
 }
 .nav-panel a[aria-current="page"] .nav-item-title {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .nav-item-desc {
   color: var(--text-muted);
@@ -453,6 +453,16 @@ figure {
 .grid > * {
   min-width: 0;
 }
+/* 옆 카드가 길어도 짧은 카드를 늘이지 않는다 (아래에 빈 공간이 생기지 않게).
+   같은 모양 카드가 줄지어 서는 홈 서비스 목록·설명 카드는 높이를 맞춘다. */
+.grid-2,
+.grid-3 {
+  align-items: start;
+}
+.grid:has(> .svc),
+.grid.how {
+  align-items: stretch;
+}
 .grid-2 {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -604,7 +614,8 @@ label.field {
   cursor: pointer;
 }
 .btn-primary {
-  background: var(--accent);
+  /* 흰 글자와 대비 4.5:1 이상이 되도록 강조색을 조금 어둡게 */
+  background: color-mix(in srgb, var(--accent) 86%, #000);
   color: #fff;
   border-color: transparent;
 }
@@ -612,9 +623,13 @@ label.field {
 /* tables */
 .table-wrap {
   overflow-x: auto;
+  /* 오른쪽에 가린 열이 있으면 가장자리 그림자로 알린다 (스크롤 끝에 닿으면 사라짐) */
+  background:
+    linear-gradient(to left, var(--surface-1) 30%, transparent) right center / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.14), transparent) right center / 12px 100% no-repeat scroll,
+    var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface-1);
 }
 table {
   border-collapse: collapse;
@@ -649,6 +664,19 @@ tbody tr:hover {
 th button.sort {
   all: unset;
   cursor: pointer;
+  display: inline-block;
+  padding: 4px 0;
+}
+th button.sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* 표·막대 목록 안 지역 링크: 누르기 쉬운 높이(24px 이상) */
+td a,
+.bar-name a {
+  display: inline-block;
+  padding: 3px 0;
 }
 th button.sort::after {
   content: " ↕";
@@ -661,6 +689,7 @@ details.table-view {
 }
 details.table-view summary {
   cursor: pointer;
+  padding: 4px 0;
   font-size: 13px;
   color: var(--text-secondary);
 }
@@ -980,6 +1009,9 @@ pre.formula {
 .method table {
   display: block;
   overflow-x: auto;
+  background:
+    linear-gradient(to left, var(--surface-1) 30%, transparent) right center / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.14), transparent) right center / 12px 100% no-repeat scroll;
   max-width: 100%;
 }
 .method pre {
@@ -1070,7 +1102,7 @@ pre.formula {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 18px;
+  height: 24px;
   background: transparent;
   margin: 0;
   position: relative;
@@ -1300,7 +1332,10 @@ pre.formula {
   color: var(--text-primary);
   transform-origin: left;
 }
-.dist-bar span b { font-weight: 700; background: color-mix(in srgb, var(--surface-1) 78%, transparent); padding: 0 5px; border-radius: 5px; }
+.dist-bar span { container-type: inline-size; }
+/* 숫자가 들어가지 않을 만큼 좁은 칸은 숫자를 숨긴다 (아래 범례에 개수가 모두 있다) */
+@container (max-width: 36px) { .dist-bar span b { display: none; } }
+.dist-bar span b { white-space: nowrap; font-weight: 700; background: color-mix(in srgb, var(--surface-1) 78%, transparent); padding: 0 5px; border-radius: 5px; }
 .dist-bar.reveal { opacity: 1; transform: none; }
 .dist-bar.reveal span { transform: scaleX(0); transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i, 0) * 0.12s); }
 .dist-bar.reveal.in span { transform: none; }
@@ -1325,7 +1360,7 @@ pre.formula {
 .svc .spark { margin-top: 4px; }
 .svc-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; color: var(--text-muted); }
 .how { counter-reset: how; }
-.how .card { position: relative; }
+.how .card { position: relative; padding-right: 56px; }
 .how .card::before {
   counter-increment: how;
   content: counter(how);

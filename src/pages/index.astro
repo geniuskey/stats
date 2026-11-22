@@ -73,7 +73,7 @@ const cards = HEADLINES;
         </div>
       </div>
       <div class="home-map">
-        <KoreaMap metrics={dongneMetrics({ keys: ["ch", "old"] }).map((m) => (m.frames ? { ...m, desc: undefined, frames: { ...m.frames, start: 0 } } : m))} names={dongneNames()} notes={dongneNotes()} links={dongneLinks(base)} rank={false} zoom={false} autoplay speed={520} compact title="시군구 인구, 2025 → 2045" sub="인구 변화율 · 65세 이상 비중 (중위 추계)" />
+        <KoreaMap metrics={dongneMetrics({ keys: ["ch", "old"] }).map((m) => (m.frames ? { ...m, desc: undefined, frames: { ...m.frames, start: 0 } } : m))} names={dongneNames()} notes={dongneNotes()} links={dongneLinks(base)} rank={false} zoom={false} autoplay speed={520} compact h={2} title="시군구 인구, 2025 → 2045" sub="인구 변화율 · 65세 이상 비중 (중위 추계)" />
       </div>
     </section>
 

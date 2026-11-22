@@ -282,7 +282,7 @@ const simJson = JSON.stringify({
     <section class="section">
       <h2>월급으로 살 수 있는 양은 어떻게 변했나</h2>
       <p class="section-desc">
-        같은 비율의 평균 월급으로 그 품목을 {REF}년보다 몇 % 더(덜) 살 수 있는지입니다. (임금 상승률 ÷ 품목 가격 상승률) − 1.
+        같은 비율의 평균 월급으로 그 품목을 {REF}년보다 몇 % 더(덜) 살 수 있는지입니다. (임금 상승률 ÷ 품목 가격 상승률) − 1.{" "}
         {worstItem.name}은 가격이 {pct(worstItem.priceChange, 0, true)} 올라 구매력이 {pct(worstItem.powerChange, 1, true)}, {bestItem.name}은(는) {pct(bestItem.powerChange, 0, true)}입니다.
         물가 전체(총지수)로는 {pct(cpiItem.powerChange, 1, true)}.
       </p>

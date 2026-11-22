@@ -204,7 +204,7 @@ const storeCountSpec = {
         {r.oversupply && <span> <span class="badge"><span class="dot" style="background:var(--serious)"></span>점포 과잉 신호</span></span>}
       </p>
       </div>
-      <KoreaMap metrics={mapMetrics} names={names} links={links} notes={notes} only={r.sidoCode} highlight={r.id} compact title={`${sidoSum?.name ?? r.sido} 안에서 ${r.name}`} sub="굵은 테두리 = 이 지역. 다른 지역을 누르면 이동합니다" />
+      <KoreaMap metrics={mapMetrics} names={names} links={links} notes={notes} only={r.sidoCode} highlight={r.id} compact h={2} title={`${sidoSum?.name ?? r.sido} 안에서 ${r.name}`} sub="굵은 테두리 = 이 지역. 다른 지역을 누르면 이동합니다" />
     </section>
 
     <div class="grid grid-4">

@@ -197,7 +197,7 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
       <h1>서울에서 국민평형을 사면, 월소득의 {Math.round(seoul.current.burden)}%가 대출 상환입니다</h1>
       <p class="lede">
         실거래 아파트 가격, 지역별 가구소득, 주택담보대출 금리를 하나로 묶었습니다. 보통 가구가 전용 {A.area}㎡ 아파트를
-        집값의 {A.ltv * 100}%를 빌려 {A.termYears}년 동안 갚는다면 매달 소득의 몇 %가 나가는지 계산한 값이 <strong>주택구입 부담률</strong>입니다.
+        집값의 {A.ltv * 100}%를 빌려 {A.termYears}년 동안 갚는다면 매달 소득의 몇 %가 나가는지 계산한 값이 <strong>주택구입 부담률</strong>입니다.{" "}
         {fy}년 {p1(seoulFirst.burden)}였던 서울의 부담률은 {cy}년 {p1(seoul.current.burden)}가 됐습니다.
       </p>
     </section>
@@ -276,7 +276,7 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
       <h2>전세 재계약, 보증금은 얼마나 올랐나</h2>
       <p class="section-desc">
         2021년 전월세 신고제 이후 실거래에는 갱신 계약 여부, 종전 보증금, 갱신요구권 사용 여부가 함께 기록됩니다.
-        최근 12개월 전세 재계약 {int(SN.nRenew)}건의 보증금 인상률 중앙값은 {pctTxt(SN.renewUp, 1)}입니다.
+        최근 12개월 전세 재계약 {int(SN.nRenew)}건의 보증금 인상률 중앙값은 {pctTxt(SN.renewUp, 1)}입니다.{" "}
         {downPeak && <>역전세가 한창이던 {ymLabel(downPeak.ym)}에는 재계약의 {pctTxt(downPeak.v)}가 보증금을 <strong>내렸습니다</strong>.</>}
       </p>
       <div class="grid grid-4">
