@@ -4,6 +4,7 @@ import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import RegionSearch from "../../components/RegionSearch.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import { dongneMetrics, dongneNames, dongneNotes, dongneLinks } from "../../lib/dongneMap";
 import data from "../../data/dongne.json";
 import { int, compact, pct } from "../../lib/format";
@@ -13,6 +14,14 @@ const d = data as any;
 const R = d.regions as any[];
 const by = d.meta.baseYear;
 const end = d.meta.end;
+// 그림 출처 (작성기관 · 통계명 · KOSIS 표 ID)
+const SRC = {
+  reg: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006)",
+  fert: "통계청 장래인구추계 출산율 시나리오(KOSIS DT_1BPA001·004·402·403)",
+  mig: "통계청 국내인구이동통계 연령별 순이동(KOSIS DT_1B26002)",
+  emp: "고용노동부 사업체노동실태현황 사업체·종사자(KOSIS DT_118N_SAUP*)",
+  vacancy: "통계청 주택총조사 빈집(e-지방지표 DT_1YL202005)",
+};
 const shrink = R.filter((r) => r.m.ch2045 < 0).length;
 const halve = R.filter((r) => r.m.oldHalfYear && r.m.oldHalfYear <= end).length;
 const top = R.slice(0, 10);
@@ -36,6 +45,7 @@ const riskColors: Record<string, string> = { 소멸고위험: "var(--div-neg)", 
       <div class="eyebrow">우리 동네의 미래 · 인구이동 × 출생 × 사업체 × 주택</div>
       <h1>{end}년, 시군구 {R.length}곳 중 {shrink}곳의 인구가 줄어듭니다</h1>
       <p class="lede">주민등록 인구 추계에 청년 순이동, 일자리(사업체 종사자), 빈집, 소멸위험지수를 결합해 동네마다 <strong>지속가능성 지수</strong>를 만들었습니다. 우리 동네를 검색해 보세요.</p>
+      <PageMeta basis={`${by}년 말 주민등록 실측 · ${by + 1}~${end}년 시군구별 자체 추계(저위·중위·고위)`} orgs={["행정안전부", "통계청", "고용노동부"]} />
       <div style="margin-top:20px"><RegionSearch items={search} /></div>
     </section>
     <div class="grid grid-4">
@@ -48,7 +58,7 @@ const riskColors: Record<string, string> = { 소멸고위험: "var(--div-neg)", 
     <section class="section" id="map">
       <h2>지도로 보는 {R.length}개 시군구</h2>
       <p class="section-desc">지표를 고르고 ▶ 로 연도를 재생해 보세요. 시도를 누르면 확대되고, 확대한 뒤 시군구를 누르면 상세 페이지로 갑니다. 오른쪽 순위와 지도는 서로 연동됩니다.</p>
-      <KoreaMap metrics={dongneMetrics()} names={dongneNames()} notes={dongneNotes()} links={dongneLinks(base)} title="시군구 인구 지도" sub="주민등록 실측(~2025) + 자체 추계 중위" />
+      <KoreaMap metrics={dongneMetrics()} names={dongneNames()} notes={dongneNotes()} links={dongneLinks(base)} title="시군구 인구 지도" sub={`주민등록 실측(~${by}) + 자체 추계 중위`} note={`${by + 1}년부터는 예측이 아닌 출산율 중위 시나리오 추계. 지속가능성 지수는 인구 변화·청년 순이동·소멸위험지수·종사자 증감·빈집률을 표준화해 가중합한 상대 지표(50 = 평균).`} source={[SRC.reg, SRC.fert, SRC.mig, SRC.emp, SRC.vacancy]} />
     </section>
 
     <section class="section grid grid-2">

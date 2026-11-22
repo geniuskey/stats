@@ -2,6 +2,7 @@
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/track.json";
 import { int, pct } from "../../lib/format";
 
@@ -41,6 +42,11 @@ const fmtV = (e: any, v: number | null | undefined) => (v == null ? "–" : e.di
 const modTitle: Record<string, string> = { births: "출생", korea: "인구", school: "학교", univ: "대학" };
 const modHref: Record<string, string> = { births: "births/", korea: "korea/", school: "school/", univ: "univ/" };
 const off = d.official as any[];
+// 그림 출처: 숫자 너머 예측(장부·과거 검증) + 채점에 쓴 실측 통계
+const SRC = {
+  pop: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006)",
+  births: "통계청 인구동향조사 월별 출생(KOSIS DT_1B8000G)",
+};
 ---
 <Base title="예측 성적표" active="track" description={`이 사이트의 예측이 얼마나 맞았는지 공개합니다. 시군구 인구 추계 1년 뒤 평균 오차 ${pct(s.pop1y, 1)}, ${s.popEndH}년 뒤 ${pct(s.popEnd, 1)}, 출생아 나우캐스트(8월 기준) ${pct(s.births8m, 1)}.`}>
   <div class="wrap">
@@ -52,6 +58,7 @@ const off = d.official as any[];
         <strong>과거 검증</strong>은 과거 시점의 자료만 가지고 같은 계산을 다시 돌려 그 뒤 실제와 비교하는 것이고,
         <strong>실시간 장부</strong>는 자료를 갱신할 때마다 아직 오지 않은 해의 예측을 적어 두었다가 실측이 나오면 자동으로 채점하는 것입니다. 장부는 <a href="https://github.com/geniuskey/stats/commits/main/src/data/track.json">git 이력</a>에 남아 나중에 고칠 수 없습니다.
       </p>
+      <PageMeta basis={`장부 ${ledger.length}건(채점 ${graded.length} · 대기 ${pending.length}) · 인구 과거 검증 ${pb.base}년 출발 · 채점 ${d.meta.updated}`} orgs={["숫자 너머 예측 장부", "통계청", "행정안전부"]} />
     </section>
 
     <div class="grid grid-4">
@@ -91,7 +98,7 @@ const off = d.official as any[];
       <h2>인구 추계 엔진: {pb.base}년에서 출발했다면</h2>
       <p class="section-desc">우리 동네·학교·상권·의료·대학 모듈이 모두 쓰는 시군구 인구 추계 엔진을 {pb.base}년 말 인구만 가지고 돌려, {pb.base + 1}~{pb.end}년 실제 주민등록 인구와 비교했습니다. 코로나19와 신도시 입주가 겹친 시기라 쉬운 시험은 아닙니다.</p>
       <div class="grid grid-2">
-        <Chart spec={popSpec} table={popTable} title="예측 기간별 시군구 평균 오차" sub={`|예측 ÷ 실제 − 1|의 ${pb.groups.total["1"].n}개 시군구 평균`} />
+        <Chart spec={popSpec} table={popTable} title="예측 기간별 시군구 평균 오차" sub={`|예측 ÷ 실제 − 1|의 ${pb.groups.total["1"].n}개 시군구 평균`} note={`${pb.base}년까지의 자료만으로 같은 추계 엔진을 다시 돌린 결과와 실제 주민등록인구를 비교.`} source={["숫자 너머 인구 추계 엔진(과거 검증)", SRC.pop]} />
         <div class="card">
           <h3 class="card-title">무엇이 맞고 무엇이 틀렸나</h3>
           <ul class="small">
@@ -124,11 +131,7 @@ const off = d.official as any[];
             </table>
           </div>
         </div>
-        <div class="card">
-          <h3 class="card-title"><a href={`${base}births/`}>출생</a>: 몇 월까지 알면 얼마나 정확한가</h3>
-          <p class="card-sub">1995년 이후 해마다 그해 M월까지 자료로 연간 출생아 추정, 최근 20년 평균 오차</p>
-          <Chart spec={btSpec} />
-        </div>
+        <Chart spec={btSpec} title="출생: 몇 월까지 알면 얼마나 정확한가" sub="1995년 이후 해마다 그해 M월까지 자료로 연간 출생아 추정, 최근 20년 평균 오차" note="그해 M월까지의 월별 출생으로 추정한 연간 출생아와 확정치의 평균 절대오차." source={["숫자 너머 출생 나우캐스트(과거 검증)", SRC.births]} />
         <div class="card">
           <h3 class="card-title"><a href={`${base}births/`}>출생</a>: 내년 출생아 (혼인 시차 모형)</h3>
           <p class="card-sub">해마다 전년까지 자료로만 모형을 적합해 1년 앞을 예측. 평균 오차 {pct(b.lagMae, 1)}, "작년과 같다" {pct(b.naiveMae, 1)}</p>

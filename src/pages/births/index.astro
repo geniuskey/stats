@@ -5,6 +5,7 @@ import ChartSwitch from "../../components/ChartSwitch.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/births.json";
 import { pts, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -16,6 +17,9 @@ const { year, month: M, lastAnnual: LA, asof } = d.meta;
 const lastTfr = d.meta.lastTfr ?? LA;
 const asofLabel = `${asof.slice(0, 4)}년 ${+asof.slice(5)}월`;
 const nextYear = year + 1;
+// 그림 출처 (작성기관 · 통계명 · KOSIS 표 ID)
+const SRC = { vital: "통계청 인구동향조사 월·연간 출생·혼인(KOSIS DT_1B8000G)" };
+const prelimNote = `월별 출생·혼인은 잠정치이며 연간 확정 때 바뀔 수 있음.`;
 const man = (v: number) => `${(v / 1e4).toFixed(1)}만`;
 
 // 1) 월별 출생아: 최근 3년 + 올해 실측 + 남은 달 추정
@@ -131,8 +135,9 @@ const log = d.log as any[];
           {asofLabel}까지의 월별 자료로 <strong>{year}년 출생아와 합계출산율을 미리 계산</strong>하고, 혼인 건수로 <strong>{nextYear}년 출생아</strong>까지 예측했습니다.
         </p>
         <p class="lede" style="font-size:16px">이 계산법은 1995년부터 해마다 "그해 {M}월까지만 알았다면" 조건으로 다시 돌려 봤습니다. 평균 오차는 <strong>{pct(h.mae, 1)}</strong>입니다.</p>
+        <PageMeta basis={`${LA}년 확정 · ${asofLabel}까지 월별 잠정치 · ${year}년 나우캐스트, ${nextYear}년 예측`} orgs={["통계청"]} />
       </div>
-      <Chart spec={annualSpec} h={2} title="출생아 수: 확정치와 나우캐스트" sub={`${LA}년까지 확정, ${year}년은 ${asofLabel} 자료 기준 추정, ${nextYear}년은 혼인 시차 모형 예측`} />
+      <Chart spec={annualSpec} h={2} title="출생아 수: 확정치와 나우캐스트" sub={`${LA}년까지 확정, ${year}년은 ${asofLabel} 자료 기준 추정, ${nextYear}년은 혼인 시차 모형 예측`} note={`음영은 과거 같은 시점 추정 오차의 10~90% 구간. ${prelimNote}`} source={SRC.vital} />
     </section>
 
     <div class="grid grid-4">
@@ -146,19 +151,19 @@ const log = d.log as any[];
       <h2>{yoy.every((v) => v != null && v > 0) ? "올해는 매달 작년보다 많습니다" : "월별로 보면"}</h2>
       <p class="section-desc">회색 선은 지난 3년, 파란 실선은 {year}년 실측, 점선은 남은 달 추정입니다. 출생은 1월에 가장 많고 연말로 갈수록 줄어드는 계절성이 강해서, 남은 달은 작년 같은 달에 최근 3개월의 증가율을 곱해 채웠습니다.</p>
       <div class="grid grid-2">
-        <Chart spec={monthlySpec} table={monthlyTable} title="월별 출생아 수" sub={`${year - 3}~${year}년`} />
-        <Chart spec={yoySpec} title="전년 같은 달 대비 증감" sub={`${year}년 1~${M}월`} />
+        <Chart spec={monthlySpec} table={monthlyTable} title="월별 출생아 수" sub={`${year - 3}~${year}년`} note={`점선은 남은 달 추정(${asofLabel} 자료 기준). ${prelimNote}`} source={SRC.vital} />
+        <Chart spec={yoySpec} title="전년 같은 달 대비 증감" sub={`${year}년 1~${M}월`} note={prelimNote} source={SRC.vital} />
       </div>
     </section>
 
     <section class="section">
       <h2>합계출산율도 함께 계산합니다</h2>
       <p class="section-desc">합계출산율은 출생아 수를 가임기 여성 규모로 나눈 값입니다. 해마다 "출생아 ÷ 합계출산율" 비율(여성 인구 규모를 나타냄)이 천천히 움직이는 점을 이용해, 최근 3년 추세로 {year}년 값을 연장한 뒤 출생아 추정치를 나눴습니다. 이 단계만의 과거 오차는 평균 {pct(d.model.tfrDenErrMae, 1)}입니다.</p>
-      <ChartSwitch views={[{ label: "합계출산율", spec: tfrSpec }, { label: "혼인과 출생", spec: marSpec, note: "혼인이 늘면 1~2년 뒤 출생이 따라 늘어납니다" }]} table={annualTable} title="합계출산율·혼인 건수" sub="1990년 이후 확정치와 올해 추정" />
+      <ChartSwitch views={[{ label: "합계출산율", spec: tfrSpec }, { label: "혼인과 출생", spec: marSpec, note: "혼인이 늘면 1~2년 뒤 출생이 따라 늘어납니다" }]} table={annualTable} title="합계출산율·혼인 건수" sub="1990년 이후 확정치와 올해 추정" note={`${year}년 합계출산율은 출생아 추정치에서 환산한 나우캐스트(음영은 추정 범위). ${prelimNote}`} source={SRC.vital} />
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={scatterSpec} title="작년 혼인이 늘면 올해 출생이 는다" sub="점 하나가 한 해. 오른쪽 위로 갈수록 혼인·출생이 함께 증가" />
+      <Chart spec={scatterSpec} title="작년 혼인이 늘면 올해 출생이 는다" sub="점 하나가 한 해. 오른쪽 위로 갈수록 혼인·출생이 함께 증가" note={`1997~${LA}년 연간 확정치.`} source={SRC.vital} />
       <div class="card">
         <h3 class="card-title">{nextYear}년 출생아 예측 모형</h3>
         <p class="card-sub">혼인 후 첫째 출산까지 보통 1~2년이 걸립니다. 그래서 출생아 증가율을 전년·전전년 혼인 증가율로 설명합니다(1996~{LA}년, 최소제곱).</p>
@@ -172,7 +177,7 @@ const log = d.log as any[];
       <h2>시도별로 보면</h2>
       <p class="section-desc">{year}년 1~{M}월 출생아는 17개 시도 중 {sidos.filter((s) => s.ytdChange > 0).length}곳에서 작년보다 많습니다. 증가율이 가장 높은 곳은 {sidoBars[0].name}({pct(sidoBars[0].value, 1, true)}), 가장 낮은 곳은 {sidoBars.at(-1)!.name}({pct(sidoBars.at(-1)!.value, 1, true)})입니다.</p>
       <div class="grid grid-2">
-        <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} rank={false} compact title="시도별 출생아 증감" sub={`${asofLabel} 자료 기준`} />
+        <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} rank={false} compact title="시도별 출생아 증감" sub={`${asofLabel} 자료 기준`} source={SRC.vital} />
         <div class="card">
           <h3 class="card-title">1~{M}월 누계, 전년 대비</h3>
           <BarList items={sidoBars} format="pct1S" />
@@ -191,7 +196,7 @@ const log = d.log as any[];
     </section>
 
     <section class="section grid grid-2" id="backtest">
-      <Chart spec={btSpec} title="몇 월까지 알면 얼마나 정확한가" sub={`과거 20년, 연간 출생아 추정의 평균 절대오차. 진한 막대는 ${btMonth}월 기준`} />
+      <Chart spec={btSpec} title="몇 월까지 알면 얼마나 정확한가" sub={`과거 20년, 연간 출생아 추정의 평균 절대오차. 진한 막대는 ${btMonth}월 기준`} note="해마다 그해 해당 월까지의 자료만으로 같은 방법을 다시 돌린 추정치와 확정치의 차이(의사 실시간 검증)." source={SRC.vital} />
       <div class="card">
         <h3 class="card-title">과거 검증: "{btMonth}월까지만 알았다면"</h3>
         <p class="card-sub">해마다 1~{btMonth}월 자료만으로 같은 방법({methodName[bt.method] ?? "–"})을 돌린 추정치와 확정치의 차이</p>

@@ -5,6 +5,8 @@ import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
+import FigureFoot from "../../components/FigureFoot.astro";
 import data from "../../data/wage.json";
 import { pts } from "../../lib/series";
 import { int, compact, pct, won } from "../../lib/format";
@@ -19,7 +21,17 @@ const LAST = M.lastYear as number;
 const ref = nat.find((r) => r.year === REF);
 const b = nat.find((r) => r.year === BASE);
 const lastRow = nat.find((r) => r.year === LAST);
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  wage: "고용노동부 사업체노동력조사 월평균 임금총액(KOSIS DT_118N_MON041·MON051·MON054)",
+  cpi: "통계청 소비자물가지수(KOSIS DT_1J22001)",
+  living: "통계청 생활물가지수(KOSIS DT_1J22005)",
+  tax: "소득세법·4대보험 연도별 요율",
+  regWage: "e-지방지표 시도별 상용 월평균 임금(KOSIS DT_1YL15006)",
+};
 const estNote = `${LAST}년 임금 ${M.estimate2026.wageMonths}개월·물가 ${M.estimate2026.cpiMonths}개월 자료로 만든 잠정치`;
+const deflNote = `${BASE}년 원화 가치로 환산. ${LAST}년은 ${M.estimate2026.wageMonths}개월 임금·${M.estimate2026.cpiMonths}개월 물가로 만든 잠정치.`;
+const taxNote = "세후는 부양가족 없는 1인 근로자 가정의 간이 계산(소득세·지방소득세·4대보험 근로자 부담분).";
 
 // 1) 2015=100 지수 비교
 const idx = (k: string) => nat.map((r) => [r.year, Math.round((r[k] / ref[k]) * 1000) / 10] as [number, number]);
@@ -204,6 +216,7 @@ const simJson = JSON.stringify({
         고용노동부 평균 임금에 소비자물가·생활물가·주거비 지수, 그리고 연도별 세법과 4대보험 요율을 결합했습니다.{" "}
         {REF}년 평균 월급 {won(ref.nominal)}은 {BASE}년 {won(b.nominal)}이 되었지만, 물가와 세금·보험료를 빼고 나면 실제로 늘어난 구매력은 훨씬 작습니다.
       </p>
+      <PageMeta basis={`${M.firstYear}~${BASE}년 실측 · ${LAST}년 잠정(임금 ${M.estimate2026.wageMonths}개월·물가 ${M.estimate2026.cpiMonths}개월) · ${Math.max(...Object.keys(S.recent5.path).map(Number))}년까지 물가 시나리오`} orgs={["고용노동부", "통계청"]} />
     </section>
 
     <div class="grid grid-4">
@@ -223,7 +236,7 @@ const simJson = JSON.stringify({
         { label: "지수", spec: idxSpec },
         { label: "실질 증감률", spec: yoySpec, note: "실질 월급(소비자물가 기준)의 전년 대비 변화. 빨간 막대는 월급이 물가를 따라가지 못한 해입니다. * 잠정" },
         { label: "명목 증감률", spec: yoyNomSpec, note: "명목 월급의 전년 대비 변화. 실질 증감률과 비교하면 물가가 가져간 몫이 보입니다. * 잠정" },
-      ]} table={idxTable} title={`평균 월급 지수 (${REF}=100)`} sub="1인 이상 사업체 전체 근로자 월평균 임금총액 · 같은 데이터를 지수 선 / 연간 증감률 막대로 바꿔 볼 수 있습니다" />
+      ]} table={idxTable} title={`평균 월급 지수 (${REF}=100)`} sub="1인 이상 사업체 전체 근로자 월평균 임금총액 · 같은 데이터를 지수 선 / 연간 증감률 막대로 바꿔 볼 수 있습니다" note={`${deflNote} ${taxNote}`} source={[SRC.wage, SRC.cpi, SRC.living, SRC.tax]} />
     </section>
 
     <section class="section grid grid-2">
@@ -231,7 +244,7 @@ const simJson = JSON.stringify({
         { label: "실질 월급", spec: lvlSpec },
         { label: "월급 구성", spec: compSpec, note: "명목 월급이 실수령·4대보험·세금으로 나뉘는 모습 (그해 원화). * 잠정" },
         { label: "공제율", spec: burdenRateSpec },
-      ]} table={lvlTable} title={`실질 월급 (${BASE}년 원화 가치)`} sub="세전 / 세금·4대보험 차감 후" />
+      ]} table={lvlTable} title={`실질 월급 (${BASE}년 원화 가치)`} sub="세전 / 세금·4대보험 차감 후" note={`${deflNote} ${taxNote}`} source={[SRC.wage, SRC.cpi, SRC.tax]} />
       <div class="card insight">
         <h3 class="card-title">실질임금이 멈췄던 3년</h3>
         <p>
@@ -289,7 +302,7 @@ const simJson = JSON.stringify({
       <ChartSwitch views={[
         { label: "구매력 레이스", spec: raceSpec, note: `${REF}=100. ▶ 를 누르면 해마다 순위가 바뀌는 모습을 재생합니다. 파란 막대는 ${LAST}년까지 구매력이 늘어난 품목, 빨간 막대는 줄어든 품목, 회색은 물가 전체입니다.` },
         { label: "추이", spec: itemLineSpec, note: "대표 품목의 구매력 지수 추이. 100 아래로 내려가면 같은 월급으로 그 품목을 덜 살 수 있다는 뜻입니다." },
-      ]} id="items" title="품목별 구매력 지수" sub={`평균 월급으로 살 수 있는 양, ${REF}=100`} />
+      ]} id="items" title="품목별 구매력 지수" sub={`평균 월급으로 살 수 있는 양, ${REF}=100`} note="(임금 상승률 ÷ 품목 가격지수 상승률) × 100. 가격지수 기반 상대 비교이며 절대 가격이 아님." source={[SRC.wage, SRC.cpi]} />
       <div class="card" style="margin-top:16px">
         <h3 class="card-title">{REF}→{LAST} 구매력 변화</h3>
         <p class="card-sub">(임금 상승률 ÷ 품목 가격 상승률) − 1</p>
@@ -303,12 +316,13 @@ const simJson = JSON.stringify({
     <section class="section">
       <h2>어디서, 어떤 일을 하느냐에 따라</h2>
       <p class="section-desc">시도별 실질 상용임금은 각 시도의 소비자물가로 나눠 계산했습니다. 지표를 바꾸거나 ▶ 로 {REF}년부터의 변화를 재생해 보세요.</p>
-      <KoreaMap level="sido" metrics={wageMap} names={regNames} title="시도별 실질 상용임금" sub={`e-지방지표 시도별 상용근로자 월평균 임금 ÷ 시도 소비자물가 (${BASE}년 원화)`} />
+      <KoreaMap level="sido" metrics={wageMap} names={regNames} title="시도별 실질 상용임금" sub={`e-지방지표 시도별 상용근로자 월평균 임금 ÷ 시도 소비자물가 (${BASE}년 원화)`} note="각 시도 소비자물가로 디플레이트. 세종은 2020년부터." source={[SRC.regWage, SRC.cpi]} />
       <div class="grid grid-2" style="margin-top:16px">
-        <figure class="card" style="margin:0">
+        <figure class="card" style="margin:0" id="fig-ind-scatter">
           <h3 class="card-title">임금이 높던 산업이 더 올랐나?</h3>
           <p class="card-sub">가로: {REF}년 실질 상용임금 · 세로: {REF}→{BASE} 실질 변화 · 점선: 전체 평균({pct(H.realChange2015, 1, true)})</p>
           <div class="chart" data-chart><script type="application/json" set:html={JSON.stringify(indScatter).replace(/</g, "\\u003c")} /></div>
+          <FigureFoot note="산업별 상용근로자 임금총액을 전국 소비자물가로 디플레이트." source={[SRC.wage, SRC.cpi]} />
         </figure>
         <div class="card">
           <h3 class="card-title">산업별 실질 상용임금 변화</h3>
@@ -325,7 +339,7 @@ const simJson = JSON.stringify({
         최근 5년 같은 고물가({pct(S.recent5.inflation, 1)})가 계속되면 2030년 세후 실질 월급은 {won(S.recent5.path[2030].net)}로 {BASE}년({won(b.netReal)})과 거의 같고,
         물가가 목표치 2%로 안정되면 {won(S.target.path[2030].net)}입니다. 물가 1%p 남짓의 차이가 세후 월 {won(scenNetGap)}의 차이를 만듭니다.
       </p>
-      <Chart spec={scenSpec} table={scenTable} title={`실질 월급 시나리오 (${BASE}년 원화, 세전)`} sub="점선: 물가 가정별 경로" />
+      <Chart spec={scenSpec} table={scenTable} title={`실질 월급 시나리오 (${BASE}년 원화, 세전)`} sub="점선: 물가 가정별 경로" note={`예측이 아닌 조건부 시나리오. 명목 임금은 ${BASE - 5}~${BASE}년 연평균 증가율 유지, 물가만 가정별로 다름.`} source={[SRC.wage, SRC.cpi]} />
       <div class="card" id="wsim" style="margin-top:16px">
         <h3 class="card-title">직접 정해 보는 2030년</h3>
         <p class="card-sub">명목 임금 상승률과 물가 상승률을 바꾸면 실질 월급 경로를 다시 계산합니다 (세전, {BASE}년 원화).</p>

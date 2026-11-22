@@ -72,7 +72,7 @@ const ld = title === "홈"
       } catch (e) {}
     </script>
   </head>
-  <body>
+  <body id="top" data-updated={updated.updated} data-page-title={title === "홈" ? "숫자 너머" : title}>
     <header class="site-header">
       <div class="wrap">
         <a class="brand" href={base}>
@@ -128,6 +128,17 @@ const ld = title === "홈"
       import { autoMount } from "../lib/charts";
       import { autoMountMaps } from "../lib/map";
       import { initMotion } from "../lib/anim";
+      import { initFigures } from "../lib/figure";
+      import { initToc } from "../lib/toc";
+      initFigures();
+      initToc();
+      // 같은 제목의 그림이 한 페이지에 둘 이상이면 앵커가 겹치지 않게 -2, -3을 붙인다
+      const seen = new Map<string, number>();
+      document.querySelectorAll<HTMLElement>("figure[id^='fig-']").forEach((f) => {
+        const n = (seen.get(f.id) ?? 0) + 1;
+        seen.set(f.id, n);
+        if (n > 1) f.id = `${f.id}-${n}`;
+      });
       const btn = document.getElementById("theme-btn");
       btn?.addEventListener("click", () => {
         const root = document.documentElement;

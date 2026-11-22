@@ -6,6 +6,8 @@ import dongne from "../../data/dongne.json";
 import housing from "../../data/housing.json";
 import { int, compact } from "../../lib/format";
 import { quantile, distMean } from "../../lib/me";
+import PageMeta from "../../components/PageMeta.astro";
+import FigureFoot from "../../components/FigureFoot.astro";
 
 const M = me as any;
 const K = korea as any;
@@ -64,6 +66,7 @@ const avg = {
       </p>
       <p class="privacy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
         입력값은 이 브라우저 안에서만 계산합니다. 서버로 보내지도, 저장하지도 않습니다. 새로고침하면 지워집니다.</p>
+      <PageMeta basis={`연봉 ${S.year}년 귀속 · 가구 ${HH.year}년 조사(소득 ${HH.incomeYear}년) · 생명표 ${M.life.year}년 · 인구 ${popBase}년 말`} orgs={["국세청", "통계청", "한국은행", "금융감독원", "행정안전부"]} />
     </section>
 
     <section class="card" id="me-form" aria-label="내 정보 입력">
@@ -115,6 +118,7 @@ const avg = {
         <h2 class="card-title">한눈에 보는 나의 위치</h2>
         <p class="card-sub">각 줄에서 오른쪽일수록 상위입니다. 가운데 점선이 딱 중간(50%)입니다.</p>
         <div id="profile-rows" class="profile-rows" role="list"></div>
+        <FigureFoot note="공개된 구간별 인원·분위 경계값을 누적 분포로 잇고, 최상위 구간 위는 파레토 분포로 근사한 위치입니다." source={["국세청 근로소득 연말정산 신고현황(KOSIS DT_13301N_A424)", "통계청 임금근로일자리 소득(KOSIS DT_1EP_2006, DT_1EP_2005)", "통계청·한국은행·금융감독원 가계금융복지조사(KOSIS DT_1HDAAA21, DT_1HDAAB03, DT_1HDAAA06)", "통계청 완전생명표(KOSIS DT_1B42)", "행정안전부 주민등록인구"]} csv={false} />
       </figure>
 
       <div class="grid grid-2" id="me-cards" style="margin-top:16px"></div>
@@ -289,8 +293,18 @@ const avg = {
 
   // ---------------------------------------------------------------- 렌더링
   type Row = { name: string; sub: string; p: number; val?: string; floor?: number };
-  const card = (title: string, sub: string, body: string) =>
-    `<article class="card mc reveal in"><h3 class="card-title">${title}</h3><p class="card-sub">${sub}</p>${body}</article>`;
+  // 카드마다 원자료를 밝힌다 (그림 하단 '자료' 줄과 같은 모양)
+  const CARD_SRC: Record<string, string> = {
+    나이: "행정안전부 주민등록인구",
+    "남은 시간": "통계청 완전생명표(KOSIS DT_1B42)",
+    연봉: "국세청 근로소득 연말정산 신고현황(KOSIS DT_13301N_A424) · 통계청 임금근로일자리 소득(KOSIS DT_1EP_2006, DT_1EP_2005)",
+    "우리 집 연소득": "통계청·한국은행·금융감독원 가계금융복지조사(KOSIS DT_1HDAAA21, DT_1HDAAB03, DT_1HDAAA06)",
+    "집 한 채까지": "한국부동산원 아파트 매매 실거래가격(KOSIS DT_KAB_11672_S15) · 가계금융복지조사",
+    "우리 집 순자산": "통계청·한국은행·금융감독원 가계금융복지조사(KOSIS DT_1HDAAA21, DT_1HDAAA06)",
+  };
+  const REGION_SRC = "행정안전부 주민등록인구 → 숫자 너머 인구 추계(중위)";
+  const card = (title: string, sub: string, body: string, src = CARD_SRC[title] ?? REGION_SRC) =>
+    `<article class="card mc reveal in"><h3 class="card-title">${title}</h3><p class="card-sub">${sub}</p>${body}<div class="fig-foot"><div class="fig-cap"><p><span class="fig-cap-k">자료</span><span>${src}</span></p></div></div></article>`;
   const subRows = (rows: [string, string][]) => (rows.length ? `<div class="sub">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>` : "");
 
   function run() {

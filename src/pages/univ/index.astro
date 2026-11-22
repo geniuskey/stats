@@ -5,6 +5,7 @@ import ChartSwitch from "../../components/ChartSwitch.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/univ.json";
 import { pts, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -103,6 +104,13 @@ const capShock = (() => {
   return c.reduce((a: number, s: any) => a + s.change, 0) / c.length;
 })();
 const bt = d.backtest.regional as any[];
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  ent: "교육부·한국교육개발원 교육기본통계 대학·교육대·산업대·전문대 개황 입학자수(KOSIS DT_1963003_013, _012, _016, _011)",
+  grad: "교육기본통계 고등학교 개황 졸업자수(KOSIS DT_1963003_004)",
+  pop: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006) + 숫자 너머 인구 추계",
+};
+const ratioNote = `입학 수요 = 18세 인구(전년 말) × 18세 1명당 입학자(기준 ${ratio.toFixed(2)}, 범위 ${ratioLow.toFixed(2)}~${ratioHigh.toFixed(2)}). KOSIS에 입학정원 표가 없어 ${L}년 실제 입학자를 '지금 입학 규모'로 씀.`;
 ---
 <Base title="대학은 얼마나 남을까?" active="univ" description={`18세 인구 추계와 대학·전문대 입학자 통계를 결합한 시도별 대학 충원 전망. 지금 입학 규모(${compact(h.cap)}명)가 그대로라면 2040년에는 자리의 약 ${pct(1 - h.fill2040)}가 빕니다.`}>
   <div class="wrap">
@@ -115,8 +123,9 @@ const bt = d.backtest.regional as any[];
           지금 4년제·전문대 입학자는 <strong>{compact(h.cap)}명</strong>인데, 18세 인구는 {compact(h.age18Now)}명에서 2040년 <strong>{compact(h.age18_2040)}명</strong>으로 줄어듭니다.
         </p>
         <p class="lede" style="font-size:16px">줄어드는 학생이 어디서 먼저 빠지는지는 과거 충원 자료로 시도·학교 유형마다 따로 추정했습니다.</p>
+        <PageMeta basis={`${L}년 실측 입학자 · ${L + 1}~${projEnd}년 추계(18세 1명당 입학자 ${ratioLow.toFixed(1)}~${ratioHigh.toFixed(1)} 범위)`} orgs={["교육부·한국교육개발원", "행정안전부"]} />
       </div>
-      <Chart spec={waffle} h={2} title={`입학 자리 100칸: ${L} → 2045`} sub="지금 입학 규모 대비 채워지는 자리 (기준 시나리오)" />
+      <Chart spec={waffle} h={2} title={`입학 자리 100칸: ${L} → 2045`} sub="지금 입학 규모 대비 채워지는 자리 (기준 시나리오)" note={ratioNote} source={[SRC.ent, SRC.pop]} />
     </section>
 
     <div class="grid grid-4">
@@ -129,7 +138,7 @@ const bt = d.backtest.regional as any[];
     <section class="section">
       <h2>자리는 그대로, 사람은 반으로</h2>
       <p class="section-desc">실선은 실제 입학자, 점선은 18세 인구로 계산한 입학 수요입니다. 2030년대 초반까지는 2007~2012년생(황금돼지띠·흑룡띠)이 받쳐 주지만, 2035년부터 2016년 이후 출생 급감 세대가 입학하면서 수요가 빠르게 줄어듭니다.</p>
-      <ChartSwitch views={[{ label: "입학 수요", spec: demandSpec }, { label: "1명당 자리", spec: seatSpec, note: `18세 인구가 줄던 2020~2025년, 실제 입학자는 18세 1명당 ${n.ratioHist["2019"].toFixed(2)}명에서 ${n.ratioHist["2025"].toFixed(2)}명으로 늘었습니다. 재수생·만학도·외국인 유학생으로 메운 결과입니다.` }]} table={demandTable} title="대학 입학 수요와 18세 인구" sub={`2005~${projEnd}년, 4년제(교육대·산업대 포함)와 전문대 합계`} />
+      <ChartSwitch views={[{ label: "입학 수요", spec: demandSpec }, { label: "1명당 자리", spec: seatSpec, note: `18세 인구가 줄던 2020~2025년, 실제 입학자는 18세 1명당 ${n.ratioHist["2019"].toFixed(2)}명에서 ${n.ratioHist["2025"].toFixed(2)}명으로 늘었습니다. 재수생·만학도·외국인 유학생으로 메운 결과입니다.` }]} table={demandTable} title="대학 입학 수요와 18세 인구" sub={`2005~${projEnd}년, 4년제(교육대·산업대 포함)와 전문대 합계`} note={`${L}년까지 실측, 이후 추계. ${ratioNote}`} source={[SRC.ent, SRC.grad, SRC.pop]} />
     </section>
 
     <section class="section grid grid-2">
@@ -145,14 +154,14 @@ const bt = d.backtest.regional as any[];
         </ul>
         <p class="small muted">높음 시나리오에서도 2040년 채움률은 {pct(h.fill2040Range[1], 0)}입니다. 메울 방법을 아무리 넓혀도 인구 감소의 크기를 이기기 어렵다는 뜻입니다.</p>
       </div>
-      <ChartSwitch views={[{ label: "지금 규모 대비", spec: typeSpec }, { label: "과거 입학자", spec: histTypeSpec }]} title="4년제와 전문대" sub={`2015~${L} 실제 입학자, 이후 추계 · 2040년 채움률: 4년제 ${pct(h.fillU2040)} · 전문대 ${pct(h.fillC2040)} (기준)`} />
+      <ChartSwitch views={[{ label: "지금 규모 대비", spec: typeSpec }, { label: "과거 입학자", spec: histTypeSpec }]} title="4년제와 전문대" sub={`2015~${L} 실제 입학자, 이후 추계 · 2040년 채움률: 4년제 ${pct(h.fillU2040)} · 전문대 ${pct(h.fillC2040)} (기준)`} note={`유형별 배분은 2006년 이후 자료로 추정한 시도×유형 탄력성. 과거 검증 시도별 평균 오차 ${bt.map((b) => pct(b.mae, 1)).join("·")} (같은 비율 가정 ${bt.map((b) => pct(b.naiveMae, 1)).join("·")}).`} source={SRC.ent} />
     </section>
 
     <section class="section" id="map">
       <h2>어느 지역이 먼저 비나</h2>
       <p class="section-desc">2020→2021년처럼 입학자가 갑자기 줄었던 해, 수도권(서울·인천·경기 평균 {pct(capShock, 1, true)})보다 지방에서 더 많이 줄었습니다. 이런 과거 반응을 시도 × 학교 유형마다 탄력성으로 추정해 미래 수요를 나눴습니다. 그 결과 2040년 채움률은 {fillBars.at(-1)!.name}이 {pct(fillBars.at(-1)!.value)}로 가장 높고, {fillBars[0].name}이 {pct(fillBars[0].value)}로 가장 낮습니다.</p>
       <div class="grid grid-2">
-        <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} rank={false} compact title="시도별 대학 충원 전망" sub="기준 시나리오" />
+        <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} rank={false} compact title="시도별 대학 충원 전망" sub="기준 시나리오" note={ratioNote} source={[SRC.ent, SRC.pop]} />
         <div class="card">
           <h3 class="card-title">2040년 입학 자리 채움률</h3>
           <p class="card-sub">지금 입학 규모가 그대로일 때</p>

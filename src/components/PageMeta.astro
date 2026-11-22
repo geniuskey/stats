@@ -1,0 +1,40 @@
+---
+// 페이지 머리 정보줄: 무엇을 기준으로 한 숫자인지, 언제 갱신됐고 언제 다시 갱신되는지, 어떻게 인용하는지.
+import updated from "../data/updated.json";
+interface Props {
+  /** 기준 시점 (예: "2025년 실측 · 2026–2029 시나리오") */
+  basis: string;
+  /** 주요 원자료 기관 (예: ["한국부동산원", "통계청", "한국은행"]) */
+  orgs?: string[];
+  /** 방법론 앵커 (기본 #method) */
+  method?: string;
+  /** 원자료를 로컬에서만 모아 월 2회 자동 갱신에 들지 않는 페이지면 false (예: 행안부 인구이동) */
+  auto?: boolean;
+  /** auto=false일 때 원자료를 마지막으로 모은 날 (YYYY-MM-DD) */
+  collected?: string;
+}
+const { basis, orgs = [], method = "#method", auto = true, collected } = Astro.props;
+// 자동 갱신: 매월 2·17일 18:00 UTC (= 한국시간 3·18일 03:00, .github/workflows/deploy.yml)
+const nextRun = (() => {
+  const d = new Date(updated.updated + "T00:00:00+09:00");
+  for (let i = 1; i <= 40; i++) {
+    const t = new Date(d.getTime() + i * 864e5);
+    const day = new Date(t.getTime() + 9 * 36e5).getUTCDate();
+    if (day === 3 || day === 18) return new Date(t.getTime() + 9 * 36e5).toISOString().slice(0, 10);
+  }
+  return "";
+})();
+---
+<dl class="page-meta">
+  <div><dt>기준</dt><dd>{basis}</dd></div>
+  {orgs.length > 0 && <div><dt>원자료</dt><dd>{orgs.join(" · ")}</dd></div>}
+  {auto ? (
+    <div><dt>갱신</dt><dd><time datetime={updated.updated}>{updated.updated}</time>{nextRun && <span class="muted"> · 다음 {nextRun} 예정</span>}</dd></div>
+  ) : (
+    <div><dt>갱신</dt><dd>{collected ? <time datetime={collected}>{collected}</time> : "수시"}<span class="muted"> · 원자료 수집 시 수동 갱신</span></dd></div>
+  )}
+  <div class="page-meta-acts">
+    <a href={method}>방법·한계</a>
+    <button type="button" data-fig-act="cite-page">이 페이지 인용</button>
+  </div>
+</dl>

@@ -4,6 +4,7 @@ import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/school.json";
 import { pts, joinProj, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -52,6 +53,13 @@ const secSpec = { type: "line" as const, yFormat: "int" as const, projStart: las
     { name: "중학교 나이(12~14세) 주민", color: "var(--series-2)", data: pts(sa.mid), label: true },
     { name: "고등학교 나이(15~17세) 주민", color: "var(--series-3)", data: pts(sa.high), label: true },
   ] };
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  pop: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006)",
+  edu: "교육부·한국교육개발원 교육기본통계 초·중·고 개황(KOSIS DT_1963003_002~004)",
+  jiji: "e-지방지표 초등학교 학생수·학교수(KOSIS DT_1YL21241, DT_1YL21231)",
+  proj: "통계청 장래인구추계 2022년 기준 출산율 시나리오(KOSIS DT_1BPA001 등)",
+};
 const bt = r.backtest;
 const btRows = bt ? Object.entries(bt).map(([y, v]: any) => [y, int(v.pred), int(v.actual), pct(v.pred / v.actual - 1, 1, true)]) : [];
 const peers = r.level === "sgg" ? d.regions.filter((x: any) => x.level === "sgg" && x.sidoCode === r.sidoCode).sort((a: any, b: any) => a.summary.change2035 - b.summary.change2035) : d.regions.filter((x: any) => x.level === "sgg" && x.sidoCode === r.sidoCode).sort((a: any, b: any) => a.summary.change2035 - b.summary.change2035);
@@ -89,12 +97,13 @@ const mapLinks = Object.fromEntries(mapPeers.map((x: any) => [x.id, `${base}scho
       <div class="breadcrumb"><a href={`${base}school/`}>학교는 얼마나 남을까?</a>{parent && <> › <a href={`${base}school/${parent.id}/`}>{parent.name}</a></>}</div>
       <h1>{title} 초등학생, {lead}</h1>
       <p class="lede">{last}년 {int(s.current)}명 → 2030년 {int(s.y2030)}명 → 2035년 {int(s.y2035)}명 (중위 추계, 범위 {int(val(r.proj.low, 2035))} ~ {int(val(r.proj.high, 2035))}명).</p>
+      <PageMeta basis={`${last}년 실측 · ${last + 1}~${d.meta.projEnd}년 추계(저위·중위·고위)`} orgs={["교육부", "행정안전부", "통계청"]} method={`${base}school/#method`} />
     </section>
     <div class="grid grid-4">
       <Stat label="2035년 변화" value={pct(s.change2035, 0, true)} note={`${int(s.current)} → ${int(s.y2035)}명`} tone={s.change2035 < 0 ? "down" : "up"} />
       <Stat label="학급 수 (학급당 학생 수 유지 시)" value={`${int(s.classes2026)} → ${int(s.classes2035)}`} note={r.classSize ? `학급당 ${r.classSize}명 기준` : ""} />
       <Stat label="학교당 학생 수" value={`${int(s.perSchool2026)} → ${int(s.perSchool2035)}`} note={r.schools ? `학교 ${int(r.schools)}곳 유지 가정` : ""} />
-      <Stat label="입학생 수" value={`${int(s.entrants2026)} → ${int(s.entrants2032)}`} note={`${last} → 2032, 이미 태어난 아이들`} />
+      <Stat label="입학생 수 (추정)" value={`${int(s.entrants2026)} → ${int(s.entrants2032)}`} note={`${last} → 2032 · 6세 인구 기반 추정, 이미 태어난 아이들`} />
     </div>
 
     <section class="section">
@@ -106,19 +115,21 @@ const mapLinks = Object.fromEntries(mapPeers.map((x: any) => [x.id, `${base}scho
         ]}
         table={table}
         title="초등학생 수 (명)"
+        note={`${last}년까지 실측, 이후 추계. 비교 지수는 ${last}년 = 100, 학교당 학생은 학교 수 유지 가정.`}
+        source={[SRC.jiji, SRC.pop, SRC.proj]}
         sub={`실측 ${Object.keys(r.actual)[0]}~${last}, 추계 ~2045 · 음영은 출산율 저위~고위`}
       />
     </section>
     <section class="section grid grid-2">
-      <Chart spec={entrSpec} table={entrTable} title="초등 입학생(1학년) 추정" sub="연한 막대 = 추계 (6세 주민 × 취학 보정계수)" />
+      <Chart spec={entrSpec} table={entrTable} title="초등 입학생(1학년) 추정" sub="6세 주민 × 취학 보정계수 · 연한 막대 = 추계" note={`모든 연도가 실측 입학생이 아닌 추정값 (취학 보정계수 r = ${r.ratio}).`} source={[SRC.pop, SRC.jiji]} />
       {mapPeers.length > 1 ? (
-        <div class="peer-map"><KoreaMap only={sdo} highlight={r.level === "sgg" ? r.id : undefined} metrics={mapMetrics} names={mapNames} links={mapLinks} compact title={`${r.level === "sgg" ? r.sido : r.name} 안에서 보면`} sub="지역을 누르면 해당 지역으로 이동 · 굵은 선이 이 지역" /></div>
+        <div class="peer-map"><KoreaMap only={sdo} highlight={r.level === "sgg" ? r.id : undefined} metrics={mapMetrics} names={mapNames} links={mapLinks} compact title={`${r.level === "sgg" ? r.sido : r.name} 안에서 보면`} sub="지역을 누르면 해당 지역으로 이동 · 굵은 선이 이 지역" note={`${last}년까지 실측, 이후 중위 추계.`} source={[SRC.jiji, SRC.pop, SRC.proj]} /></div>
       ) : (
-        <Chart spec={cmpSpec} title={`${last}년 = 100 으로 본 변화`} sub="전국과 비교" />
+        <Chart spec={cmpSpec} title={`${last}년 = 100 으로 본 변화`} sub="전국과 비교" note={`${last}년까지 실측, 이후 중위 추계.`} source={[SRC.jiji, SRC.pop, SRC.proj]} />
       )}
     </section>
     <section class="section grid grid-2">
-      <Chart spec={secSpec} title="중·고등학교 나이 주민 수" sub="주민등록 기준, 다음 해 학생 수의 선행 지표" />
+      <Chart spec={secSpec} title="중·고등학교 나이 주민 수" sub="주민등록 기준, 다음 해 학생 수의 선행 지표" note={`${last}년까지 실측(연말 주민등록), 이후 인구 추계(중위).`} source={[SRC.pop, SRC.proj]} />
       <div class="card">
         <h3 class="card-title">이 지역 과거 검증</h3>
         <p class="card-sub">2020년 말 인구만으로 같은 방법을 적용해 예측한 값과 실제</p>

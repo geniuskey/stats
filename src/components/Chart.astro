@@ -1,5 +1,7 @@
 ---
 import type { ChartSpec } from "../lib/charts";
+import FigureFoot from "./FigureFoot.astro";
+import { figId } from "../lib/figid";
 interface Props {
   h?: 2 | 3;
   spec: ChartSpec;
@@ -7,27 +9,21 @@ interface Props {
   title?: string;
   sub?: string;
   id?: string;
+  source?: string | string[];
+  note?: string;
+  derived?: boolean;
 }
-const { spec, table, title, sub, id, h = 3 } = Astro.props;
+const { spec, table, title, sub, id, h = 3, source, note, derived } = Astro.props;
+const fid = figId(title, id);
 // 페이지에서 h1 바로 다음에 오는 카드면 h={2}로 제목 단계를 건너뛰지 않게 한다
 const H = h === 2 ? "h2" : "h3";
 const json = JSON.stringify(spec).replace(/</g, "\\u003c");
 ---
-<figure class="card" style="margin:0" id={id}>
+<figure class="card" style="margin:0" id={fid}>
   {title && <H class="card-title">{title}</H>}
   {sub && <p class="card-sub">{sub}</p>}
   <div class="chart" data-chart>
     <script type="application/json" set:html={json} />
   </div>
-  {table && (
-    <details class="table-view">
-      <summary>표로 보기</summary>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>{table.headers.map((h, i) => <th class={i ? "num" : ""}>{h}</th>)}</tr></thead>
-          <tbody>{table.rows.map((r) => <tr>{r.map((c, i) => <td class={i ? "num" : ""}>{c}</td>)}</tr>)}</tbody>
-        </table>
-      </div>
-    </details>
-  )}
+  <FigureFoot source={source} note={note} table={table} derived={derived} />
 </figure>

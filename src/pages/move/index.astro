@@ -4,6 +4,7 @@ import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/move.json";
 import { dongneLinks } from "../../lib/dongneMap";
 import { int, compact } from "../../lib/format";
@@ -19,6 +20,12 @@ const BI = D.basicIncome;
 
 const ymLabel = (ym: string) => `${ym.slice(0, 4)}년 ${+ym.slice(4)}월`;
 const ymX = (ym: string) => +ym.slice(0, 4) * 12 + (+ym.slice(4) - 1);
+// 그림 출처 (작성기관 · 통계명 · 표 ID)
+const SRC = {
+  mois: "행정안전부 행정동별 전입·전출(공공데이터포털 15108093)",
+  pop: "행정안전부 주민등록인구(KOSIS DT_1B04006)",
+  bi: "농림축산식품부 농어촌 기본소득 시범사업 대상 군 발표",
+};
 const periodLabel = `${ymLabel(meta.period[0])}~${ymLabel(meta.period[1])}`;
 const full = (id: string) => `${NM[id][0]} ${NM[id][1]}`;
 const nameCount = Object.values(NM).reduce((c: Record<string, number>, v) => ((c[v[1]] = (c[v[1]] ?? 0) + 1), c), {});
@@ -148,6 +155,7 @@ const defaultId = "11680";
         <strong>20~34세만 보면 {sgn(nat.capNetYouth)}명</strong>입니다. 다른 나이에서는 {int(Math.abs(capOther))}명이 수도권을 떠났다는 뜻입니다.
         행정안전부가 공개하는 행정동 간 이동 원자료를 매달 모아, 누가 어디서 어디로 옮기는지 나이별로 다시 계산했습니다.
       </p>
+      <PageMeta basis={`${ymLabel(meta.first)}~${ymLabel(meta.last)} 월별 전입신고 · 지표는 최근 12개월`} orgs={["행정안전부"]} auto={false} collected={meta.fetched} />
     </section>
 
     <div class="grid grid-4">
@@ -164,7 +172,7 @@ const defaultId = "11680";
         순유입은 {seoulPeak}세에서 가장 크고 {seoulTurn}세부터 순유출로 돌아섭니다. 대학과 첫 직장을 찾아 서울로 왔다가, 결혼하고 아이를 키울 무렵 경기·인천으로 나가는 흐름입니다.
         수도권 전체로 보면 30대 이후에는 거의 0에 가깝습니다. 서울을 떠난 사람 대부분이 수도권 안에 머문다는 뜻입니다.
       </p>
-      <Chart spec={ageSpec} table={ageTable} title="나이별 순이동" sub={`${periodLabel}, 1세 단위 (${meta.maxAge}세는 ${meta.maxAge}세 이상)`} />
+      <Chart spec={ageSpec} table={ageTable} title="나이별 순이동" sub={`${periodLabel}, 1세 단위 (${meta.maxAge}세는 ${meta.maxAge}세 이상)`} note="서울은 다른 시도와, 수도권은 비수도권과 주고받은 전입 − 전출. 전입신고 기준이며 외국인·국외 이동 제외." source={SRC.mois} />
     </section>
 
     <section class="section" id="map">
@@ -173,7 +181,7 @@ const defaultId = "11680";
         지표를 바꾸면 나이대마다 지도가 달라집니다. 청년은 대도시와 산업단지로, 아이 있는 가족은 새 아파트가 들어선 신도시로, 65세 이상은 군 지역으로 갑니다.
         지역에 마우스를 올리면 그 지역이 가장 많이 얻은 곳과 잃은 곳이 보이고, 누르면 그 동네의 인구 전망으로 갑니다.
       </p>
-      <KoreaMap metrics={moveMap} names={names} notes={notes} links={dongneLinks(base)} title="시군구 순이동" sub={`${periodLabel} · 인구 1천 명당 · 인구는 ${meta.baseYear}년 주민등록`} />
+      <KoreaMap metrics={moveMap} names={names} notes={notes} links={dongneLinks(base)} title="시군구 순이동" sub={`${periodLabel} · 인구 1천 명당 · 인구는 ${meta.baseYear}년 주민등록`} note="(다른 시군구에서 전입 − 다른 시군구로 전출) ÷ 주민등록인구 × 1,000. 나이대별 지표도 분모는 전 연령 인구." source={[SRC.mois, SRC.pop]} />
       <div class="card" style="margin-top:16px">
         <h3 class="card-title">시도별 순이동률</h3>
         <p class="card-sub">인구 1천 명당, 다른 시도와 주고받은 결과</p>
@@ -189,7 +197,7 @@ const defaultId = "11680";
         {M.bi1[p1].toFixed(0)}명({ymLabel(M.months[p1])}, 1차 7곳)까지 치솟았습니다. 나머지 군은 같은 달 {M.otherGun[p1].toFixed(1)}명이었습니다.
         최근 12개월 17개 군의 순유입은 {sgn(biNet)}명, 인구의 {(biNet / biPop * 100).toFixed(1)}%입니다. 시군구 순이동률 상위 10곳 가운데 {biTop10}곳이 이 군들입니다.
       </p>
-      <Chart spec={biSpec} table={biTable} title="기본소득 시범 군의 월별 순이동률" sub="다른 시군구와 주고받은 순이동, 인구 1천 명당 · 광역시 소속 군과 수도권 군은 '나머지'에서 뺐습니다" />
+      <Chart spec={biSpec} table={biTable} title="기본소득 시범 군의 월별 순이동률" sub="다른 시군구와 주고받은 순이동, 인구 1천 명당 · 광역시 소속 군과 수도권 군은 '나머지'에서 뺐습니다" note="시범 군 묶음은 발표 차수별(2025-10, 2025년 말, 2026-06). 전입신고 기준이라 실제 거주 이동과 다를 수 있음." source={[SRC.mois, SRC.pop, SRC.bi]} />
       <div class="grid grid-2" style="margin-top:16px">
         <div class="card">
           <h3 class="card-title">시범 군 17곳의 순이동률</h3>
@@ -276,7 +284,7 @@ const defaultId = "11680";
         비수도권에서 수도권으로 순유입한 인원은 첫 12개월({ymLabel(M.months[0])}~) {sgn(capFirst12)}명에서 최근 12개월 {sgn(capLast12)}명으로 바뀌었습니다.
         20~34세는 매달 꾸준히 수도권으로 들어오지만, 다른 나이의 순유출이 커지면서 전체 숫자는 줄었습니다.
       </p>
-      <Chart spec={capSpec} table={capTable} title="비수도권 → 수도권 월별 순이동" sub="명, 수도권 = 서울·인천·경기" />
+      <Chart spec={capSpec} table={capTable} title="비수도권 → 수도권 월별 순이동" sub="명, 수도권 = 서울·인천·경기" note="비수도권과 주고받은 전입 − 전출, 전입신고 월 기준." source={SRC.mois} />
     </section>
 
     <section class="section card method" id="method">

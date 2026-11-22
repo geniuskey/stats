@@ -1,0 +1,40 @@
+---
+// 그림 하단: 주(정의·가정) · 자료(원자료와 가공 여부) · 표로 보기 · CSV · 인용 · 링크
+// 전문 통계 보고서처럼 모든 그림이 스스로 출처를 말하게 한다.
+interface Props {
+  source?: string | string[];
+  note?: string;
+  table?: { headers: string[]; rows: (string | number)[][] };
+  /** 원자료를 그대로 옮긴 그림이면 false. 기본은 '숫자 너머 계산'을 덧붙인다. */
+  derived?: boolean;
+  /** 화면에서 그리는 그림처럼 꺼낼 자료가 없으면 false */
+  csv?: boolean;
+}
+const { source, note, table, derived = true, csv = true } = Astro.props;
+const srcs = source == null ? [] : Array.isArray(source) ? source : [source];
+const srcText = srcs.length ? `${srcs.join("; ")}${derived ? " → 숫자 너머 계산" : ""}` : undefined;
+---
+<div class="fig-foot" data-source={srcText} data-note={note}>
+  {(note || srcText) && (
+    <div class="fig-cap">
+      {note && <p><span class="fig-cap-k">주</span><span>{note}</span></p>}
+      {srcText && <p><span class="fig-cap-k">자료</span><span>{srcs.join(" · ")}{derived && <span class="muted"> → 숫자 너머 계산</span>}</span></p>}
+    </div>
+  )}
+  {table && (
+    <details class="table-view">
+      <summary>표로 보기</summary>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>{table.headers.map((h, i) => <th class={i ? "num" : ""}>{h}</th>)}</tr></thead>
+          <tbody>{table.rows.map((r) => <tr>{r.map((c, i) => <td class={i ? "num" : ""}>{c}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    </details>
+  )}
+  <div class="fig-tools">
+    {csv && <button type="button" data-fig-act="csv" aria-label="이 그림의 자료를 CSV로 내려받기">CSV</button>}
+    <button type="button" data-fig-act="cite" aria-label="이 그림의 인용 문구 복사">인용</button>
+    <button type="button" data-fig-act="link" aria-label="이 그림으로 바로 가는 링크 복사">링크</button>
+  </div>
+</div>

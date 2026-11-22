@@ -4,6 +4,8 @@ import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
+import FigureFoot from "../../components/FigureFoot.astro";
 import geo from "../../data/geo.json";
 import data from "../../data/housing.json";
 import sggData from "../../data/housing_sgg.json";
@@ -188,6 +190,17 @@ const monthTable = (k: string, f: (v: number) => string) => ({
   headers: ["월", "전국"],
   rows: (SM.months as string[]).filter((ym) => !provisional.has(ym)).map((ym) => [ymLabel(ym), SM[k][SM.months.indexOf(ym)] == null ? "–" : f(SM[k][SM.months.indexOf(ym)])]),
 });
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  price: "한국부동산원 아파트 매매 실거래가격(KOSIS DT_KAB_11672_S15)",
+  income: "통계청·한국은행·금융감독원 가계금융복지조사(KOSIS INH_1HD_AAA01_01)",
+  rate: "한국은행 예금은행 주택담보대출 금리, 신규취급액(KOSIS DT_121Y006)",
+  loan: "한국은행 차주당 가계대출 잔액(KOSIS DT_181Y002)",
+  trade: "국토교통부 아파트 매매 실거래가(공공데이터포털)",
+  rent: "국토교통부 아파트 전월세 실거래가(공공데이터포털)",
+};
+const incNote = `${meta.lastIncomeYear + 1}년 이후 가구소득은 지역별 최근 3년 연평균 증가율로 연장한 추정치`;
+const avgNote = `연도 값은 1~12월 평균, ${cy}년은 최근 12개월(~${meta.lastPriceMonth}) 평균. ${incNote}.`;
 const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${(v * 100).toFixed(d)}%`);
 
 ---
@@ -201,6 +214,7 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
         집값의 {A.ltv * 100}%를 빌려 {A.termYears}년 동안 갚는다면 매달 소득의 몇 %가 나가는지 계산한 값이 <strong>주택구입 부담률</strong>입니다.{" "}
         {fy}년 {p1(seoulFirst.burden)}였던 서울의 부담률은 {cy}년 {p1(seoul.current.burden)}가 됐습니다.
       </p>
+      <PageMeta basis={`${cy}년 실측(가격 ~${meta.lastPriceMonth}, 금리 ~${meta.lastRateMonth}) · ${outlookEnd}년까지 조건부 시나리오`} orgs={["한국부동산원", "국토교통부", "통계청", "한국은행"]} />
     </section>
 
     <div class="grid grid-4">
@@ -214,15 +228,15 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
       <h2>{cy - fy}년 사이 무엇이 달라졌나</h2>
       <p class="section-desc">연도 값은 1~12월 평균이고, {cy}년은 최근 12개월(~{meta.lastPriceMonth}) 평균입니다. 부담률은 집값·소득·금리가 함께 움직인 결과입니다. 2022년 이후 금리 상승이 부담을 한 단계 끌어올렸습니다.</p>
       <div class="grid grid-2">
-        <Chart spec={burdenSpec} table={histTable("burden")} title="주택구입 부담률" sub={`월 상환액 ÷ 월소득, 전용 ${A.area}㎡ · LTV ${A.ltv * 100}% · ${A.termYears}년`} />
-        <Chart spec={pirSpec} table={histTable("pir")} title="PIR: 집값은 몇 년치 소득인가" sub={`전용 ${A.area}㎡ 아파트 가격 ÷ 가구 연소득 (년)`} />
+        <Chart spec={burdenSpec} table={histTable("burden")} title="주택구입 부담률" sub={`월 상환액 ÷ 월소득, 전용 ${A.area}㎡ · LTV ${A.ltv * 100}% · ${A.termYears}년`} note={avgNote} source={[SRC.price, SRC.income, SRC.rate]} />
+        <Chart spec={pirSpec} table={histTable("pir")} title="PIR: 집값은 몇 년치 소득인가" sub={`전용 ${A.area}㎡ 아파트 가격 ÷ 가구 연소득 (년)`} note={avgNote} source={[SRC.price, SRC.income]} />
       </div>
     </section>
 
     <section class="section">
       <h2>시도별 지도</h2>
       <p class="section-desc">같은 국민평형이라도 서울의 부담률은 가장 낮은 지역의 약 {Math.round(burdenBars[0].value / burdenBars[burdenBars.length - 1].value)}배입니다. 지표를 바꾸거나 ▶ 로 {histYears[0]}년부터의 변화를 재생해 보세요.</p>
-      <KoreaMap level="sido" metrics={housingMap} names={sidoNames} title="시도별 집값 부담" sub={`연도 값은 1~12월 평균, ${cy}년은 최근 12개월`} />
+      <KoreaMap level="sido" metrics={housingMap} names={sidoNames} title="시도별 집값 부담" sub={`연도 값은 1~12월 평균, ${cy}년은 최근 12개월`} note={`${incNote}. 광주·전남은 한국부동산원 권역 구분에 따라 따로 표시.`} source={[SRC.price, SRC.income, SRC.rate]} />
       <div class="card" style="margin-top:16px">
         <h3 class="card-title">부담률 변화 ({fy}→{cy})</h3>
         <p class="card-sub">%p, 클수록 빠르게 악화</p>
@@ -263,13 +277,13 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
         같은 금리·시도 소득을 적용해도 부담률이 30%를 넘는 시군구가 {over30}곳, 10%도 안 되는 곳이 {under10}곳입니다.
         가장 높은 {byBurden[0].name}는 {p1(byBurden[0].burden)}입니다.
       </p>
-      <KoreaMap metrics={buyMap} names={sggNames} notes={sggNotes} title="시군구 집값 부담" sub={`${periodLabel} 실거래 · 소득은 시도 평균`} />
+      <KoreaMap metrics={buyMap} names={sggNames} notes={sggNotes} title="시군구 집값 부담" sub={`${periodLabel} 실거래 · 소득은 시도 평균`} note={`중개거래(해제·직거래 제외) ㎡당 가격 중앙값 × 84㎡. 매매 ${sm.assumptions.minN}건 미만 시군구는 비움. 소득은 시도 평균이라 같은 시도 안의 차이는 집값 차이만 반영.`} source={[SRC.trade, SRC.income, SRC.rate]} />
       <p class="small muted" style="margin-top:8px">
         여기서는 거래 한 건 한 건의 중앙값을 써서, 위 시도 지도(한국부동산원 평균가격)보다 값이 낮게 나옵니다. 비싼 단지 몇 곳이 평균을 끌어올리는 효과가 빠지기 때문입니다.
         소득은 시군구 자료가 없어 시도 평균을 썼으므로, 같은 시도 안의 차이는 집값 차이입니다. 매매가 {sm.assumptions.minN}건 미만인 곳은 비워 두었습니다.
       </p>
       <div style="margin-top:16px">
-        <Chart spec={tradesSpec} title="월별 아파트 매매 거래량" sub={`전국, 해제된 계약 제외 · 신고 기한(30일)이 지나지 않은 최근 달은 뺐습니다`} table={monthTable("trades", (v) => int(v))} />
+        <Chart spec={tradesSpec} title="월별 아파트 매매 거래량" sub={`전국, 해제된 계약 제외 · 신고 기한(30일)이 지나지 않은 최근 달은 뺐습니다`} table={monthTable("trades", (v) => int(v))} note="계약월 기준 건수. 신고 기한(계약 후 30일)이 지나지 않은 달은 제외." source={SRC.trade} />
       </div>
     </section>
 
@@ -287,19 +301,19 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
         <Stat label="아파트 전월세 중 월세" value={(SN.wolseShare * 100).toFixed(0)} unit="%" note={`전세가율 ${SN.jeonseRatio.toFixed(0)}% (같은 단지 기준)`} />
       </div>
       <div style="margin-top:16px">
-        <Chart spec={rentTrendSpec} title="역전세가 지나간 자리" sub="전국 아파트 전월세 계약, 월별" table={monthTable("renewDown", (v) => pctTxt(v, 1))} />
+        <Chart spec={rentTrendSpec} title="역전세가 지나간 자리" sub="전국 아파트 전월세 계약, 월별" table={monthTable("renewDown", (v) => pctTxt(v, 1))} note="보증금 인하·갱신요구권 비율은 갱신 계약 중 비율. 보증금 인하는 종전·이번 계약이 모두 전세인 경우만 집계." source={SRC.rent} />
       </div>
       <div style="margin-top:16px">
-        <KoreaMap metrics={rentMap} names={sggNames} title="시군구 전월세 지도" sub={`${periodLabel} 실거래`} />
+        <KoreaMap metrics={rentMap} names={sggNames} title="시군구 전월세 지도" sub={`${periodLabel} 실거래`} note="전세가율은 같은 단지 안의 전세 보증금 ÷ 매매가(㎡당 중앙값)의 단지별 중앙값, 단지 10곳 이상 시군구만." source={[SRC.rent, SRC.trade]} />
       </div>
     </section>
 
     <section class="section">
       <h2>금리가 1%p 움직이면</h2>
       <p class="section-desc">주택담보대출 금리(신규취급액)는 {lastRateYear[0]}년 평균 {(lastRateYear[1] * 100).toFixed(2)}%입니다. 다른 조건이 그대로일 때 금리가 1%p 오르면 서울의 부담률은 {p1(seoul.sensitivity["0"])}에서 {p1(seoul.sensitivity["1"])}로 오릅니다.</p>
-      <KoreaMap level="sido" metrics={rateMap} names={sidoNames} speed={280} title="금리를 움직여 보세요" sub="슬라이더를 끌거나 ▶ 를 누르면 금리 2%→7%에서 시도별 부담률이 어떻게 바뀌는지 보입니다" id="rate-map" />
+      <KoreaMap level="sido" metrics={rateMap} names={sidoNames} speed={280} title="금리를 움직여 보세요" sub="슬라이더를 끌거나 ▶ 를 누르면 금리 2%→7%에서 시도별 부담률이 어떻게 바뀌는지 보입니다" id="rate-map" note={`집값·소득은 ${cy}년 값으로 고정하고 금리만 바꾼 민감도 계산.`} source={[SRC.price, SRC.income]} />
       <div class="grid grid-2" style="margin-top:16px">
-        <Chart spec={rateSpec} title="예금은행 주택담보대출 금리" sub="신규취급액 기준, 연평균" table={{ headers: ["연도", "금리"], rows: ratePts.map(([y, v]) => [String(y), `${(v * 100).toFixed(2)}%`]) }} />
+        <Chart spec={rateSpec} title="예금은행 주택담보대출 금리" sub="신규취급액 기준, 연평균" table={{ headers: ["연도", "금리"], rows: ratePts.map(([y, v]) => [String(y), `${(v * 100).toFixed(2)}%`]) }} note={`월별 가중평균금리의 단순 연평균. ${cy}년은 ~${meta.lastRateMonth}.`} source={SRC.rate} />
         <div class="card">
           <h3 class="card-title">금리 민감도: 현재 부담률</h3>
           <p class="card-sub">현재 금리 {nat.current.rate.toFixed(2)}% 기준 ±1%p</p>
@@ -329,10 +343,11 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
         </div>
       </div>
       <div class="grid grid-2">
-        <figure class="card" style="margin:0">
+        <figure class="card" style="margin:0" id="fig-scenario">
           <h3 class="card-title">주택구입 부담률 시나리오</h3>
           <p class="card-sub" id="scen-sub">실선 실측, 점선 시나리오</p>
           <div class="chart" id="scen-chart"></div>
+          <FigureFoot note="예측이 아닌 조건부 시나리오. 소득은 지역별 최근 3년 증가율, 금리는 2년에 걸쳐 목표 수준으로 이동." source={[SRC.price, SRC.income, SRC.rate]} csv={false} />
         </figure>
         <div class="card">
           <h3 class="card-title">{outlookEnd}년 시도별 부담률</h3>
@@ -408,6 +423,8 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
         }}
         title="차주당 가계대출 잔액"
         sub="연령대별, 만원"
+        source={SRC.loan}
+        derived={false}
         table={{
           headers: ["연도", ...Object.keys(D.loans.byAge)],
           rows: Object.keys(D.loans.byAge["전체"]).map((y) => [y, ...Object.values(D.loans.byAge).map((v: any) => `${int(v[y])}만원`)]),

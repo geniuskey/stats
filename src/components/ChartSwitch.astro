@@ -1,6 +1,8 @@
 ---
 // 같은 데이터를 여러 시각 형태로: 상단 토글로 차트 유형을 바꾼다. 숨겨진 차트는 처음 열 때 그린다.
 import type { ChartSpec } from "../lib/charts";
+import FigureFoot from "./FigureFoot.astro";
+import { figId } from "../lib/figid";
 interface View {
   label: string;
   spec: ChartSpec;
@@ -13,12 +15,16 @@ interface Props {
   title?: string;
   sub?: string;
   id?: string;
+  source?: string | string[];
+  note?: string;
+  derived?: boolean;
 }
-const { views, table, title, sub, id, h = 3 } = Astro.props;
+const { views, table, title, sub, id, h = 3, source, note, derived } = Astro.props;
+const fid = figId(title, id);
 // 페이지에서 h1 바로 다음에 오는 카드면 h={2}로 제목 단계를 건너뛰지 않게 한다
 const H = h === 2 ? "h2" : "h3";
 ---
-<figure class="card chart-switch" style="margin:0" id={id} data-switch>
+<figure class="card chart-switch" style="margin:0" id={fid} data-switch>
   <div class="cs-head">
     <div>
       {title && <H class="card-title">{title}</H>}
@@ -36,15 +42,5 @@ const H = h === 2 ? "h2" : "h3";
       </div>
     </div>
   ))}
-  {table && (
-    <details class="table-view">
-      <summary>표로 보기</summary>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>{table.headers.map((h, i) => <th class={i ? "num" : ""}>{h}</th>)}</tr></thead>
-          <tbody>{table.rows.map((r) => <tr>{r.map((c, i) => <td class={i ? "num" : ""}>{c}</td>)}</tr>)}</tbody>
-        </table>
-      </div>
-    </details>
-  )}
+  <FigureFoot source={source} note={note} table={table} derived={derived} />
 </figure>

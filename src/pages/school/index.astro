@@ -6,6 +6,7 @@ import BarList from "../../components/BarList.astro";
 import RegionSearch from "../../components/RegionSearch.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/school.json";
 import { pts, joinProj, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -66,7 +67,16 @@ const sidoBars = sidos
 const halfCount = sggs.filter((r) => r.summary.halfYear && r.summary.halfYear <= 2035).length;
 const shrinkCount = sggs.filter((r) => r.summary.change2035 < 0).length;
 
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  pop: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006)",
+  edu: "교육부·한국교육개발원 교육기본통계 초·중·고 개황(KOSIS DT_1963003_002~004)",
+  jiji: "e-지방지표 초등학교 학생수·학교수(KOSIS DT_1YL21241, DT_1YL21231)",
+  proj: "통계청 장래인구추계 2022년 기준 출산율 시나리오(KOSIS DT_1BPA001 등)",
+};
 const bt = data.backtest as any;
+const btH = Object.keys(bt.mape);
+const btNote = `과거 검증(2020년 말 기준 예측): 시군구 평균 오차 ${btH[0]}년 후 ${pct(bt.mape[btH[0]], 1)}, ${btH.at(-1)}년 후 ${pct(bt.mape[btH.at(-1)!], 1)}.`;
 const searchItems = [...sidos, ...sggs].map((r) => ({ name: r.name, sub: r.level === "sido" ? "시도" : r.sido, href: `${base}school/${r.id}/` }));
 const tableRows = sggs.map((r) => ({
   id: r.id, name: r.name, sido: r.sido, cur: r.summary.current, y2035: r.summary.y2035, ch: r.summary.change2035,
@@ -155,25 +165,26 @@ const mapMetrics = [
         전국 228개 시·군·구의 2045년까지 초등학생·학급·입학생 수를 추계했습니다.
       </p>
       <div style="margin-top:20px"><RegionSearch items={searchItems} /></div>
+      <PageMeta basis={`${last}년 실측 · ${last + 1}~${data.meta.projEnd}년 추계(저위·중위·고위)`} orgs={["교육부·한국교육개발원", "행정안전부", "통계청"]} />
       </div>
-      <Chart spec={waffle} h={2} title={`전국 초등 교실 100칸: ${last} → 2045`} sub={`학급당 학생 수가 ${last}년 그대로일 때 필요한 교실 (중위 추계)`} />
+      <Chart spec={waffle} h={2} title={`전국 초등 교실 100칸: ${last} → 2045`} sub={`학급당 학생 수가 ${last}년 그대로일 때 필요한 교실 (중위 추계)`} note={`전국 초등학생 수를 ${last}년 = 100칸으로 환산. 학급 편성 기준·학교 통폐합은 반영하지 않음.`} source={[SRC.pop, SRC.edu, SRC.proj]} />
     </section>
 
     <div class="grid grid-4">
       <Stat label={`초등학생 ${last}년`} value={compact(s.current)} unit="명" note="교육통계 실측" />
       <Stat label="2035년 (중위 추계)" value={compact(s.y2035)} unit="명" note={`${pct(s.change2035, 0, true)} · 저위 ${compact(val(nat.proj.low, 2035))} ~ 고위 ${compact(val(nat.proj.high, 2035))}`} tone="down" />
       <Stat label="학급 수 (학급당 학생 수 유지 시)" value={`${compact(s.classes2026)} → ${compact(s.classes2035)}`} note={`${last} → 2035, 학급당 ${nat.classSize}명 기준`} />
-      <Stat label="초등 입학생" value={`${compact(s.entrants2026)} → ${compact(s.entrants2032)}`} note={`${last} → 2032 (이미 태어난 아이들)`} />
+      <Stat label="초등 입학생 (추정)" value={`${compact(s.entrants2026)} → ${compact(s.entrants2032)}`} note={`${last} → 2032 · 6세 인구 기반 추정, 이미 태어난 아이들`} />
     </div>
 
     <section class="section">
       <h2>전국 학생 수: 실측과 추계</h2>
       <p class="section-desc">실선은 교육기본통계 실측, 점선은 이 사이트의 추계(중위)입니다. 음영은 통계청 출산율 저위~고위 시나리오에 따른 초등학생 범위입니다. 2030년대 초까지의 감소는 이미 태어난 아이 수로 정해진 것이라 시나리오와 무관합니다.</p>
-      <ChartSwitch views={[{ label: "선", spec: natSpec }, { label: "누적 막대", spec: stackSpec, note: "연한 막대는 추계(중위)" }, { label: `${last}=100 지수`, spec: idxSpec, note: "감소 속도 비교: 초등이 먼저 줄고 중·고등이 뒤따릅니다" }]} table={natTable} title="초·중·고 학생 수 (명)" sub="2000~2045년, 전국" />
+      <ChartSwitch views={[{ label: "선", spec: natSpec }, { label: "누적 막대", spec: stackSpec, note: "연한 막대는 추계(중위)" }, { label: `${last}=100 지수`, spec: idxSpec, note: "감소 속도 비교: 초등이 먼저 줄고 중·고등이 뒤따릅니다" }]} table={natTable} title="초·중·고 학생 수 (명)" sub="2000~2045년, 전국" note={`${last}년까지 실측, 이후 추계(중위). 음영은 초등 저위~고위. ${btNote}`} source={[SRC.edu, SRC.pop, SRC.proj]} />
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={entrSpec} title="초등학교 입학생 (1학년) 수" sub={`${last + 1}년 이후는 주민등록 6세 인구 × 취학 보정계수로 추계 (연한 막대)`} />
+      <Chart spec={entrSpec} title="초등학교 입학생 (1학년) 수" sub={`6세 주민등록인구 × 취학 보정계수 · ${last + 1}년 이후는 추계 (연한 막대)`} note={`모든 연도가 실측 입학생이 아닌 추정값: 6세 주민(전년 말) × 취학 보정계수(${data.meta.calYears[0]}~${data.meta.calYears.at(-1)}년 실제 학생 ÷ 학령 주민). ${last + 6}년까지 입학생은 이미 태어난 아이들.`} source={[SRC.pop, SRC.jiji]} />
       <div class="card">
         <h3 class="card-title">이 추계는 얼마나 맞을까? (과거 검증)</h3>
         <p class="card-sub">2020년 말 인구만 가지고 같은 방법으로 2021~2026년 시군구별 초등학생 수를 예측해 실제와 비교했습니다 ({bt.n}개 시군구).</p>
@@ -194,7 +205,7 @@ const mapMetrics = [
     <section class="section" id="map">
       <h2>지도로 보는 2035년의 학교</h2>
       <p class="section-desc">{last}년 대비 중위 추계. 전국 228개 시군구 중 <strong>{shrinkCount}곳</strong>에서 줄고, <strong>{halfCount}곳</strong>은 2035년 이전에 지금의 절반 이하가 됩니다. 늘어나는 곳은 대규모 택지·신도시 입주 지역입니다(이동 효과는 시간이 지날수록 감쇠 가정).</p>
-      <KoreaMap metrics={mapMetrics} names={mapNames} links={mapLinks} notes={mapNotes} title="시군구별 초등학생 전망" sub="세종은 시 전체 값" />
+      <KoreaMap metrics={mapMetrics} names={mapNames} links={mapLinks} notes={mapNotes} title="시군구별 초등학생 전망" sub="세종은 시 전체 값" note={`${last}년까지 실측, 이후 중위 추계. 학교 수는 ${last}년 이후 그대로라고 가정. ${btNote}`} source={[SRC.jiji, SRC.pop, SRC.proj]} />
     </section>
 
     <section class="section">

@@ -4,6 +4,7 @@ import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/korea.json";
 import { pts } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -13,6 +14,14 @@ const h = d.headline;
 const ms = d.milestones;
 const by = d.meta.baseYear;
 const nat = d.national;
+const end = d.meta.endYear;
+// 그림 출처 (작성기관 · 통계명 · KOSIS 표 ID)
+const SRC = {
+  reg: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006)",
+  vital: "통계청 인구동향조사 출생아 수·합계출산율(KOSIS DT_1B81A23)",
+  official: "통계청 장래인구추계 2022년 기준(KOSIS DT_1BPA001·DT_1BPA002·DT_1BPA004·DT_1BPA402·DT_1BPA403)",
+};
+const projNote = `${by}년까지 주민등록 내국인 실측, ${by + 1}년부터 자체 추계(코호트 요인법). 예측이 아닌 출산율 시나리오별 전망.`;
 const field = (s: string, f: string, from = 2015) => Object.entries(nat[s]).filter(([y]) => +y >= from).map(([y, v]: any) => [+y, v[f]] as [number, number]);
 const projOnly = (s: string, f: string) => field(s, f, by);
 const histOnly = (f: string) => field("mid", f).filter(([y]) => y <= by);
@@ -138,8 +147,9 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
         <h1>2050년, 고령자 1명을 일하는 나이 {h.workPerOld2050}명이 받칩니다</h1>
         <p class="lede">지금은 {h.workPerOld2025}명입니다. 주민등록 인구 5,100만 명을 1세 단위로 한 해씩 나이 들게 하고, 지역별 이동과 출생을 더해 2050년까지 굴려 봤습니다. 공식 추계가 나온 뒤의 실제 출생 흐름까지 반영했습니다.</p>
         <p class="small muted">오른쪽 피라미드는 2015년부터 해마다 한 프레임씩 재생됩니다. 검은 선은 {by}년 모습입니다. <a href="#sim">출산율을 직접 바꿔 보기 →</a></p>
+        <PageMeta basis={`${by}년 말 주민등록 실측 · ${by + 1}~${end}년 자체 추계(저위·중위·고위)`} orgs={["행정안전부", "통계청"]} />
       </div>
-      <Chart spec={{ ...pyrFrames("mid"), start: 2015, autoplay: true, height: 400 }} table={pyrTable} h={2} title="인구 피라미드 2015 → 2050" sub="5세 단위, 남(왼쪽)·여(오른쪽). 2026년부터 자체 추계 중위" />
+      <Chart spec={{ ...pyrFrames("mid"), start: 2015, autoplay: true, height: 400 }} table={pyrTable} h={2} title="인구 피라미드 2015 → 2050" sub={`5세 단위, 남(왼쪽)·여(오른쪽). ${by + 1}년부터 자체 추계 중위`} note={projNote} source={[SRC.reg, SRC.vital, SRC.official]} />
     </section>
     <div class="grid grid-4">
       <Stat label={`인구 ${by} → 2050 (중위)`} value={`${compact(h.pop2025)} → ${compact(h.pop2050.mid)}`} note={`${pct(h.pop2050.mid / h.pop2025 - 1, 0, true)} · 내국인 주민등록 기준`} tone="down" />
@@ -151,22 +161,22 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
     <section class="section">
       <h2>실제 출생은 공식 추계의 '{scenName[closest]}' 시나리오를 따라가는 중</h2>
       <p class="section-desc">통계청 장래인구추계(2022년 기준)는 출생아가 계속 줄어든다고 봤습니다(중위). 그러나 {h.birthsLatestYear}년 실제 출생아는 {int(h.birthsLatest)}명(합계출산율 {h.tfrLatest})으로 중위보다 {pct(vs.mid, 0, true)}, 고위 시나리오와는 {pct(vs.high, 1, true)} 차이입니다. 이 사이트의 추계는 이 실제 수준에서 출발합니다.</p>
-      <Chart spec={birthSpec} table={birthTable} title="출생아 수: 실제 vs 공식 시나리오" sub="2010~2035년, 명" />
+      <Chart spec={birthSpec} table={birthTable} title="출생아 수: 실제 vs 공식 시나리오" sub="2010~2035년, 명" note="실제는 인구동향조사 확정치. 공식 시나리오는 2022년 기준 장래인구추계(저위·중위·고위)를 그대로 옮김." source={[SRC.vital, SRC.official]} derived={false} />
     </section>
 
     <section class="section">
       <h2>총인구: 자체 추계와 공식 추계</h2>
       <p class="section-desc">자체 추계는 주민등록 <strong>내국인</strong> 기준이라 외국인(약 270만 명)과 외국인 순유입이 포함된 공식 추계보다 낮습니다. 비교의 핵심은 수준보다 기울기입니다. 5천만 명 아래로 내려가는 해는 <strong>{ms.under50m}년</strong>(중위)입니다.</p>
-      <Chart spec={popSpec} table={popTable} title="총인구 (명)" sub="2015~2050년" />
+      <Chart spec={popSpec} table={popTable} title="총인구 (명)" sub="2015~2050년" note={`자체 추계는 주민등록 내국인 기준이라 외국인이 포함된 공식 추계보다 낮음. 음영은 저위~고위. ${projNote}`} source={[SRC.reg, SRC.vital, SRC.official]} />
     </section>
 
     <section class="section grid grid-2">
-      <ChartSwitch views={[{ label: "선", spec: ageSpec }, { label: "누적 영역", spec: ageArea }, { label: "인구 막대", spec: ageStack }]} table={ageTable} title="연령 구조" sub="같은 데이터를 비중 선 · 100% 누적 · 인원 막대로 바꿔 볼 수 있습니다 (중위)" />
-      <Chart spec={supportSpec} title="고령자 1명을 받치는 20~64세 인구" sub={`2명 아래로: ${ms.workPerOld2}년`} />
+      <ChartSwitch views={[{ label: "선", spec: ageSpec }, { label: "누적 영역", spec: ageArea }, { label: "인구 막대", spec: ageStack }]} table={ageTable} title="연령 구조" sub="같은 데이터를 비중 선 · 100% 누적 · 인원 막대로 바꿔 볼 수 있습니다 (중위)" note={projNote} source={[SRC.reg, SRC.vital, SRC.official]} />
+      <Chart spec={supportSpec} title="고령자 1명을 받치는 20~64세 인구" sub={`2명 아래로: ${ms.workPerOld2}년`} note={`20~64세 인구 ÷ 65세 이상 인구. 음영은 저위~고위. ${projNote}`} source={[SRC.reg, SRC.vital, SRC.official]} />
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={waffle} title="대한민국이 100명의 마을이라면" sub="5년 단위로 재생 · 한 칸 = 국민 1%" />
+      <Chart spec={waffle} title="대한민국이 100명의 마을이라면" sub="5년 단위로 재생 · 한 칸 = 국민 1%" note={`반올림 합이 100이 되도록 보정. ${projNote}`} source={[SRC.reg, SRC.vital, SRC.official]} />
       <div class="card">
         <h3 class="card-title">100명의 마을, 숫자로</h3>
         <p class="card-sub">중위 추계</p>
@@ -183,7 +193,7 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
     <section class="section">
       <h2>지역마다 다른 속도</h2>
       <p class="section-desc">시군구 229곳을 각각 추계해 시도로 더했습니다. 지표를 바꾸고 ▶ 를 눌러 보세요. 지역을 누르면 그 안의 시군구를 볼 수 있는 <a href={`${import.meta.env.BASE_URL}dongne/`}>우리 동네의 미래</a>로 이어집니다.</p>
-      <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} links={Object.fromEntries(d.sidos.map((s: any) => [s.id, `${import.meta.env.BASE_URL}dongne/#map`]))} title="시도별 인구 지도" sub="중위 추계" />
+      <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} links={Object.fromEntries(d.sidos.map((s: any) => [s.id, `${import.meta.env.BASE_URL}dongne/#map`]))} title="시도별 인구 지도" sub="중위 추계" note={`시군구 229곳을 각각 추계해 시도로 합산. ${projNote}`} source={[SRC.reg, SRC.vital, SRC.official]} />
     </section>
 
     <section class="section card" id="sim">

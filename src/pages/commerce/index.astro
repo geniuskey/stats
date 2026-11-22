@@ -6,6 +6,7 @@ import BarList from "../../components/BarList.astro";
 import RegionSearch from "../../components/RegionSearch.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/commerce.json";
 import { pts, joinProj, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -17,6 +18,19 @@ const S = data.summary as any;
 const nat = S["00"];
 const [y0, y1] = meta.storeYears as number[];
 const [g0] = meta.growthPeriod as number[];
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  demo: "통계청 기업생멸행정통계 시군구·산업별 활동·신생·소멸 기업(KOSIS DT_6BD1132)",
+  biz: "고용노동부 사업체노동실태현황 시군구·산업별 사업체·종사자(KOSIS DT_118N_SAUPN75·N78·M75·M78)",
+  mig: "통계청 국내인구이동통계 시군구·연령별 순이동(KOSIS DT_1B26002)",
+  hh: "행정안전부 주민등록 세대수(KOSIS DT_1B040B3)",
+  vac: "통계청 주택총조사 미거주주택 비율(KOSIS DT_1YL202005)",
+  pop: "행정안전부 주민등록인구(KOSIS DT_1B04006) → 숫자 너머 소지역 인구추계",
+};
+const consLast = Math.max(...Object.keys((data as any).summary["00"].consumers.actual).map(Number));
+const consEnd = Math.max(...Object.keys((data as any).summary["00"].consumers.mid).map(Number));
+const projNote = `${consLast + 1}년부터는 소지역 인구추계(중위), 음영은 출산율 저위~고위. 예측이 아닌 시나리오.`;
+const idxNote = "상권 = 도소매(G) + 숙박음식(I). 활력 지수는 사업체·종사자 증감, 순진입률, 2030년 소비인구 변화, 20~39세 순이동률의 전국 표준점수 가중합(50 = 전국 평균).";
 const counts = meta.classCounts as Record<string, number>;
 const N = regions.length;
 const p = (v: number | null | undefined) => (v == null ? null : v / 100); // JSON % → 비율
@@ -149,6 +163,7 @@ const sidoMetrics = [
         전국 {N}개 시·군·구마다 상권의 지금 체력과 미래 수요를 함께 보여 주는 <strong>상권 활력 지수</strong>를 만들고, 성장·정체·위축·소멸위험으로 나눴습니다.
       </p>
       <div style="margin-top:20px"><RegionSearch items={searchItems} /></div>
+      <PageMeta basis={`사업체 ${y0}~${y1}년 · 기업 신생·소멸 ~${demYears.at(-1)}년 · 인구 ${consLast}년 실측 · ${consEnd}년까지 인구추계`} orgs={["통계청", "고용노동부", "행정안전부"]} />
     </section>
 
     <div class="grid grid-4">
@@ -161,7 +176,7 @@ const sidoMetrics = [
     <section class="section" id="map">
       <h2>상권 지도</h2>
       <p class="section-desc">{N}개 시군구의 상권 활력, 앞으로의 손님(소비인구), 최근 가게 증감을 지도로 봅니다. 지표를 바꿔 보세요.</p>
-      <KoreaMap metrics={mapMetrics} names={names} links={links} notes={notes} title="시군구 상권 지도" sub="도소매 + 숙박음식 · 소비인구는 20~64세 주민" />
+      <KoreaMap metrics={mapMetrics} names={names} links={links} notes={notes} title="시군구 상권 지도" sub="도소매 + 숙박음식 · 소비인구는 20~64세 주민" note={idxNote} source={[SRC.biz, SRC.demo, SRC.mig, SRC.pop]} />
     </section>
 
     <section class="section">
@@ -188,14 +203,14 @@ const sidoMetrics = [
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={consSpec} table={consTable} title="전국 소비인구 (20~64세)" sub="주민등록 실측(~2025) + 소지역 인구추계 합계. 음영은 출산율 저위~고위 (2045년까지는 차이가 작음)" />
-      <ChartSwitch views={[{ label: "신생·소멸률", spec: rateSpec }, { label: "순진입률", spec: netSpec, note: "신생률 − 소멸률. 0 아래면 닫는 기업이 여는 기업보다 많습니다." }]} table={rateTable} title="상권 기업의 신생률·소멸률" sub={`도소매+숙박음식, 활동 기업 대비 %. 소멸은 ${demYears.at(-2)}년까지 확정`} />
+      <Chart spec={consSpec} table={consTable} title="전국 소비인구 (20~64세)" sub={`주민등록 실측(~${consLast}) + 소지역 인구추계 합계. 음영은 출산율 저위~고위 (${consEnd}년까지는 차이가 작음)`} note={projNote} source={SRC.pop} />
+      <ChartSwitch views={[{ label: "신생·소멸률", spec: rateSpec }, { label: "순진입률", spec: netSpec, note: "신생률 − 소멸률. 0 아래면 닫는 기업이 여는 기업보다 많습니다." }]} table={rateTable} title="상권 기업의 신생률·소멸률" sub={`도소매+숙박음식, 활동 기업 대비 %. 소멸은 ${demYears.at(-2)}년까지 확정`} note={`${demYears.at(-1)}년 소멸 기업은 잠정.`} source={SRC.demo} />
     </section>
 
     <section class="section">
       <h2>점포 과잉 신호: 가게는 느는데 손님은 줄어드는 곳</h2>
       <p class="section-desc">{g0}→{y1}년 상권 사업체가 늘었지만 2035년 소비인구는 20% 이상 줄어드는 {over.length}곳. 점포 수가 그대로라면 소비인구 1천 명당 점포가 얼마나 많아지는지 보여 줍니다.</p>
-      <Chart spec={scatterSpec} title="가게 증가율 × 10년 뒤 손님 변화" sub={`점 하나 = 시군구, 크기 = ${y1}년 상권 사업체 수, 색 = 상권 상태. 오른쪽 아래(가게는 늘고 소비인구는 20% 넘게 줄어듦)가 점포 과잉 신호 구역입니다. 점을 누르면 상세 페이지로 갑니다.`} />
+      <Chart spec={scatterSpec} note={`가로: ${g0}→${y1}년 상권 사업체 연평균 증감 · 세로: ${consLast}→2035년 20~64세 인구 변화(추계).`} source={[SRC.biz, SRC.pop]} title="가게 증가율 × 10년 뒤 손님 변화" sub={`점 하나 = 시군구, 크기 = ${y1}년 상권 사업체 수, 색 = 상권 상태. 오른쪽 아래(가게는 늘고 소비인구는 20% 넘게 줄어듦)가 점포 과잉 신호 구역입니다. 점을 누르면 상세 페이지로 갑니다.`} />
       <h3 style="margin-top:24px">점포 과잉 신호 {over.length}곳 (소비인구 감소 폭이 큰 순)</h3>
       <div class="table-wrap" style="max-height:480px">
         <table>
@@ -233,7 +248,7 @@ const sidoMetrics = [
       <h2>시도별 요약</h2>
       <p class="section-desc">2025→2035년 소비인구(20~64세) 변화와 시도 안 시군구의 상권 상태.</p>
       <div class="grid grid-2">
-        <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} rank={false} compact title="시도별 상권 지도" sub="지표를 바꿔 보세요" />
+        <KoreaMap level="sido" metrics={sidoMetrics} names={sidoNames} rank={false} compact title="시도별 상권 지도" sub="지표를 바꿔 보세요" note={projNote} source={[SRC.demo, SRC.biz, SRC.mig, SRC.pop]} />
         <div class="table-wrap">
           <table>
             <thead><tr><th>시도</th><th class="num">평균 지수</th><th class="num">성장</th><th class="num">위축·소멸위험</th><th class="num">과잉 신호</th></tr></thead>

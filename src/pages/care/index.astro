@@ -5,6 +5,7 @@ import ChartSwitch from "../../components/ChartSwitch.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/care.json";
 import { pts, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -22,6 +23,16 @@ const pastYears = years.filter((y) => y < by);
 const projFromAll = years.findIndex((y) => y > by);
 const bedsX = (h.beds + h.bedsGap2045) / h.beds;
 const clinicLabel = (p: string) => (p ? `${p.slice(0, 4)}년 ${+p.slice(4)}분기` : "");
+
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  ltc: "국민건강보험공단 노인장기요양보험통계 장기요양기관·전문인력 현황(KOSIS DT_35006_N021, DT_35006_N022)",
+  clinic: "건강보험심사평가원 시군구별 표시과목별 의원 현황(KOSIS DT_HIRA4G)",
+  doc: "e-지방지표 인구 천명당 의료기관 종사 의사수(KOSIS DT_1YL20981)",
+  cost: "국민건강보험공단 건강보험통계 시군구별 연령별 진료현황(KOSIS TX_35003_A035, _A064, _A093, _A122)",
+  pop: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006) + 숫자 너머 인구 추계(중위)",
+};
+const lastYear = years.at(-1);
 
 // 의료 수요 vs 인구
 const idx = (o: any) => years.map((y) => [y, val(o, y)] as [number, number | null]);
@@ -106,8 +117,9 @@ const demBars = (key: "top" | "bottom") => {
           인구는 2045년까지 {pct(-h.pop2045, 0)} 줄지만 75세 이상은 <strong>{compact(h.old75Now)}명에서 {compact(h.old75_2045)}명</strong>으로 늘어납니다.
           시군구 229곳의 연령별 인구 추계에 요양 정원·요양보호사·의사·소아과 통계와 연령별 진료비를 결합해, 동네마다 어떤 돌봄이 얼마나 모자라게 될지 계산했습니다.
         </p>
+        <PageMeta basis={`${by}년 기준(요양 ${m.ltcYear}년 · 의원 ${clinicLabel(m.clinicPeriod)} · 진료비 ${m.costYear}년) · ${by + 5}~${lastYear}년 중위 인구 추계`} orgs={["국민건강보험공단", "건강보험심사평가원", "행정안전부"]} />
       </div>
-      <ChartSwitch views={[{ label: "수요 지수", spec: demandSpec }]} table={demandTable} h={2} title={`인구는 줄어도 의료 수요는 는다 (${by} = 1)`} sub={`의료 수요 지수 = 연령별 1인당 진료비 × 연령별 인구 (전국 · ${pastYears.join("·")} 실측, ${by + 1}~ 중위 추계)`} />
+      <ChartSwitch views={[{ label: "수요 지수", spec: demandSpec }]} table={demandTable} h={2} title={`인구는 줄어도 의료 수요는 는다 (${by} = 1)`} sub={`의료 수요 지수 = 연령별 1인당 진료비 × 연령별 인구 (전국 · ${pastYears.join("·")} 실측, ${by + 1}~ 중위 추계)`} note={`연령대별 1인당 진료비를 ${m.costYear}년 값으로 고정해 인구 구조 변화의 효과만 계산.`} source={[SRC.cost, SRC.pop]} />
     </section>
 
     <div class="grid grid-4">
@@ -118,7 +130,7 @@ const demBars = (key: "top" | "bottom") => {
     </div>
 
     <section class="section grid grid-2">
-      <Chart spec={costSpec} title="나이가 들수록 진료비는 가파르게 는다" sub={`연령대별 1인당 연간 건강보험 진료비 (${m.costYear}년, 전국)`} />
+      <Chart spec={costSpec} title="나이가 들수록 진료비는 가파르게 는다" sub={`연령대별 1인당 연간 건강보험 진료비 (${m.costYear}년, 전국)`} note="연령대별 진료비 ÷ 같은 연령대 주민등록 인구." source={[SRC.cost, SRC.pop]} />
       <div class="card">
         <h3 class="card-title">의료 수요 지수란</h3>
         <p class="small">80세 이상 1명은 연간 진료비가 10대의 약 {Math.round(m.costWeights[8] / m.costWeights[1])}배입니다. 그래서 같은 인구라도 나이 구성이 바뀌면 병원이 감당할 일의 양이 달라집니다.</p>
@@ -131,7 +143,7 @@ const demBars = (key: "top" | "bottom") => {
     <section class="section" id="map">
       <h2>지도로 보는 우리 동네</h2>
       <p class="section-desc">지표를 바꿔 보세요. 시도를 누르면 확대됩니다. 요양 정원은 {m.ltcYear}년, 의원 수는 {clinicLabel(m.clinicPeriod)} 기준입니다.</p>
-      <KoreaMap metrics={mapMetrics} names={mapNames} notes={mapNotes} title="시군구 의료·돌봄 지도" sub={`${pastYears.join("·")} 실측 · ${by} 현재 · 이후 중위 인구 추계`} />
+      <KoreaMap metrics={mapMetrics} names={mapNames} notes={mapNotes} title="시군구 의료·돌봄 지도" sub={`${pastYears.join("·")} 실측 · ${by} 현재 · 이후 중위 인구 추계`} note={`요양 정원·의원 수는 ${by}년 이후 그대로라고 가정. 소아과는 의원급만 집계(${clinicLabel(m.clinicPeriod)}).`} source={[SRC.ltc, SRC.clinic, SRC.cost, SRC.pop]} />
     </section>
 
     <section class="section grid grid-2">
@@ -151,7 +163,7 @@ const demBars = (key: "top" | "bottom") => {
       <h2>요양: 시설과 사람이 함께 부족해진다</h2>
       <p class="section-desc">지금 전국 노인의료복지시설 정원은 75세 이상 100명당 {h.bedsPer100}명입니다. 이 비율을 유지하려면 정원이 2035년 {compact(nat.bedsNeed["2035"])}명, 2045년 {compact(nat.bedsNeed["2045"])}명이어야 합니다. 요양보호사도 같은 비율로 2035년까지 {compact(h.carersGap2035)}명이 더 필요합니다.</p>
       <div class="grid grid-2">
-        <Chart spec={bedsSpec} title="지금까지 늘어난 정원, 앞으로 필요한 정원" sub={`${pastYears.join("·")}·${by}년은 실제 정원, 이후는 75세 이상 100명당 ${h.bedsPer100}명을 유지하는 데 필요한 정원 (전국)`} />
+        <Chart spec={bedsSpec} title="지금까지 늘어난 정원, 앞으로 필요한 정원" sub={`${pastYears.join("·")}·${by}년은 실제 정원, 이후는 75세 이상 100명당 ${h.bedsPer100}명을 유지하는 데 필요한 정원 (전국)`} note="정원은 노인의료복지시설(요양원·공동생활가정). 필요 정원 = 75세 이상 추계 × 지금의 75세 100명당 정원." source={[SRC.ltc, SRC.pop]} />
         <div class="card">
           <h3 class="card-title">2015년 이후 정원은 얼마나 늘었나</h3>
           <p class="small">노인의료복지시설 정원은 2015년 {compact(nat.beds2015)}명에서 {m.ltcYear}년 {compact(h.beds)}명으로 {pct(h.beds / nat.beds2015 - 1, 0, true)} 늘었습니다. 연평균 약 {compact((h.beds - nat.beds2015) / (m.ltcYear - 2015))}명씩입니다.</p>

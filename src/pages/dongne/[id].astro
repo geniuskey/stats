@@ -5,6 +5,7 @@ import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import { dongneMetrics, dongneNames, dongneNotes, dongneLinks } from "../../lib/dongneMap";
 import data from "../../data/dongne.json";
 import school from "../../data/school.json";
@@ -19,6 +20,15 @@ const d = data as any;
 const base = import.meta.env.BASE_URL;
 const by = d.meta.baseYear, end = d.meta.end;
 const m = r.m;
+// 그림 출처 (작성기관 · 통계명 · KOSIS 표 ID)
+const SRC = {
+  reg: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006)",
+  fert: "통계청 장래인구추계 출산율 시나리오(KOSIS DT_1BPA001·004·402·403)",
+  official: "통계청 장래인구추계 시군구 2022년 기준(KOSIS DT_1BPB002E)",
+  mig: "통계청 국내인구이동통계 연령별 순이동(KOSIS DT_1B26002)",
+  emp: "고용노동부 사업체노동실태현황 사업체·종사자(KOSIS DT_118N_SAUP*)",
+};
+const projNote = `${by}년까지 주민등록 실측, ${by + 1}년부터 자체 추계(코호트 변화율법). 예측이 아닌 출산율 시나리오별 전망.`;
 const S = r.series;
 const f = (s: string, k: string, from = 2015, to = 2100) => Object.entries(S[s]).filter(([y]) => +y >= from && +y <= to).map(([y, v]: any) => [+y, v[k]] as [number, number]);
 const popSpec = {
@@ -82,8 +92,9 @@ const lastVac = c.vacancyRate ? Object.entries(c.vacancyRate).at(-1) : null;
           {int(m.pop2025)}명({by}년)에서 {end}년 {int(m.pop2045)}명으로 '{verdict}' 전망입니다(중위, 범위 {pct(m.ch2045low, 0, true)} ~ {pct(m.ch2045high, 0, true)}).
           지속가능성 지수는 <strong>{m.index}</strong>로 전국 {d.regions.length}곳 중 {m.rank}위, {r.sido} {sidoPeers.length}곳 중 {rankInSido}위입니다.
         </p>
+        <PageMeta basis={`${by}년 말 주민등록 실측 · ${by + 1}~${end}년 자체 추계(저위·중위·고위)`} orgs={["행정안전부", "통계청", "고용노동부"]} method={`${base}dongne/#method`} />
       </div>
-      <KoreaMap level="sgg" only={r.sidoCode} highlight={r.id} metrics={peerMetrics} names={dongneNames(peers)} notes={dongneNotes(peers)} links={dongneLinks(base, peers)} rank={false} compact h={2} title={`${r.sido} 안에서 ${r.name}`} sub="굵은 선이 이 지역 · 다른 시군구를 누르면 이동" />
+      <KoreaMap level="sgg" only={r.sidoCode} highlight={r.id} metrics={peerMetrics} names={dongneNames(peers)} notes={dongneNotes(peers)} links={dongneLinks(base, peers)} rank={false} compact h={2} title={`${r.sido} 안에서 ${r.name}`} sub="굵은 선이 이 지역 · 다른 시군구를 누르면 이동" note={projNote} source={[SRC.reg, SRC.fert, SRC.mig, SRC.emp]} />
     </section>
     <div class="grid grid-4">
       <Stat label="지속가능성 지수" value={String(m.index)} note={`전국 ${m.rank}위 · 50 = 평균`} />
@@ -93,11 +104,11 @@ const lastVac = c.vacancyRate ? Object.entries(c.vacancyRate).at(-1) : null;
     </div>
 
     <section class="section">
-      <Chart spec={popSpec} table={popTable} title="총인구" sub={`2015~${end}년, 음영은 출산율 저위~고위`} />
+      <Chart spec={popSpec} table={popTable} title="총인구" sub={`2015~${end}년, 음영은 출산율 저위~고위`} note={`${projNote} 공식 추계는 2022년 기준 통계청 시군구 추계를 그대로 표시.`} source={[SRC.reg, SRC.fert, SRC.official]} />
     </section>
     <section class="section grid grid-2">
-      <Chart spec={pyrSpec} table={pyrTable} title={`인구 피라미드 2015 → ${end}`} sub={`▶ 재생 · 검은 선은 ${by}년. ${by + 1}년부터 추계`} />
-      <ChartSwitch views={[{ label: "비중 선", spec: ageSpec }, { label: "누적 영역", spec: ageArea }, { label: "나이별 비교", spec: ageCol, note: "가로축: 나이(5세 단위 시작 연령)" }]} table={ageTable} title="연령 구조 변화" sub="전체 인구 대비 비중 · 형태를 바꿔 보세요" />
+      <Chart spec={pyrSpec} table={pyrTable} title={`인구 피라미드 2015 → ${end}`} sub={`▶ 재생 · 검은 선은 ${by}년. ${by + 1}년부터 추계`} note={projNote} source={[SRC.reg, SRC.fert]} />
+      <ChartSwitch views={[{ label: "비중 선", spec: ageSpec }, { label: "누적 영역", spec: ageArea }, { label: "나이별 비교", spec: ageCol, note: "가로축: 나이(5세 단위 시작 연령)" }]} table={ageTable} title="연령 구조 변화" sub="전체 인구 대비 비중 · 형태를 바꿔 보세요" note={projNote} source={[SRC.reg, SRC.fert]} />
     </section>
     <section class="section grid grid-2">
       <div class="card">
@@ -106,9 +117,9 @@ const lastVac = c.vacancyRate ? Object.entries(c.vacancyRate).at(-1) : null;
         <BarList items={compItems} format="dec1" diverging />
         {lastVac && <p class="small muted" style="margin-top:12px">빈집률 {lastVac[0]}년 {(lastVac[1] as number).toFixed(1)}% · 사업체 종사자 연 {m.empGrowth?.toFixed(1)}% 증감</p>}
       </div>
-      {migSpec && <Chart spec={migSpec} title="20~39세 순이동 (명)" sub="전입 − 전출, 음수는 순유출" />}
+      {migSpec && <Chart spec={migSpec} title="20~39세 순이동 (명)" sub="전입 − 전출, 음수는 순유출" note="20~39세 연령별 순이동을 합산." source={SRC.mig} />}
     </section>
-    {empSpec && <section class="section"><Chart spec={empSpec} title="사업체 종사자 수" sub="전 산업" /></section>}
+    {empSpec && <section class="section"><Chart spec={empSpec} title="사업체 종사자 수" sub="전 산업" source={SRC.emp} derived={false} /></section>}
 
     <section class="section grid grid-2">
       {sch && <a class="card svc" href={`${base}school/${sch.id}/`}><h3>학교는 얼마나 남을까?</h3><p>초등학생 {int(sch.summary.current)}명 → 2035년 {int(sch.summary.y2035)}명 ({pct(sch.summary.change2035, 0, true)})</p></a>}

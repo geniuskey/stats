@@ -5,6 +5,7 @@ import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
+import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/commerce.json";
 import { pts, joinProj, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -42,6 +43,20 @@ const consPart = m.consumerChange2035 == null ? "" : m.consumerChange2035 >= 0
 const headline = storePart && consPart ? `${storePart}, ${consPart}` : C.line;
 const peers = regions.filter((x) => x.sidoCode === r.sidoCode);
 const sidoRank = [...peers].sort((a, b) => b.index - a.index).findIndex((x) => x.key === r.key) + 1;
+
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  demo: "통계청 기업생멸행정통계 시군구·산업별 활동·신생·소멸 기업(KOSIS DT_6BD1132)",
+  biz: "고용노동부 사업체노동실태현황 시군구·산업별 사업체·종사자(KOSIS DT_118N_SAUPN75·N78·M75·M78)",
+  mig: "통계청 국내인구이동통계 시군구·연령별 순이동(KOSIS DT_1B26002)",
+  hh: "행정안전부 주민등록 세대수(KOSIS DT_1B040B3)",
+  vac: "통계청 주택총조사 미거주주택 비율(KOSIS DT_1YL202005)",
+  pop: "행정안전부 주민등록인구(KOSIS DT_1B04006) → 숫자 너머 소지역 인구추계",
+};
+const consLast = Math.max(...Object.keys((data as any).summary["00"].consumers.actual).map(Number));
+const consEnd = Math.max(...Object.keys((data as any).summary["00"].consumers.mid).map(Number));
+const projNote = `${consLast + 1}년부터는 소지역 인구추계(중위), 음영은 출산율 저위~고위. 예측이 아닌 시나리오.`;
+const idxNote = "상권 = 도소매(G) + 숙박음식(I). 활력 지수는 사업체·종사자 증감, 순진입률, 2030년 소비인구 변화, 20~39세 순이동률의 전국 표준점수 가중합(50 = 전국 평균).";
 
 // 구성요소
 const COMP: Record<string, string> = {
@@ -203,8 +218,9 @@ const storeCountSpec = {
         50이 전국 평균입니다. 점포 수가 지금 그대로라면 2035년에는 점포 1곳이 나눠 갖는 소비인구가 <strong>{pct(p(m.demandPerStore2035), 0, true)}</strong> 달라집니다.
         {r.oversupply && <span> <span class="badge"><span class="dot" style="background:var(--serious)"></span>점포 과잉 신호</span></span>}
       </p>
+      <PageMeta basis={`사업체 ${y0}~${y1}년 · 인구 ${consLast}년 실측 · ${consEnd}년까지 인구추계`} orgs={["통계청", "고용노동부", "행정안전부"]} />
       </div>
-      <KoreaMap metrics={mapMetrics} names={names} links={links} notes={notes} only={r.sidoCode} highlight={r.id} compact h={2} title={`${sidoSum?.name ?? r.sido} 안에서 ${r.name}`} sub="굵은 테두리 = 이 지역. 다른 지역을 누르면 이동합니다" />
+      <KoreaMap metrics={mapMetrics} names={names} links={links} notes={notes} only={r.sidoCode} highlight={r.id} compact h={2} title={`${sidoSum?.name ?? r.sido} 안에서 ${r.name}`} sub="굵은 테두리 = 이 지역. 다른 지역을 누르면 이동합니다" note={projNote} source={[SRC.demo, SRC.biz, SRC.mig, SRC.pop]} />
     </section>
 
     <div class="grid grid-4">
@@ -225,25 +241,25 @@ const storeCountSpec = {
             <tbody>{compTable.map((row) => <tr><td>{row[0]}</td><td class="num">{row[1]}</td><td class="num">{row[2]}</td></tr>)}</tbody></table></div>
         </details>
       </div>
-      <ChartSwitch views={[{ label: `지수 (${g0}=100)`, spec: trendSpec }, { label: "사업체 수", spec: storeCountSpec, note: `회색 막대는 ${g0}년 이전(통계 수준 단절 구간).` }]} table={trendTable} title="상권 사업체·종사자 추이" sub={`도소매+숙박음식. 지수의 회색 선은 전국 사업체. ${g0}년에 전국 수준이 크게 꺾여 그 이전과의 비교는 주의`} />
+      <ChartSwitch views={[{ label: `지수 (${g0}=100)`, spec: trendSpec }, { label: "사업체 수", spec: storeCountSpec, note: `회색 막대는 ${g0}년 이전(통계 수준 단절 구간).` }]} table={trendTable} note="상권 = 도소매(G) + 숙박음식(I). 2023년까지와 2024년 이후는 서로 다른 KOSIS 표(산업분류 10차·11차)를 이어 붙인 값." source={SRC.biz} title="상권 사업체·종사자 추이" sub={`도소매+숙박음식. 지수의 회색 선은 전국 사업체. ${g0}년에 전국 수준이 크게 꺾여 그 이전과의 비교는 주의`} />
     </section>
 
     <section class="section">
       <h2>손님이 될 인구: 소비인구 추계</h2>
       <p class="section-desc">상권 수요의 기반인 20~64세 주민 수. 실선은 주민등록 실측, 점선은 이 사이트의 소지역 인구추계(중위), 음영은 출산율 저위~고위입니다. 추계는 시나리오이며 예측이 아닙니다.</p>
       <div class="grid grid-2">
-        <Chart spec={consSpec} table={consTable} title={`${r.name} 20~64세 인구`} sub="2015~2045년" />
-        <Chart spec={densSpec} table={densTable} title="소비인구 1천 명당 상권 점포 수" sub={`${y1}년 이후(*, 연한 막대)는 점포 수가 ${y1}년 그대로일 때의 값 = 점포 1곳당 수요 감소 신호`} />
+        <Chart spec={consSpec} table={consTable} title={`${r.name} 20~64세 인구`} sub={`2015~${consEnd}년`} note={projNote} source={SRC.pop} />
+        <Chart spec={densSpec} table={densTable} note={`${y1}년 이후는 점포 수 고정 가정의 계산값.`} source={[SRC.biz, SRC.pop]} title="소비인구 1천 명당 상권 점포 수" sub={`${y1}년 이후(*, 연한 막대)는 점포 수가 ${y1}년 그대로일 때의 값 = 점포 1곳당 수요 감소 신호`} />
       </div>
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={demSpec} table={demTable} title="상권 기업 신생률·소멸률" sub={`활동 기업 대비 %. 최근 3년 평균 순진입률 ${m.netEntry == null ? "–" : `${m.netEntry > 0 ? "+" : ""}${m.netEntry.toFixed(1)}%p`} (전국 중앙값과 비교는 구성요소 참고)`} />
-      <Chart spec={migSpec} table={migTable} title="20~39세 순이동 (명)" sub={`전입 − 전출. 최근 3년 평균 1천 명당 ${m.youngMigrationRate == null ? "–" : m.youngMigrationRate.toFixed(1)}명`} />
+      <Chart spec={demSpec} table={demTable} source={SRC.demo} title="상권 기업 신생률·소멸률" sub={`활동 기업 대비 %. 최근 3년 평균 순진입률 ${m.netEntry == null ? "–" : `${m.netEntry > 0 ? "+" : ""}${m.netEntry.toFixed(1)}%p`} (전국 중앙값과 비교는 구성요소 참고)`} />
+      <Chart spec={migSpec} table={migTable} source={SRC.mig} derived={false} title="20~39세 순이동 (명)" sub={`전입 − 전출. 최근 3년 평균 1천 명당 ${m.youngMigrationRate == null ? "–" : m.youngMigrationRate.toFixed(1)}명`} />
     </section>
 
     <section class="section grid grid-2">
-      <Chart spec={vacSpec} table={vacTable} title="빈집 비율" sub="주택총조사 미거주주택 ÷ 전체 주택" />
+      <Chart spec={vacSpec} table={vacTable} source={SRC.vac} derived={false} title="빈집 비율" sub="주택총조사 미거주주택 ÷ 전체 주택" />
       <div class="card">
         <h3 class="card-title">{sidoSum?.name} 안에서 비교</h3>
         <p class="card-sub">같은 시도 시군구의 상권 활력 지수</p>

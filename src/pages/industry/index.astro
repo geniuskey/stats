@@ -4,6 +4,8 @@ import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
+import PageMeta from "../../components/PageMeta.astro";
+import FigureFoot from "../../components/FigureFoot.astro";
 import data from "../../data/industry.json";
 import { pts } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
@@ -15,6 +17,15 @@ const M = D.meta;
 const inds = D.industries as any[];
 const base = M.baseYear as number;
 const end = M.projEnd as number;
+// 그림 출처 (KOSIS 표 ID · 작성기관)
+const SRC = {
+  emp: "통계청 지역별고용조사 산업·연령별 취업자(KOSIS DT_1ES3B27J)",
+  rate: "통계청 경제활동인구조사 연령계층별 고용률(KOSIS DT_1DA7002S)",
+  gva: "한국은행 국민계정 경제활동별 실질 GDP(KOSIS DT_200Y106)",
+  exp: "통계청·관세청 기업특성별 무역통계 산업별 수출(KOSIS DT_1TEC_P320)",
+  pop: "행정안전부 주민등록인구 → 숫자 너머 인구추계(통계청 2022년 기준 장래추계 출산율 시나리오)",
+};
+const projNote = `${base + 1}년부터는 추계(중위 인구) · 예측이 아닌 시나리오.`;
 
 // 천명 → 명
 const k1000 = (m: Record<string, number>) => Object.fromEntries(Object.entries(m).map(([y, v]) => [y, v * 1000]));
@@ -133,11 +144,13 @@ const simJson = JSON.stringify({
           10년 안에 은퇴로 비는 자리가 얼마나 되는지, 그리고 인구가 줄 때 어느 산업에서 사람이 모자라는지 시나리오로 계산합니다.
         </p>
         <p class="small muted">오른쪽은 {empYears[0]}→{empYears.at(-1)}년 산업별 취업자 순위입니다. 보건·사회복지가 {compact(qInd.employment[empYears[0]] * 1000)}명에서 {compact(qInd.employment[empYears.at(-1)!] * 1000)}명으로 늘며 순위를 끌어올리는 모습을 재생해 보세요. 색: <span class="kw" style="--c:var(--series-1)">성장</span> <span class="kw" style="--c:var(--neutral-series)">정체</span> <span class="kw" style="--c:var(--series-2)">쇠퇴</span></p>
+        <PageMeta basis={`${base}년 실측 · ${base + 1}~${end}년 인구추계 기반 시나리오 · 산업 분류 ${M.trendFrom}→${M.trendTo}년`} orgs={["통계청", "한국은행", "관세청", "행정안전부"]} />
       </div>
-      <figure class="card" style="margin:0">
+      <figure class="card" style="margin:0" id="fig-emp-race">
         <h2 class="card-title">산업별 취업자 순위 {empYears[0]} → {empYears.at(-1)}</h2>
         <p class="card-sub">상위 12개 산업, 지역별고용조사 연평균</p>
         <div class="chart" data-chart><script type="application/json" set:html={JSON.stringify({ ...raceSpec, autoplay: true }).replace(/</g, "\\u003c")} /></div>
+        <FigureFoot note="연평균 취업자. 산업은 한국표준산업분류 11차 대분류." source={SRC.emp} derived={false} />
       </figure>
     </section>
 
@@ -155,11 +168,11 @@ const simJson = JSON.stringify({
         고령자도 일을 하기 때문에 실제 노동공급의 감소폭은 이보다 작지만, 그래도 {end}년까지 {pct(S.supplyChange2045.base, 0, true)}입니다. 60~74세 고용률이 5~7.5%p 오르면 감소폭은 {pct(S.supplyChange2045.older, 0, true)}로 줄어듭니다.
         점선은 추계·시나리오이며 예측이 아닙니다.
       </p>
-      <Chart spec={supplySpec} table={supplyTable} title="생산연령인구와 노동공급 (명)" sub={`2015~${end}년, 실측 취업자는 지역별고용조사 연평균 · 공급은 연령별 고용률 × 인구추계(중위)`} />
+      <Chart spec={supplySpec} table={supplyTable} title="생산연령인구와 노동공급 (명)" sub={`2015~${end}년, 실측 취업자는 지역별고용조사 연평균 · 공급은 연령별 고용률 × 인구추계(중위)`} note={`노동공급 = 연령별 고용률 × 연령별 인구. 고령자 고용 확대: ${M.scenarios.supply.older}. ${projNote}`} source={[SRC.emp, SRC.rate, SRC.pop]} />
     </section>
 
     <section class="section grid grid-2">
-      <ChartSwitch views={[{ label: "인원 누적", spec: ageAreaSpec }, { label: "구성비 막대", spec: ageStackSpec }]} table={ageTable} title="노동공급의 연령 구성 (고용률 유지)" sub={`${sbaYears[0]}·${sbaYears[1]}년은 실제 취업자, ${base + 1}년부터 고용률 유지 추계 · 60세 이상 비중: ${sbaYears[0]}년 ${pct(sbaShare(sbaYears[0]), 0)} → ${base}년 ${pct(older2025, 0)} → ${end}년 ${pct(older2045, 0)}`} />
+      <ChartSwitch views={[{ label: "인원 누적", spec: ageAreaSpec }, { label: "구성비 막대", spec: ageStackSpec }]} table={ageTable} note={`고용률 ${base}년 수준 고정. ${projNote}`} source={[SRC.emp, SRC.rate, SRC.pop]} title="노동공급의 연령 구성 (고용률 유지)" sub={`${sbaYears[0]}·${sbaYears[1]}년은 실제 취업자, ${base + 1}년부터 고용률 유지 추계 · 60세 이상 비중: ${sbaYears[0]}년 ${pct(sbaShare(sbaYears[0]), 0)} → ${base}년 ${pct(older2025, 0)} → ${end}년 ${pct(older2045, 0)}`} />
       <div class="card">
         <h3 class="card-title">무엇이 새로 보이나</h3>
         <div class="insight" style="margin-top:8px">
@@ -252,10 +265,11 @@ const simJson = JSON.stringify({
         {M.trendFrom}→{M.trendTo}년 연평균 증가율을 경제 전체(취업자 {pct(N.cagr.employment, 1, true)}, 실질 부가가치 {pct(N.cagr.gva, 1, true)}, 수출 {pct(N.cagr.exports, 1, true)})와 비교했습니다.
         ▲는 경제 전체보다 1%p 이상 높고, ▼는 1%p 이상 낮다는 뜻입니다. 수출 통계는 광업·제조업·도소매만 있습니다.
       </p>
-      <figure class="card" style="margin:0 0 16px">
+      <figure class="card" style="margin:0 0 16px" id="fig-emp-gva">
         <h3 class="card-title">고용 증가율 × 실질 부가가치 증가율</h3>
         <p class="card-sub">{M.trendFrom}→{M.trendTo}년 연평균, 점선은 경제 전체. 원 크기 = {base}년 취업자. 오른쪽 위가 고용과 생산이 함께 큰 산업입니다. 점을 가리키면 생산성이 보입니다</p>
         <div class="chart" data-chart><script type="application/json" set:html={JSON.stringify(scatterSpec).replace(/</g, "\\u003c")} /></div>
+        <FigureFoot note={`${M.trendFrom}→${M.trendTo}년 연평균 증가율. 실질 부가가치는 2020년 연쇄가격.`} source={[SRC.emp, SRC.gva]} />
       </figure>
       <div class="table-wrap">
         <table>
