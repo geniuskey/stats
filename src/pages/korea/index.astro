@@ -119,10 +119,9 @@ const waffle = {
 // 시도 지도 (연도 재생)
 const sidoNames = Object.fromEntries(d.sidos.map((s: any) => [s.id, s.full]));
 const mapYears = Object.keys(d.sidos[0].series).map(Number).filter((y) => y >= 2015 && y <= 2050);
-const projYears = mapYears.filter((y) => y >= by);
 const sidoMetrics = [
-  { key: "ch", label: `인구 변화 (${by}년 대비)`, format: "pctS" as const, kind: "div" as const, breaks: [-0.3, -0.2, -0.1, -0.05, 0, 0.05, 0.1], desc: `${by}년 인구 대비 변화율 (중위 추계). ▶ 를 누르면 ${by}→2050년 변화를 재생합니다.`,
-    frames: { labels: projYears, values: projYears.map((y) => Object.fromEntries(d.sidos.map((s: any) => [s.id, s.series[y].total / s.series[by].total - 1]))), start: projYears.length - 1 } },
+  { key: "ch", label: `인구 변화 (${by}년 대비)`, format: "pctS" as const, kind: "div" as const, breaks: [-0.3, -0.2, -0.1, -0.05, 0, 0.05, 0.1], desc: `${by}년 인구 대비 변화율. ${mapYears[0]}~${by}년은 실측(그때 인구가 지금보다 많았으면 +), 이후는 중위 추계입니다. ▶ 를 누르면 ${mapYears[0]}→2050년 변화를 재생합니다.`,
+    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(d.sidos.map((s: any) => [s.id, s.series[y].total / s.series[by].total - 1]))), start: mapYears.length - 1, projFrom: mapYears.indexOf(by + 1) } },
   { key: "old", label: "65세 이상 비중", format: "pct" as const, kind: "seq" as const, breaks: [0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45], desc: "주민 중 65세 이상 비율. 2015년 실측부터 2050년 추계까지.",
     frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(d.sidos.map((s: any) => [s.id, s.series[y].oldShare]))), start: mapYears.indexOf(2050), projFrom: mapYears.indexOf(by + 1) } },
   { key: "age", label: "중위연령", format: "age" as const, kind: "seq-warm" as const, breaks: [42, 45, 48, 51, 54, 57, 60], desc: "주민을 나이순으로 세웠을 때 한가운데 사람의 나이.",

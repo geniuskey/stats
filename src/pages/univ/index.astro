@@ -63,12 +63,17 @@ const demandTable = {
 
 // 4년제 vs 전문대
 const typeYears = Object.keys(n.byType.u).map(Number);
+// 2015~지금은 실제 입학자 ÷ 지금 입학 규모, 이후는 추계 채움률 (지금 = 100%)
+const histYrs = Object.keys(n.entrants.u).map(Number).filter((y) => y >= 2015 && y <= L);
+const typeLine = (t: "u" | "c") =>
+  [...histYrs.map((y) => [y, n.entrants[t][String(y)] / n.capByType[t]]), ...typeYears.map((y) => [y, n.byType[t][String(y)] / n.capByType[t]])] as [number, number][];
 const typeSpec = {
-  type: "line" as const, yFormat: "pct" as const, height: 300, projStart: L, yMax: 1.02,
+  type: "line" as const, yFormat: "pct" as const, height: 300, projStart: L,
   series: [
-    { name: "4년제", color: "var(--series-1)", data: [[L, 1], ...typeYears.map((y) => [y, n.byType.u[String(y)] / n.capByType.u])] as [number, number][], label: true },
-    { name: "전문대", color: "var(--series-2)", data: [[L, 1], ...typeYears.map((y) => [y, n.byType.c[String(y)] / n.capByType.c])] as [number, number][], label: true },
+    { name: "4년제", color: "var(--series-1)", data: typeLine("u"), label: true },
+    { name: "전문대", color: "var(--series-2)", data: typeLine("c"), label: true },
   ],
+  hLines: [{ y: 1, label: `지금(${L}) 입학 규모` }],
 };
 const histTypeSpec = {
   type: "line" as const, yFormat: "man" as const, height: 300,
@@ -81,10 +86,13 @@ const histTypeSpec = {
 // 시도
 const sidos = d.sidos as any[];
 const sidoNames = Object.fromEntries(sidos.map((s) => [s.id, s.name]));
-const mapYears = Object.keys(sidos[0].fill).map(Number).filter((y) => y <= 2045);
+// 2015~지금은 실제 입학자 ÷ 지금 입학 규모, 이후는 추계
+const mapHist = Object.keys(sidos[0].hist).map(Number).filter((y) => y >= 2015 && y <= L);
+const mapYears = [...mapHist, ...Object.keys(sidos[0].fill).map(Number).filter((y) => y > L && y <= 2045)];
+const fillAt = (s: any, y: number) => (y <= L ? (s.hist[String(y)] != null && s.cap ? s.hist[String(y)] / s.cap : null) : s.fill[String(y)]);
 const sidoMetrics = [
-  { key: "fill", label: "입학 자리 채움률", format: "pct" as const, kind: "seq" as const, breaks: [0.4, 0.5, 0.6, 0.7, 0.8, 0.9], desc: `지금 입학 규모 대비 채워지는 비율(기준 시나리오). ▶ 를 누르면 ${mapYears[0]}→2045년을 재생합니다.`,
-    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(sidos.map((s) => [s.id, s.fill[String(y)]]))), start: mapYears.indexOf(2040) } },
+  { key: "fill", label: "입학 자리 채움률", format: "pct" as const, kind: "seq" as const, breaks: [0.4, 0.5, 0.6, 0.7, 0.8, 0.9], desc: `지금(${L}) 입학 규모 대비 채워지는 비율. ${mapYears[0]}~${L}년은 실제 입학자, 이후는 기준 시나리오입니다. ▶ 를 누르면 ${mapYears[0]}→2045년을 재생합니다.`,
+    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(sidos.map((s) => [s.id, fillAt(s, y)]))), start: mapYears.indexOf(2040), projFrom: mapYears.indexOf(L + 1) } },
   { key: "local", label: "지역 18세 1명당 지역 대학 자리", format: "dec1" as const, kind: "seq" as const, breaks: [0.6, 0.9, 1.2, 1.5, 2, 2.5], desc: "1보다 크면 다른 지역 학생을 데려와야 정원이 찹니다(지금 기준).", values: Object.fromEntries(sidos.map((s) => [s.id, s.localRatio])) },
   { key: "local40", label: "같은 값, 2040년", format: "dec1" as const, kind: "seq" as const, breaks: [0.6, 0.9, 1.2, 1.5, 2, 2.5, 3], desc: "입학 규모가 그대로이고 18세 인구만 줄어들 때.", values: Object.fromEntries(sidos.map((s) => [s.id, s.localRatio2040])) },
 ];
@@ -137,7 +145,7 @@ const bt = d.backtest.regional as any[];
         </ul>
         <p class="small muted">높음 시나리오에서도 2040년 채움률은 {pct(h.fill2040Range[1], 0)}입니다. 메울 방법을 아무리 넓혀도 인구 감소의 크기를 이기기 어렵다는 뜻입니다.</p>
       </div>
-      <ChartSwitch views={[{ label: "채움률 전망", spec: typeSpec }, { label: "과거 입학자", spec: histTypeSpec }]} title="4년제와 전문대" sub={`2040년 채움률: 4년제 ${pct(h.fillU2040)} · 전문대 ${pct(h.fillC2040)} (기준)`} />
+      <ChartSwitch views={[{ label: "지금 규모 대비", spec: typeSpec }, { label: "과거 입학자", spec: histTypeSpec }]} title="4년제와 전문대" sub={`2015~${L} 실제 입학자, 이후 추계 · 2040년 채움률: 4년제 ${pct(h.fillU2040)} · 전문대 ${pct(h.fillC2040)} (기준)`} />
     </section>
 
     <section class="section" id="map">

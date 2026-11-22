@@ -206,7 +206,11 @@ def build():
     national = {
         "employment": {y: round(v) for y, v in tot_emp.items()},
         "supply": {s: {y: round(sum(b.values()) / 1000) for y, b in v.items()} for s, v in supply_bucket.items()},
-        "supplyByAge": {y: {k: round(v / 1000) for k, v in supply_bucket["base"][y].items()} for y in (2025, 2030, 2035, 2040, 2045)},
+        # 2015·2020은 실제 연령별 취업자(지역별고용조사), 기준연도 이후는 고용률 유지 공급 (기준연도에서 실제와 맞춰 둠)
+        "supplyByAge": {
+            **{y: {k: round(emp["0"][it][y]) for k, it in AGE_ITEMS.items()} for y in (2015, 2020)},
+            **{y: {k: round(v / 1000) for k, v in supply_bucket["base"][y].items()} for y in (2025, 2030, 2035, 2040, 2045)},
+        },
         "workingAge": {s: {y: round(pop_at(s, y, range(15, 65)) / 1000) for y in PROJ_YEARS} for s in ("low", "mid", "high")},
         "older65": {y: round(pop_at("mid", y, range(65, 101)) / 1000) for y in PROJ_YEARS},
         "workingAgeHist": {y: round(sum(total[y]["00"][15:65]) / 1000) for y in sorted(total)},

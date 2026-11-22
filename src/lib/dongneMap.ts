@@ -7,7 +7,6 @@ const R = d.regions as any[];
 const by: number = d.meta.baseYear;
 const end: number = d.meta.end;
 const years = Object.keys(R[0].series.mid).map(Number).sort((a, b) => a - b);
-const projYears = years.filter((y) => y >= by);
 const r4 = (v: number | null | undefined) => (v == null || !isFinite(v) ? null : Math.round(v * 10000) / 10000);
 
 export function dongneMetrics(opts: { regions?: any[]; keys?: string[] } = {}): MapMetric[] {
@@ -19,11 +18,12 @@ export function dongneMetrics(opts: { regions?: any[]; keys?: string[] } = {}): 
       format: "pctS",
       kind: "div",
       breaks: [-0.3, -0.2, -0.1, -0.05, 0.05, 0.1, 0.2],
-      desc: `${by}년 인구 대비 변화율 (중위 추계). ▶ 를 누르면 ${by}→${end}년을 재생합니다. 시도를 누르면 확대됩니다.`,
+      desc: `${by}년 인구 대비 변화율. ${years[0]}~${by}년은 주민등록 실측(그때 인구가 지금보다 많았으면 +), 이후는 중위 추계입니다. ▶ 를 누르면 ${years[0]}→${end}년을 재생합니다. 시도를 누르면 확대됩니다.`,
       frames: {
-        labels: projYears,
-        values: projYears.map((y) => Object.fromEntries(regs.map((r) => [r.id, r4(r.series.mid[y] ? r.series.mid[y].total / r.series.mid[by].total - 1 : null)]))),
-        start: projYears.length - 1,
+        labels: years,
+        values: years.map((y) => Object.fromEntries(regs.map((r) => [r.id, r4(r.series.mid[y] && r.series.mid[by] ? r.series.mid[y].total / r.series.mid[by].total - 1 : null)]))),
+        start: years.length - 1,
+        projFrom: years.indexOf(by + 1),
       },
     },
     {

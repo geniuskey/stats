@@ -98,6 +98,7 @@ const idxSpec = {
 };
 
 // 히어로: 학급 100칸 와플 (학급당 학생 수 유지 가정)
+// 와플은 '지금 교실 100칸'이 기준이라 지금부터 시작한다 (히어로 문구와 같은 기준)
 const waffleYears = [last, 2028, 2030, 2032, 2035, 2040, 2045];
 const eleAll = all(lv("ele"));
 const waffle = {
@@ -113,23 +114,27 @@ const waffle = {
 };
 
 // 시군구 지도
-const mapYears = [last, ...Object.keys(nat.proj.mid).map(Number).filter((y) => y > last && y <= 2045)];
+// 2015~지금은 실측, 이후 중위 추계
+const mapYears = [...Object.keys(nat.actual).map(Number).filter((y) => y >= 2015 && y <= last), ...Object.keys(nat.proj.mid).map(Number).filter((y) => y > last && y <= 2045)];
+const mapProjFrom = mapYears.indexOf(last + 1);
 const sejong = regions.find((r) => r.level === "sido" && r.sidoCode === "36");
 const mapRegions = [...sggs, ...(sejong ? [{ ...sejong, id: "36110" }] : [])];
-const studentsAt = (r: any, y: number) => (y === last ? r.summary.current : val(r.proj.mid, y));
+const studentsAt = (r: any, y: number) => (y === last ? r.summary.current : y < last ? val(r.actual, y) : val(r.proj.mid, y));
+// 학교 수: 과거는 그해 실제 학교 수, 이후는 지금 그대로
+const schoolsAt = (r: any, y: number) => (y < last ? val(r.schoolsHist, y) ?? r.schools : r.schools);
 const mapNames = Object.fromEntries(mapRegions.map((r) => [r.id, r.level === "sido" ? r.name : `${r.sido} ${r.name}`]));
 const mapLinks = Object.fromEntries(mapRegions.map((r) => [r.id, `${base}school/${r.id === "36110" ? sejong.id : r.id}/`]));
 const mapNotes = Object.fromEntries(mapRegions.map((r) => [r.id, r.summary.halfYear ? `${r.summary.halfYear}년에 ${last}년의 절반 아래` : `초등학생 ${int(r.summary.current)}명 (${last})`]));
 const mapMetrics = [
   {
     key: "ch", label: `초등학생 변화 (${last}년 대비)`, format: "pctS" as const, kind: "div" as const, breaks: [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1],
-    desc: `▶ 를 누르면 ${last}→2045년 변화를 재생합니다. 시도를 누르면 확대, 확대된 지역을 누르면 상세 페이지로 이동합니다.`,
-    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(mapRegions.map((r) => [r.id, r.summary.current ? (studentsAt(r, y) ?? 0) / r.summary.current - 1 : null]))), start: mapYears.indexOf(2035) },
+    desc: `${mapYears[0]}~${last}년은 실측(그때 학생이 지금보다 많았으면 +), 이후는 중위 추계입니다. ▶ 를 누르면 ${mapYears[0]}→2045년 변화를 재생합니다. 시도를 누르면 확대, 확대된 지역을 누르면 상세 페이지로 이동합니다.`,
+    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(mapRegions.map((r) => { const v = studentsAt(r, y); return [r.id, r.summary.current && v != null ? v / r.summary.current - 1 : null]; }))), start: mapYears.indexOf(2035), projFrom: mapProjFrom },
   },
   {
     key: "ps", label: "학교당 학생 수", format: "int" as const, kind: "seq" as const, breaks: [50, 100, 200, 300, 400, 600],
-    desc: "현재 학교 수가 그대로라고 가정했을 때 학교 한 곳당 초등학생 수. 100명 아래면 대부분 소규모 학교입니다.",
-    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(mapRegions.map((r) => [r.id, r.schools ? (studentsAt(r, y) ?? 0) / r.schools : null]))), start: mapYears.indexOf(2035) },
+    desc: `학교 한 곳당 초등학생 수. ${last}년까지는 그해 실제 학교 수, 이후는 지금 학교 수가 그대로라고 가정했습니다. 100명 아래면 대부분 소규모 학교입니다.`,
+    frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(mapRegions.map((r) => { const v = studentsAt(r, y), n = schoolsAt(r, y); return [r.id, n && v != null ? v / n : null]; }))), start: mapYears.indexOf(2035), projFrom: mapProjFrom },
   },
   {
     key: "en", label: `입학생 변화 (${last}→2032)`, format: "pctS" as const, kind: "div" as const, breaks: [-0.4, -0.3, -0.2, -0.1, 0, 0.1],

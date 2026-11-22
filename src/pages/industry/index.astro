@@ -56,6 +56,7 @@ const ageTable = {
   rows: ageKeys.map((a) => [a === "60+" ? "60세 이상" : `${a}세`, ...Object.keys(sba).map((y) => compact(sba[y][a] * 1000))]),
 };
 const older2045 = sba["2045"]["60+"] / Object.values(sba["2045"] as Record<string, number>).reduce((s, v) => s + v, 0);
+const sbaShare = (y: number) => sba[y]["60+"] / Object.values(sba[y] as Record<string, number>).reduce((s, v) => s + v, 0);
 const older2025 = sba["2025"]["60+"] / Object.values(sba["2025"] as Record<string, number>).reduce((s, v) => s + v, 0);
 
 // 인력 과부족 토글
@@ -90,6 +91,7 @@ const sbaYears = Object.keys(sba).map(Number);
 const ageAreaSpec = {
   type: "area" as const, yFormat: "man" as const, height: 300,
   series: ageKeys.map((a, i) => ({ name: ageNames[a], color: ageColors[i], data: sbaYears.map((y) => [y, sba[y][a] * 1000] as [number, number]) })),
+  projStart: base,
 };
 const ageStackSpec = {
   type: "stack" as const, percent: true, height: 300, categories: sbaYears.map(String),
@@ -157,7 +159,7 @@ const simJson = JSON.stringify({
     </section>
 
     <section class="section grid grid-2">
-      <ChartSwitch views={[{ label: "인원 누적", spec: ageAreaSpec }, { label: "구성비 막대", spec: ageStackSpec }]} table={ageTable} title="노동공급의 연령 구성 (고용률 유지)" sub={`60세 이상 비중: ${base}년 ${pct(older2025, 0)} → ${end}년 ${pct(older2045, 0)}`} />
+      <ChartSwitch views={[{ label: "인원 누적", spec: ageAreaSpec }, { label: "구성비 막대", spec: ageStackSpec }]} table={ageTable} title="노동공급의 연령 구성 (고용률 유지)" sub={`${sbaYears[0]}·${sbaYears[1]}년은 실제 취업자, ${base + 1}년부터 고용률 유지 추계 · 60세 이상 비중: ${sbaYears[0]}년 ${pct(sbaShare(sbaYears[0]), 0)} → ${base}년 ${pct(older2025, 0)} → ${end}년 ${pct(older2045, 0)}`} />
       <div class="card">
         <h3 class="card-title">무엇이 새로 보이나</h3>
         <div class="insight" style="margin-top:8px">
