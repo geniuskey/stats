@@ -27,7 +27,6 @@ from regions import SIDO
 YEARS = [P.BASE_YEAR, 2030, 2035, 2040, 2045]  # 기준연도(현재) + 추계
 PAST = [2015, 2020]                             # 실측 (인구·자원 모두 그해 값)
 SERIES = PAST + YEARS
-OLD_KEYS = {"27|군위군": "47|군위군", "28|미추홀구": "28|남구"}  # 지금 key → 과거 인구 표의 key
 HIRA_Q = {2015: "201504", 2020: "202004"}       # 과거 의원 수는 그해 4분기
 SHORT = {v[0]: k for k, v in SIDO.items()}
 ALIAS = {
@@ -195,7 +194,7 @@ def build(popr):
         시도·전국은 지금 시군구를 더한다 (그래야 군위군이 그해 대구·경북 어느 쪽에 들어가는지와 무관)."""
         t = src.get(y, {})
         if y == by or (k != "00" and "|" in k):
-            d = t.get(k) or t.get(OLD_KEYS.get(k, ""))
+            d = t.get(k)  # 행정구역 개편은 pop.py에서 지금 key로 맞춰 둠
             return list(d) if d else None
         parts = [actual(src, u, y) for u in units if k == "00" or u.startswith(k + "|")]
         if not parts or any(x is None for x in parts):

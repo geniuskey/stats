@@ -64,13 +64,27 @@ def _fetch_year(year: int, itm: str):
     return out, {key(adm_sido(c, n) or "", n): c for c, n in names.items() if is_unit(c, n, names)}
 
 
+# 행정구역 개편: 과거 연도 표의 옛 key → 지금 key (지금 경계로 시계열을 잇는다)
+RENAMED = {
+    "47|군위군": "27|군위군",   # 2023.7 경북 → 대구 편입
+    "28|남구": "28|미추홀구",   # 2018.7 인천 남구 → 미추홀구
+}
+
+
 def load_population():
     """{'total': {year: {key: ages}}, 'female': {...}, 'codes': {key: adm_code}}"""
     total, female, codes = {}, {}, {}
     for y in HIST_YEARS:
         total[y], c = _fetch_year(y, "T2")
         female[y], _ = _fetch_year(y, "T4")
+        for d in (total[y], female[y]):
+            for old, new in RENAMED.items():
+                if old in d:
+                    v = d.pop(old)
+                    d.setdefault(new, v)
         codes.update(c)
+    for old in RENAMED:
+        codes.pop(old, None)
     return {"total": total, "female": female, "codes": codes}
 
 
