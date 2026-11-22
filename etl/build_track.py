@@ -59,18 +59,30 @@ def pop_backtest(popr):
             for g, (a, b) in GROUPS.items():
                 p, t = sum(pj[y][a:b + 1]), sum(act[a:b + 1])
                 if t > 0:
-                    errs[g][h].append(abs(p / t - 1))
-            naive[h].append(abs(sum(total[BT_BASE][k]) / sum(act) - 1))
+                    errs[g][h].append(p / t - 1)  # 부호 있는 오차: 예측 ÷ 실제 − 1
+            naive[h].append(sum(total[BT_BASE][k]) / sum(act) - 1)
         last = total[end][k]
         e = sum(pj[end]) / sum(last) - 1
         sd, _, nm = k.partition("|")
         worst.append({"name": nm if sd == "36" else f"{SIDO[sd][0]} {nm}", "pred": round(sum(pj[end])), "actual": round(sum(last)), "err": round(e, 4)})
     worst.sort(key=lambda r: -abs(r["err"]))
 
+    def q(xs, p):  # 분위수 (선형 보간)
+        s = sorted(xs)
+        i = (len(s) - 1) * p
+        lo = int(i)
+        return s[lo] + (s[min(lo + 1, len(s) - 1)] - s[lo]) * (i - lo)
+
     def summ(d):
-        return {h: {"mae": round(sum(v) / len(v), 4), "median": round(median(v), 4),
-                    "within2": round(sum(1 for x in v if x <= 0.02) / len(v), 3),
-                    "within5": round(sum(1 for x in v if x <= 0.05) / len(v), 3), "n": len(v)} for h, v in sorted(d.items())}
+        out = {}
+        for h, sv in sorted(d.items()):
+            v = [abs(x) for x in sv]
+            out[h] = {"mae": round(sum(v) / len(v), 4), "median": round(median(v), 4),
+                      "within2": round(sum(1 for x in v if x <= 0.02) / len(v), 3),
+                      "within5": round(sum(1 for x in v if x <= 0.05) / len(v), 3), "n": len(v),
+                      # 예측 구간용: 부호 있는 오차(예측 ÷ 실제 − 1)의 10·90% 분위수 → 실제가 들어올 80% 범위
+                      "q10": round(q(sv, 0.1), 4), "q90": round(q(sv, 0.9), 4)}
+        return out
 
     return {"base": BT_BASE, "end": end, "groups": {g: summ(d) for g, d in errs.items()}, "naive": summ(naive), "worst": worst[:10]}
 

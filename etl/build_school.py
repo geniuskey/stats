@@ -92,11 +92,22 @@ def run_backtest(popr, stu):
         by[k] = row
         if "|" in k:
             for y, v in row.items():
-                errs[y - 2020].append(abs(v["pred"] / v["actual"] - 1))
-    mape = {h: round(sum(e) / len(e), 4) for h, e in sorted(errs.items())}
-    med = {h: round(sorted(e)[len(e) // 2], 4) for h, e in sorted(errs.items())}
-    within10 = {h: round(sum(1 for x in e if x <= 0.10) / len(e), 3) for h, e in sorted(errs.items())}
-    return {"by": by, "mape": mape, "median": med, "within10": within10, "n": len(errs.get(6, []))}
+                errs[y - 2020].append(v["pred"] / v["actual"] - 1)  # 부호 있는 오차
+    ab = {h: [abs(x) for x in e] for h, e in errs.items()}
+    mape = {h: round(sum(e) / len(e), 4) for h, e in sorted(ab.items())}
+    med = {h: round(sorted(e)[len(e) // 2], 4) for h, e in sorted(ab.items())}
+    within10 = {h: round(sum(1 for x in e if x <= 0.10) / len(e), 3) for h, e in sorted(ab.items())}
+
+    def q(xs, p):  # 분위수 (선형 보간)
+        s = sorted(xs)
+        i = (len(s) - 1) * p
+        lo = int(i)
+        return s[lo] + (s[min(lo + 1, len(s) - 1)] - s[lo]) * (i - lo)
+
+    # 예측 구간용: 부호 있는 오차(예측 ÷ 실제 − 1)의 10·90% 분위수
+    q10 = {h: round(q(e, 0.1), 4) for h, e in sorted(errs.items())}
+    q90 = {h: round(q(e, 0.9), 4) for h, e in sorted(errs.items())}
+    return {"by": by, "mape": mape, "median": med, "within10": within10, "q10": q10, "q90": q90, "n": len(errs.get(6, []))}
 
 
 def build(popr):

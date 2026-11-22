@@ -12,8 +12,10 @@ interface Props {
   auto?: boolean;
   /** auto=false일 때 원자료를 마지막으로 모은 날 (YYYY-MM-DD) */
   collected?: string;
+  /** auto=false일 때 날짜 뒤에 붙는 설명 */
+  manualNote?: string;
 }
-const { basis, orgs = [], method = "#method", auto = true, collected } = Astro.props;
+const { basis, orgs = [], method = "#method", auto = true, collected, manualNote = "원자료 수집 시 수동 갱신" } = Astro.props;
 // 자동 갱신: 매월 2·17일 18:00 UTC (= 한국시간 3·18일 03:00, .github/workflows/deploy.yml)
 const nextRun = (() => {
   const d = new Date(updated.updated + "T00:00:00+09:00");
@@ -31,7 +33,7 @@ const nextRun = (() => {
   {auto ? (
     <div><dt>갱신</dt><dd><time datetime={updated.updated}>{updated.updated}</time>{nextRun && <span class="muted"> · 다음 {nextRun} 예정</span>}</dd></div>
   ) : (
-    <div><dt>갱신</dt><dd>{collected ? <time datetime={collected}>{collected}</time> : "수시"}<span class="muted"> · 원자료 수집 시 수동 갱신</span></dd></div>
+    <div><dt>갱신</dt><dd>{collected ? <time datetime={collected}>{collected}</time> : "수시"}<span class="muted"> · {manualNote}</span></dd></div>
   )}
   <div class="page-meta-acts">
     <a href={method}>방법·한계</a>

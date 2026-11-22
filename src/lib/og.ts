@@ -46,7 +46,9 @@ export function allCards(): Card[] {
   const cards: Card[] = [
     { key: "index", eyebrow: "숫자 너머", title: "공공 통계로 보는\n대한민국의 미래", label: "흩어진 공공 통계를 결합해 기존에 없던 지표와 추계를 만듭니다", chips: SERVICES.map((s) => s.short) },
     { key: "map", eyebrow: "숫자 너머", title: "지도로 보기", label: "229개 시군구의 인구·집값·이사 지표를 지도 위에서", chips: ["인구 전망", "집값 부담", "전세가율", "인구이동"] },
-    { key: "methodology", eyebrow: "숫자 너머", title: "방법론과 한계", label: "데이터 수집 · 결합 · 추계 방법을 모두 공개합니다", chips: ["KOSIS OpenAPI", "코호트 요인법", "Hamilton-Perry", "과거 검증"] },
+    { key: "methodology", eyebrow: "숫자 너머", title: "방법론과 한계", label: "데이터 수집 · 결합 · 추계 방법을 모두 공개합니다", chips: ["KOSIS OpenAPI", "코호트 변화율법", "Hamilton-Perry", "과거 검증"] },
+    { key: "glossary", eyebrow: "숫자 너머", title: "용어 사전", label: "이 사이트의 지표가 무엇을 뜻하고 어떻게 계산되는지", chips: ["주택구입 부담률", "PIR", "코호트 변화율법", "나우캐스트"] },
+    { key: "changes", eyebrow: "숫자 너머", title: "수정 이력", label: "고친 것, 바꾼 것을 모두 적어 둡니다", chips: ["정정", "방법 변경", "새 지표"] },
   ];
   for (const s of SERVICES) {
     const h = HEADLINES[s.slug];

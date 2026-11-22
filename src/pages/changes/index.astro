@@ -1,0 +1,231 @@
+---
+import Base from "../../layouts/Base.astro";
+import PageMeta from "../../components/PageMeta.astro";
+import { SERVICES } from "../../lib/nav";
+import data from "../../data/changes.json";
+
+const base = import.meta.env.BASE_URL;
+type Entry = { date: string; type: "정정" | "방법" | "추가"; modules: string[]; title: string; body: string; commit: string };
+const entries = [...(data.entries as Entry[])].sort((a, b) => b.date.localeCompare(a.date));
+const TYPES = ["정정", "방법", "추가"] as const;
+const TYPE_KEY: Record<string, string> = { 정정: "fix", 방법: "method", 추가: "add" };
+const TYPE_DESC: Record<string, string> = { 정정: "숫자·정의가 틀렸다가 고친 것", 방법: "계산 방법·가정·출처를 바꾼 것", 추가: "새 지표·서비스" };
+const count = Object.fromEntries(TYPES.map((t) => [t, entries.filter((e) => e.type === t).length]));
+const first = entries.map((e) => e.date).sort()[0];
+
+// 관련 페이지 이름: 서비스는 정식 이름, 그 밖의 페이지는 따로
+const PAGE_NAME: Record<string, string> = { ...Object.fromEntries(SERVICES.map((s) => [s.slug, s.name])), map: "지도로 보기" };
+
+// 월별 묶음 (최신 달부터)
+const months = new Map<string, Entry[]>();
+for (const e of entries) {
+  const k = e.date.slice(0, 7);
+  if (!months.has(k)) months.set(k, []);
+  months.get(k)!.push(e);
+}
+const monthLabel = (k: string) => `${k.slice(0, 4)}년 ${+k.slice(5)}월`;
+const dateLabel = (d: string) => `${+d.slice(5, 7)}월 ${+d.slice(8)}일`;
+---
+<Base title="수정 이력" active="changes" description={`숫자 너머가 고친 오류(정정 ${count["정정"]}건), 바꾼 계산 방법(${count["방법"]}건), 새로 더한 지표(${count["추가"]}건)를 날짜와 커밋으로 모두 기록합니다.`}>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">수정 이력</div>
+      <h1>고친 것, 바꾼 것을 모두 적어 둡니다</h1>
+      <p class="lede">
+        오류는 조용히 지우지 않고 정정으로 남깁니다. 무엇이 틀렸고, 어느 숫자에 영향이 있었고, 언제 고쳤는지 적습니다.
+        계산 방법이나 가정을 바꾼 때도 같은 방식으로 기록하고, 모든 항목은 실제 코드 변경(커밋)으로 연결됩니다.
+        잘못된 숫자를 발견하면 <a href="https://github.com/geniuskey/stats/issues">GitHub 이슈</a>로 알려 주세요.
+      </p>
+      <PageMeta basis={`기록 ${entries.length}건 · ${first}부터`} orgs={[]} method={`${base}methodology/`} auto={false} collected={entries.map((e: any) => e.date).sort().at(-1)} manualNote="고칠 때마다 기록" />
+    </section>
+
+    <h2 class="sr-only">요약</h2>
+    <div class="chg-summary">
+      {TYPES.map((t) => (
+        <div class={`chg-sum chg-${TYPE_KEY[t]}`}>
+          <div class="chg-sum-k"><span class={`chg-badge chg-${TYPE_KEY[t]}`}>{t}</span></div>
+          <div class="chg-sum-v">{count[t]}<small>건</small></div>
+          <div class="chg-sum-d">{TYPE_DESC[t]}</div>
+        </div>
+      ))}
+    </div>
+
+    <div class="seg chg-filter" role="group" aria-label="종류로 거르기">
+      <button type="button" data-chg-filter="all" aria-pressed="true">전체 {entries.length}</button>
+      {TYPES.map((t) => <button type="button" data-chg-filter={TYPE_KEY[t]} aria-pressed="false">{t} {count[t]}</button>)}
+    </div>
+
+    {[...months.entries()].map(([k, list]) => (
+      <section class="section chg-month" id={`m-${k}`}>
+        <h2>{monthLabel(k)}</h2>
+        <ol class="chg-list">
+          {list.map((e) => (
+            <li class="chg-item" data-type={TYPE_KEY[e.type]}>
+              <div class="chg-head">
+                <span class={`chg-badge chg-${TYPE_KEY[e.type]}`}>{e.type}</span>
+                <time datetime={e.date}>{dateLabel(e.date)}</time>
+              </div>
+              <h3>{e.title}</h3>
+              <p>{e.body}</p>
+              <div class="chg-foot">
+                {e.modules.length > 0 && (
+                  <span class="chg-pages">
+                    관련 페이지{" "}
+                    {e.modules.map((m, i) => (
+                      <>{i > 0 && " · "}<a href={`${base}${m}/`}>{PAGE_NAME[m] ?? m}</a></>
+                    ))}
+                  </span>
+                )}
+                {e.commit && <a class="chg-commit" href={`https://github.com/geniuskey/stats/commit/${e.commit}`}>커밋 <code>{e.commit}</code></a>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+    ))}
+    <p class="small muted chg-empty" hidden>이 종류의 기록이 없습니다.</p>
+  </div>
+</Base>
+
+<script>
+  // 종류 필터: 항목을 숨기고, 비게 된 달 섹션도 숨긴다 (목차는 그대로 두되 빈 달은 건너뛴다)
+  const btns = document.querySelectorAll<HTMLButtonElement>("[data-chg-filter]");
+  btns.forEach((b) =>
+    b.addEventListener("click", () => {
+      const f = b.dataset.chgFilter!;
+      btns.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      let any = false;
+      document.querySelectorAll<HTMLElement>(".chg-month").forEach((sec) => {
+        let shown = 0;
+        sec.querySelectorAll<HTMLElement>(".chg-item").forEach((it) => {
+          const on = f === "all" || it.dataset.type === f;
+          it.hidden = !on;
+          if (on) shown++;
+        });
+        sec.hidden = shown === 0;
+        if (shown) any = true;
+      });
+      const empty = document.querySelector<HTMLElement>(".chg-empty");
+      if (empty) empty.hidden = any;
+    }),
+  );
+</script>
+
+<style>
+  .chg-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin: 8px 0 20px;
+  }
+  .chg-sum {
+    padding: 14px 16px 12px;
+  }
+  .chg-sum:first-child {
+    padding-left: 0;
+  }
+  .chg-sum + .chg-sum {
+    border-left: 1px solid var(--border);
+  }
+  .chg-sum-v {
+    margin: 6px 0 2px;
+    font-size: 28px;
+    font-weight: 720;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .chg-sum-v small {
+    font-size: 15px;
+    font-weight: 600;
+    margin-left: 2px;
+    color: var(--text-secondary);
+  }
+  .chg-sum-d {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .chg-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.5;
+  }
+  .chg-badge.chg-fix {
+    color: color-mix(in srgb, var(--critical) 85%, var(--text-primary));
+    background: color-mix(in srgb, var(--critical) 13%, transparent);
+  }
+  .chg-badge.chg-method {
+    color: var(--accent-ink);
+    background: color-mix(in srgb, var(--accent) 13%, transparent);
+  }
+  .chg-badge.chg-add {
+    color: color-mix(in srgb, var(--good) 85%, var(--text-primary));
+    background: color-mix(in srgb, var(--good) 13%, transparent);
+  }
+  .chg-filter {
+    margin-bottom: 4px;
+  }
+  .chg-month {
+    margin-top: 32px;
+  }
+  .chg-list {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    max-width: 820px;
+  }
+  .chg-item {
+    padding: 16px 0;
+    border-top: 1px solid var(--border);
+  }
+  .chg-item:first-child {
+    border-top: 0;
+    padding-top: 4px;
+  }
+  .chg-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .chg-item h3 {
+    margin: 8px 0 4px;
+    font-size: 17px;
+    font-weight: 650;
+  }
+  .chg-item p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.65;
+  }
+  .chg-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .chg-commit {
+    margin-left: auto;
+    color: var(--text-muted);
+  }
+  .chg-commit code {
+    font-size: 12px;
+  }
+  @media (max-width: 560px) {
+    .chg-sum {
+      padding: 12px 10px 10px;
+    }
+    .chg-sum-d {
+      display: none;
+    }
+    .chg-commit {
+      margin-left: 0;
+    }
+  }
+</style>

@@ -8,12 +8,13 @@ const base = import.meta.env.BASE_URL;
 const demote = (html: string) => html.replace(/<(\/?)h([1-5])\b/g, (_, slash, n) => `<${slash}h${+n + 1}`);
 const html = Object.fromEntries(await Promise.all(Object.entries(bySlug).map(async ([k, m]) => [k, demote(await m.compiledContent())])));
 ---
-<Base title="방법론과 한계" active="methodology" description="숫자 너머의 모든 지표가 어떻게 계산되는지 공개합니다. KOSIS OpenAPI 자동 수집, 시군구 지역 표준화, 코호트 요인법 인구 추계, 과거 데이터 검증 오차와 서비스별 한계.">
+<Base title="방법론과 한계" active="methodology" description="숫자 너머의 모든 지표가 어떻게 계산되는지 공개합니다. KOSIS OpenAPI 자동 수집, 시군구 지역 표준화, 코호트 변화율법(Hamilton-Perry) 인구 추계, 과거 데이터 검증 오차와 서비스별 한계.">
   <div class="wrap">
     <section class="hero">
       <div class="eyebrow">방법론</div>
       <h1>어떻게 계산했나</h1>
       <p class="lede">이 사이트의 모든 숫자는 통계청 KOSIS OpenAPI에서 자동 수집한 공공 통계로 계산됩니다. 결합 지표와 추계는 이 사이트가 독자적으로 만든 것으로, 국가승인통계나 공식 전망이 아닙니다.</p>
+      <p class="small" style="margin-top:10px">함께 보기: <a href={`${base}glossary/`}>용어 사전</a> · <a href={`${base}changes/`}>수정 이력·정오표</a> · <a href={`${base}track/`}>예측 성적표</a></p>
     </section>
     <section class="card method">
       <h2>공통 원칙</h2>

@@ -19,6 +19,8 @@ const svc = SERVICES.find((s) => s.slug === active);
 // 검색 결과용 구조화 데이터: 홈은 WebSite, 나머지는 이동 경로(BreadcrumbList)
 const crumbs = [{ name: "숫자 너머", url: home }];
 if (active === "methodology") crumbs.push({ name: "방법론과 한계", url: canonical });
+else if (active === "glossary") crumbs.push({ name: "용어 사전", url: canonical });
+else if (active === "changes") crumbs.push({ name: "수정 이력", url: canonical });
 else if (svc) {
   const svcUrl = new URL(`${base}${svc.slug}/`, Astro.site).href;
   crumbs.push({ name: svc.name, url: svcUrl });
@@ -100,7 +102,7 @@ const ld = title === "홈"
           <span class="nav-sep" aria-hidden="true"></span>
           <a class="nav-link" href={`${base}map/`} aria-current={active === "map" ? "page" : undefined}>지도</a>
           <a class="nav-link" href={`${base}track/`} aria-current={active === "track" ? "page" : undefined}>성적표</a>
-          <a class="nav-link" href={`${base}methodology/`} aria-current={active === "methodology" ? "page" : undefined}>방법론</a>
+          <a class="nav-link" href={`${base}methodology/`} aria-current={active === "methodology" || active === "glossary" || active === "changes" ? "page" : undefined}>방법론</a>
         </nav>
         <button class="menu-btn" type="button" aria-controls="site-nav" aria-expanded="false" id="menu-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
@@ -121,7 +123,7 @@ const ld = title === "홈"
           이 사이트의 추계·지표는 공공 통계를 결합해 독자적으로 계산한 값이며 국가승인통계가 아닙니다.
         </p>
         <p>자료 갱신 <time datetime={updated.updated}>{updated.updated}</time> · 매월 2회 KOSIS 최신 자료를 받아 검증한 뒤 반영합니다.</p>
-        <p><a href={`${base}methodology/`}>방법론과 한계</a> · <a href="https://github.com/geniuskey/stats">소스 코드</a> · © 2026 <a href="https://euiyun.com">Euiyun Lab</a></p>
+        <p><a href={`${base}methodology/`}>방법론과 한계</a> · <a href={`${base}glossary/`}>용어 사전</a> · <a href={`${base}changes/`}>수정 이력</a> · <a href={`${base}track/`}>예측 성적표</a> · <a href="https://github.com/geniuskey/stats">소스 코드</a> · © 2026 <a href="https://euiyun.com">Euiyun Lab</a></p>
       </div>
     </footer>
     <script>

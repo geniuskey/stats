@@ -1,4 +1,5 @@
 ---
+import track from "../../data/track.json";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
@@ -31,6 +32,18 @@ const SRC = {
 const projNote = `${by}년까지 주민등록 실측, ${by + 1}년부터 자체 추계(코호트 변화율법). 예측이 아닌 출산율 시나리오별 전망.`;
 const S = r.series;
 const f = (s: string, k: string, from = 2015, to = 2100) => Object.entries(S[s]).filter(([y]) => +y >= from && +y <= to).map(([y, v]: any) => [+y, v[k]] as [number, number]);
+// 예측 구간: 같은 엔진을 과거(PB.base년)에서 돌려 본 시군구 오차(예측 ÷ 실제 − 1)의 10~90% 분위수.
+// 실제 = 예측 ÷ (1 + 오차)이므로 80% 범위는 [예측 ÷ (1 + q90), 예측 ÷ (1 + q10)]. 검증한 h년(1~5년)까지만 그린다.
+const PB = (track as any).popBacktest;
+const errQ = PB.groups.total as Record<string, { q10: number; q90: number }>;
+const piH = Math.max(...Object.keys(errQ).map(Number));
+const piYears = [by, ...Object.keys(errQ).map((h) => by + +h)];
+const midAt = (y: number) => S.mid[y]?.total as number | undefined;
+const piBand = {
+  name: `과거 검증 80% 범위 (${piH}년까지)`, color: "var(--series-4)",
+  lower: piYears.filter((y) => midAt(y) != null).map((y) => [y, y === by ? midAt(y)! : midAt(y)! / (1 + errQ[y - by].q90)] as [number, number]),
+  upper: piYears.filter((y) => midAt(y) != null).map((y) => [y, y === by ? midAt(y)! : midAt(y)! / (1 + errQ[y - by].q10)] as [number, number]),
+};
 const popSpec = {
   type: "line" as const, yFormat: "man" as const, projStart: by, height: 300, zeroBased: false,
   series: [
@@ -38,7 +51,7 @@ const popSpec = {
     { name: "자체 추계 (중위)", color: "var(--series-1)", data: f("mid", "total", by), dash: true, label: true },
     ...(Object.keys(r.official).length ? [{ name: "통계청 공식 추계 (2022년 기준)", color: "var(--neutral-series)", data: pts(r.official), dash: true, label: true }] : []),
   ],
-  bands: [{ name: "저위~고위", color: "var(--series-1)", lower: f("low", "total", by), upper: f("high", "total", by) }],
+  bands: [{ name: "출산율 저위~고위", color: "var(--series-1)", lower: f("low", "total", by), upper: f("high", "total", by) }, piBand],
 };
 const popTable = { headers: ["연도", "저위", "중위", "고위", "공식"], rows: [2015, 2020, 2025, 2030, 2035, 2040, 2045].map((y) => [y, int(S.low[y]?.total), int(S.mid[y]?.total), int(S.high[y]?.total), int(r.official[y])]) };
 const ageSpec = {
@@ -104,7 +117,7 @@ const lastVac = c.vacancyRate ? Object.entries(c.vacancyRate).at(-1) : null;
     </div>
 
     <section class="section">
-      <Chart spec={popSpec} table={popTable} title="총인구" sub={`2015~${end}년, 음영은 출산율 저위~고위`} note={`${projNote} 공식 추계는 2022년 기준 통계청 시군구 추계를 그대로 표시.`} source={[SRC.reg, SRC.fert, SRC.official]} />
+      <Chart spec={popSpec} table={popTable} title="총인구" sub={`2015~${end}년 · 파란 음영 출산율 저위~고위 · 노란 음영 과거 검증 80% 범위`} note={`${projNote} 노란 음영은 같은 엔진을 ${PB.base}년 인구에서 돌려 ${PB.base + 1}~${PB.end}년 실제와 비교한 229개 시군구 오차의 10~90% 분위수로, 실제 인구가 들어올 범위를 ${piH}년 앞까지만 표시(검증 기간에 코로나19·신도시 입주가 겹침). 공식 추계는 2022년 기준 통계청 시군구 추계를 그대로 표시.`} source={[SRC.reg, SRC.fert, SRC.official]} />
     </section>
     <section class="section grid grid-2">
       <Chart spec={pyrSpec} table={pyrTable} title={`인구 피라미드 2015 → ${end}`} sub={`▶ 재생 · 검은 선은 ${by}년. ${by + 1}년부터 추계`} note={projNote} source={[SRC.reg, SRC.fert]} />

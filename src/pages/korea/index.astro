@@ -22,7 +22,7 @@ const SRC = {
   vital: "통계청 인구동향조사 출생아 수·합계출산율(KOSIS DT_1B81A23)",
   official: "통계청 장래인구추계 2022년 기준(KOSIS DT_1BPA001·DT_1BPA002·DT_1BPA004·DT_1BPA402·DT_1BPA403)",
 };
-const projNote = `${by}년까지 주민등록 내국인 실측, ${by + 1}년부터 자체 추계(코호트 요인법). 예측이 아닌 출산율 시나리오별 전망.`;
+const projNote = `${by}년까지 주민등록 내국인 실측, ${by + 1}년부터 자체 추계(코호트 변화율법). 예측이 아닌 출산율 시나리오별 전망.`;
 const field = (s: string, f: string, from = 2015) => Object.entries(nat[s]).filter(([y]) => +y >= from).map(([y, v]: any) => [+y, v[f]] as [number, number]);
 const projOnly = (s: string, f: string) => field(s, f, by);
 const histOnly = (f: string) => field("mid", f).filter(([y]) => y <= by);

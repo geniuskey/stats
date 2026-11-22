@@ -21,13 +21,25 @@ const nat = d.regions.find((x: any) => x.key === "00");
 const parent = r.level === "sgg" ? d.regions.find((x: any) => x.key === r.sidoCode) : null;
 const title = r.level === "sgg" ? `${r.sido} ${r.name}` : r.name;
 
+// 예측 구간(시군구만): 같은 방법을 2020년 인구에서 돌려 2021~2026년 실제 초등학생과 비교한 시군구 오차(예측 ÷ 실제 − 1)의
+// 10~90% 분위수. 실제 = 예측 ÷ (1 + 오차) → 80% 범위 [예측 ÷ (1 + q90), 예측 ÷ (1 + q10)]. 검증한 해수만큼만 그린다.
+const BT = (d as any).backtest;
+const piH = Math.max(...Object.keys(BT.q10).map(Number));
+const lastVal = r.actual[last] as number | undefined;
+const piYears = [last, ...Object.keys(BT.q10).map((h) => last + +h)];
+const midAt = (y: number) => (y === last ? lastVal : val(r.proj.mid, y)) as number | undefined;
+const piBand = r.level === "sgg" && lastVal ? {
+  name: `과거 검증 80% 범위 (${piH}년까지)`, color: "var(--series-4)",
+  lower: piYears.filter((y) => midAt(y) != null).map((y) => [y, y === last ? lastVal : midAt(y)! / (1 + BT.q90[y - last])] as [number, number]),
+  upper: piYears.filter((y) => midAt(y) != null).map((y) => [y, y === last ? lastVal : midAt(y)! / (1 + BT.q10[y - last])] as [number, number]),
+} : null;
 const spec = {
   type: "line" as const, yFormat: "int" as const, projStart: last, height: 320,
   series: [
     { name: "초등학생 (실측)", color: "var(--series-1)", data: pts(r.actual) },
     { name: "추계 (중위)", color: "var(--series-1)", data: joinProj(r.actual, r.proj.mid), dash: true, label: true },
   ],
-  bands: [{ name: "출산율 저위~고위", color: "var(--series-1)", lower: pts(r.proj.low), upper: pts(r.proj.high) }],
+  bands: [{ name: "출산율 저위~고위", color: "var(--series-1)", lower: pts(r.proj.low), upper: pts(r.proj.high) }, ...(piBand ? [piBand] : [])],
   hLines: s.current ? [{ y: s.current / 2, label: `${last}년의 절반` }] : [],
 };
 const table = { headers: ["연도", "저위", "중위", "고위"], rows: [...Object.keys(r.actual).filter((y) => +y >= 2016).map((y) => [y, int(r.actual[y]), "실측", ""]), ...[2027, 2028, 2030, 2032, 2035, 2040, 2045].map((y) => [`${y} (추계)`, int(val(r.proj.low, y)), int(val(r.proj.mid, y)), int(val(r.proj.high, y))])] };
@@ -115,9 +127,9 @@ const mapLinks = Object.fromEntries(mapPeers.map((x: any) => [x.id, `${base}scho
         ]}
         table={table}
         title="초등학생 수 (명)"
-        note={`${last}년까지 실측, 이후 추계. 비교 지수는 ${last}년 = 100, 학교당 학생은 학교 수 유지 가정.`}
+        note={`${last}년까지 실측, 이후 추계. 비교 지수는 ${last}년 = 100, 학교당 학생은 학교 수 유지 가정.${piBand ? ` 노란 음영은 같은 방법을 2020년 인구에서 돌려 2021~2026년 실제와 비교한 ${BT.n}개 시군구 오차의 10~90% 분위수로, 실제 학생 수가 들어올 범위를 ${piH}년 앞까지만 표시.` : ""}`}
         source={[SRC.jiji, SRC.pop, SRC.proj]}
-        sub={`실측 ${Object.keys(r.actual)[0]}~${last}, 추계 ~2045 · 음영은 출산율 저위~고위`}
+        sub={`실측 ${Object.keys(r.actual)[0]}~${last}, 추계 ~2045 · 파란 음영 출산율 저위~고위${piBand ? " · 노란 음영 과거 검증 80% 범위" : ""}`}
       />
     </section>
     <section class="section grid grid-2">
