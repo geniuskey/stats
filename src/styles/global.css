@@ -1329,24 +1329,13 @@ pre.formula {
 /* 숫자가 들어가지 않을 만큼 좁은 칸은 숫자를 숨긴다 (아래 범례에 개수가 모두 있다) */
 @container (max-width: 36px) { .dist-bar span b { display: none; } }
 .dist-bar span b { white-space: nowrap; font-weight: 700; background: color-mix(in srgb, var(--surface-1) 78%, transparent); padding: 0 5px; border-radius: 5px; }
-.dist-bar.reveal { opacity: 1; transform: none; }
-.dist-bar.reveal span { transform: scaleX(0); transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i, 0) * 0.12s); }
-.dist-bar.reveal.in span { transform: none; }
 .dist-legend { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: 14px; }
 .dist-legend li { display: flex; align-items: center; gap: 8px; }
 .dist-legend i { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .dist-legend b { margin-left: auto; font-variant-numeric: tabular-nums; }
 
-/* 스파크라인: 왼쪽에서 오른쪽으로 닦아내듯 그려진다 */
-.spark { width: 100%; height: 54px; display: block; overflow: visible; clip-path: inset(-6px 100% -6px -6px); }
-.reveal.in .spark { animation: sparkWipe 1.6s cubic-bezier(0.4, 0, 0.2, 1) 0.15s forwards; }
-@keyframes sparkWipe { to { clip-path: inset(-6px -8px -6px -6px); } }
-.spark-dot { opacity: 0; }
-.reveal.in .spark-dot { animation: fadeIn 0.3s ease 1.6s forwards; }
-@media (prefers-reduced-motion: reduce) {
-  .spark { clip-path: none; }
-  .spark-dot { opacity: 1; }
-}
+/* 스파크라인: 처음부터 다 그려진 상태 (등장 효과를 쓰지 않으므로 숨김 상태를 두지 않는다) */
+.spark { width: 100%; height: 54px; display: block; overflow: visible; }
 /* 홈 */
 .home-hero h1 { font-size: clamp(30px, 5vw, 52px); }
 .home-map .kmap-svg { max-height: 560px; }
