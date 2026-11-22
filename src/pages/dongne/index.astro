@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Stat from "../../components/Stat.astro";
 import BarList from "../../components/BarList.astro";
@@ -39,10 +40,10 @@ const riskDesc: Record<string, string> = { 소멸고위험: "0.2 미만", 소멸
 const outlookColors: Record<string, string> = { 급감: "var(--div-neg)", 축소: "color-mix(in oklab, var(--div-neg) 45%, var(--div-mid))", 유지: "var(--div-mid)", 성장: "var(--div-pos)" };
 const riskColors: Record<string, string> = { 소멸고위험: "var(--div-neg)", 소멸위험: "color-mix(in oklab, var(--div-neg) 45%, var(--div-mid))", 주의: "var(--div-mid)", 보통: "var(--div-pos)" };
 ---
-<Base title="우리 동네의 미래" active="dongne" description={`전국 229개 시군구의 ${end}년 인구 추계와 지속가능성 지수. ${shrink}곳의 인구가 줄어듭니다.`}>
+<Base title={pageTitle("dongne")} active="dongne" description={`전국 229개 시군구의 ${end}년 인구 추계와 지속가능성 지수. ${shrink}곳의 인구가 줄어듭니다.`}>
   <div class="wrap">
     <section class="hero">
-      <div class="eyebrow">우리 동네의 미래 · 인구이동 × 출생 × 사업체 × 주택</div>
+      <div class="eyebrow">{svcName("dongne")} · 인구이동 × 출생 × 사업체 × 주택</div>
       <h1>{end}년, 시군구 {R.length}곳 중 {shrink}곳의 인구가 줄어듭니다</h1>
       <p class="lede">주민등록 인구 추계에 청년 순이동, 일자리(사업체 종사자), 빈집, 소멸위험지수를 결합해 동네마다 <strong>지속가능성 지수</strong>를 만들었습니다. 우리 동네를 검색해 보세요.</p>
       <PageMeta basis={`${by}년 말 주민등록 실측 · ${by + 1}~${end}년 시군구별 자체 추계(저위·중위·고위)`} orgs={["행정안전부", "통계청", "고용노동부"]} />

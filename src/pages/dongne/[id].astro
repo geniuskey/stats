@@ -82,7 +82,7 @@ const ageArea = { type: "area" as const, percent: true, projStart: by, height: 2
   ] };
 const lastVac = c.vacancyRate ? Object.entries(c.vacancyRate).at(-1) : null;
 ---
-<Base title={`${r.sido} ${r.name}의 미래`} active="dongne" description={`${r.sido} ${r.name} 인구 ${int(m.pop2025)}명 → ${end}년 ${int(m.pop2045)}명 (${pct(m.ch2045, 0, true)}). 지속가능성 지수 ${m.index}.`}>
+<Base title={`${r.sido} ${r.name} 인구 추계`} active="dongne" description={`${r.sido} ${r.name} 인구 ${int(m.pop2025)}명 → ${end}년 ${int(m.pop2045)}명 (${pct(m.ch2045, 0, true)}). 지속가능성 지수 ${m.index}.`}>
   <div class="wrap">
     <section class="hero hero-split">
       <div>

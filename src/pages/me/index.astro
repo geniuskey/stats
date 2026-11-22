@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import me from "../../data/me.json";
 import korea from "../../data/korea.json";
@@ -56,10 +57,10 @@ const avg = {
   size: 2, // 평균 가구원 수 약 2.2명 (인구주택총조사 2024)
 };
 ---
-<Base title="나는 어디쯤?" active="me" description={`나이·연봉·가구소득·순자산을 넣으면 대한민국 통계 분포에서 내 위치를 알려 줍니다. 근로소득자 ${compact(S.n)}명의 연봉 중앙값은 약 ${int(salaryMedian)}만원. 입력값은 브라우저 밖으로 나가지 않습니다.`}>
+<Base title={pageTitle("me")} active="me" description={`나이·연봉·가구소득·순자산을 넣으면 대한민국 통계 분포에서 내 위치를 알려 줍니다. 근로소득자 ${compact(S.n)}명의 연봉 중앙값은 약 ${int(salaryMedian)}만원. 입력값은 브라우저 밖으로 나가지 않습니다.`}>
   <div class="wrap">
     <section class="hero">
-      <div class="eyebrow">나는 어디쯤? · 연령 × 소득 × 자산 × 지역</div>
+      <div class="eyebrow">{svcName("me")} · 연령 × 소득 × 자산 × 지역</div>
       <h1>통계 속에서 나를 찾아봅니다</h1>
       <p class="lede">
         국세청 연말정산, 임금근로일자리 통계, 가계금융복지조사, 생명표, 주민등록 인구를 한데 모았습니다. 내 숫자를 넣으면 같은 나라, 같은 나이, 같은 동네 사람들 사이에서 내가 어디쯤인지 계산합니다.

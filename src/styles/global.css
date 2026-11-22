@@ -840,10 +840,14 @@ details.table-view .table-wrap {
 }
 .svc:hover {
   border-color: var(--accent);
-  transform: translateY(-2px);
 }
 .svc h3 {
   margin: 0;
+}
+.svc .svc-q {
+  margin-top: -6px;
+  font-size: 13.5px;
+  color: var(--text-muted);
 }
 .svc p {
   color: var(--text-secondary);
@@ -1023,18 +1027,7 @@ pre.formula {
 }
 
 /* ================================================================ 모션 */
-.reveal {
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-.reveal.in {
-  opacity: 1;
-  transform: none;
-}
-.grid > .reveal:nth-child(2) { transition-delay: 0.06s; }
-.grid > .reveal:nth-child(3) { transition-delay: 0.12s; }
-.grid > .reveal:nth-child(4) { transition-delay: 0.18s; }
+/* 스크롤 등장 효과는 쓰지 않는다: 보고서처럼 내용이 처음부터 그 자리에 있게 (.reveal 클래스는 표식만 남음) */
 .chart svg.will-grow .grow-up,
 .chart svg.will-grow .grow-down {
   transform-box: fill-box;
@@ -1651,4 +1644,66 @@ main figure[id] {
   .fig-tools {
     display: none;
   }
+}
+
+/* ---- 홈 신뢰 지표 줄 */
+.trust {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 8px 0 32px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.trust > div {
+  padding: 16px 16px 14px 0;
+}
+.trust > div + div {
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+.trust > div:nth-child(3) {
+  padding-left: 0;
+  border-left: 0;
+}
+@media (max-width: 719px) {
+  .trust > div:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+}
+@media (min-width: 720px) {
+  .trust {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .trust > div:nth-child(3) {
+    padding-left: 16px;
+    border-left: 1px solid var(--border);
+  }
+}
+.trust dt {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+.trust dd {
+  margin: 4px 0 2px;
+  font-size: 28px;
+  font-weight: 720;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.trust dd small {
+  font-size: 15px;
+  font-weight: 600;
+  margin-left: 2px;
+  color: var(--text-secondary);
+}
+.trust dd.trust-date {
+  font-size: 22px;
+  line-height: 1.6;
+}
+.trust p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
 }

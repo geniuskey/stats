@@ -31,7 +31,7 @@ const html = Object.fromEntries(await Promise.all(Object.entries(bySlug).map(asy
     </section>
     {SERVICES.map((s) => bySlug[s.slug] && (
       <section class="section card method" id={s.slug}>
-        <div class="eyebrow"><a href={`${base}${s.slug}/`}>{s.title} →</a></div>
+        <div class="eyebrow"><a href={`${base}${s.slug}/`}>{s.name} →</a></div>
         <Fragment set:html={html[s.slug]} />
       </section>
     ))}

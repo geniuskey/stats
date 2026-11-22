@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
@@ -133,11 +134,11 @@ const simJson = JSON.stringify({
 }).replace(/</g, "\\u003c");
 
 ---
-<Base title="대한민국 산업의 미래" active="industry" description={`산업별 고용·생산·수출과 인구추계를 결합한 산업구조·고용수요 전망. 고용률이 지금과 같다면 노동공급은 ${base}년 대비 ${end}년 ${pct(S.supplyChange2045.base, 0, true)} 변합니다.`}>
+<Base title={pageTitle("industry")} active="industry" description={`산업별 고용·생산·수출과 인구추계를 결합한 산업구조·고용수요 전망. 고용률이 지금과 같다면 노동공급은 ${base}년 대비 ${end}년 ${pct(S.supplyChange2045.base, 0, true)} 변합니다.`}>
   <div class="wrap">
     <section class="hero hero-split">
       <div>
-        <div class="eyebrow">대한민국 산업의 미래 · 산업별 고용 × 생산 × 수출 × 인구추계</div>
+        <div class="eyebrow">{svcName("industry")} · 산업별 고용 × 생산 × 수출 × 인구추계</div>
         <h1>일할 사람은 줄고, 돌봄 일자리만 커집니다</h1>
         <p class="lede">
           산업별 취업자의 나이 구조, 실질 부가가치, 수출 실적에 주민등록 기반 인구추계를 결합했습니다. 어떤 산업이 커지고 있는지,

@@ -81,15 +81,6 @@ export function countUp(el: HTMLElement, ms = 1100) {
   tween(ms, paint);
 }
 
-/** [data-count] 숫자 카운트업, .reveal 스크롤 등장 */
-export function initMotion(root: ParentNode = document) {
-  root.querySelectorAll<HTMLElement>("[data-count]:not([data-counted])").forEach((el) => {
-    el.dataset.counted = "1";
-    if (reduced()) return;
-    onVisible(el, () => countUp(el), 0.4);
-  });
-  root.querySelectorAll<HTMLElement>(".reveal:not(.in)").forEach((el) => {
-    if (reduced()) return el.classList.add("in");
-    onVisible(el, () => el.classList.add("in"), 0.08);
-  });
-}
+/** 숫자 카운트업·스크롤 등장은 쓰지 않는다: 숫자는 처음부터 최종 값으로 보여 준다(보고서 관례).
+ *  차트의 선 그리기·막대 성장만 남긴다(lib/charts). [data-count]·.reveal 표식은 남아 있어도 무해하다. */
+export function initMotion(_root: ParentNode = document) {}

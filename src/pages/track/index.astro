@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
@@ -48,7 +49,7 @@ const SRC = {
   births: "통계청 인구동향조사 월별 출생(KOSIS DT_1B8000G)",
 };
 ---
-<Base title="예측 성적표" active="track" description={`이 사이트의 예측이 얼마나 맞았는지 공개합니다. 시군구 인구 추계 1년 뒤 평균 오차 ${pct(s.pop1y, 1)}, ${s.popEndH}년 뒤 ${pct(s.popEnd, 1)}, 출생아 나우캐스트(8월 기준) ${pct(s.births8m, 1)}.`}>
+<Base title={pageTitle("track")} active="track" description={`이 사이트의 예측이 얼마나 맞았는지 공개합니다. 시군구 인구 추계 1년 뒤 평균 오차 ${pct(s.pop1y, 1)}, ${s.popEndH}년 뒤 ${pct(s.popEnd, 1)}, 출생아 나우캐스트(8월 기준) ${pct(s.births8m, 1)}.`}>
   <div class="wrap">
     <section class="hero">
       <div class="eyebrow">예측 성적표 · 과거 검증 × 실시간 장부</div>

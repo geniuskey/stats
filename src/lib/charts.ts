@@ -542,7 +542,7 @@ export function renderPyramid(host: HTMLElement, spec: PyramidSpec) {
   const startIdx = keep >= 0 ? keep : spec.start != null ? Math.max(0, fr.years.indexOf(spec.start)) : fr.years.length - 1;
   const projIdx = fr.proj != null ? fr.years.findIndex((y) => y >= fr.proj!) : undefined;
   makePlayer(ctl, fr.years, frame, { start: startIdx, speed: spec.speed ?? 260, autoplay: spec.autoplay && keep < 0, projFrom: projIdx, label: (i) => `${fr.years[i]}년` });
-  if (anim && !spec.autoplay) {
+  if (anim) {
     // 첫 등장: 0에서 시작 프레임까지 자라기
     const i = startIdx;
     host.dataset.frame = String(fr.years[i]);

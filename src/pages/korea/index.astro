@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
@@ -139,14 +140,14 @@ const sidoMetrics = [
 const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((y) => y >= by).map((y) => [y, nat.mid[y].total])), groups: P.labels }).replace(/</g, "\\u003c");
 
 ---
-<Base title="대한민국의 미래" active="korea" description={`출생·사망·이동·연령별 인구를 결합한 2050년 대한민국 전망. 65세 이상 비중 ${pct(h.oldShare2025)} → ${pct(h.oldShare2050)}.`}>
+<Base title={pageTitle("korea")} active="korea" description={`출생·사망·이동·연령별 인구를 결합한 2050년 대한민국 전망. 65세 이상 비중 ${pct(h.oldShare2025)} → ${pct(h.oldShare2050)}.`}>
   <div class="wrap">
     <section class="hero hero-split">
       <div>
-        <div class="eyebrow">대한민국의 미래 · 출생 × 사망 × 이동 × 연령별 인구</div>
+        <div class="eyebrow">{svcName("korea")} · 출생 × 사망 × 이동 × 연령별 인구</div>
         <h1>2050년, 고령자 1명을 일하는 나이 {h.workPerOld2050}명이 받칩니다</h1>
         <p class="lede">지금은 {h.workPerOld2025}명입니다. 주민등록 인구 5,100만 명을 1세 단위로 한 해씩 나이 들게 하고, 지역별 이동과 출생을 더해 2050년까지 굴려 봤습니다. 공식 추계가 나온 뒤의 실제 출생 흐름까지 반영했습니다.</p>
-        <p class="small muted">오른쪽 피라미드는 2015년부터 해마다 한 프레임씩 재생됩니다. 검은 선은 {by}년 모습입니다. <a href="#sim">출산율을 직접 바꿔 보기 →</a></p>
+        <p class="small muted">오른쪽 피라미드는 ▶를 누르면 2015년부터 해마다 한 프레임씩 재생합니다. 검은 선은 {by}년 모습입니다. <a href="#sim">출산율을 직접 바꿔 보기 →</a></p>
         <PageMeta basis={`${by}년 말 주민등록 실측 · ${by + 1}~${end}년 자체 추계(저위·중위·고위)`} orgs={["행정안전부", "통계청"]} />
       </div>
       <Chart spec={{ ...pyrFrames("mid"), start: 2015, autoplay: true, height: 400 }} table={pyrTable} h={2} title="인구 피라미드 2015 → 2050" sub={`5세 단위, 남(왼쪽)·여(오른쪽). ${by + 1}년부터 자체 추계 중위`} note={projNote} source={[SRC.reg, SRC.vital, SRC.official]} />

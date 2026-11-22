@@ -50,13 +50,13 @@ export function allCards(): Card[] {
   ];
   for (const s of SERVICES) {
     const h = HEADLINES[s.slug];
-    cards.push({ key: s.slug, eyebrow: s.title, title: s.desc, num: h.num, label: h.label, chips: [...s.combo] });
+    cards.push({ key: s.slug, eyebrow: s.name, title: s.desc, num: h.num, label: h.label, chips: [...s.combo] });
   }
   const dn = dongne as any;
   for (const r of dn.regions) {
     const m = r.m;
     cards.push({
-      key: `dongne/${r.id}`, eyebrow: svc("dongne").title, title: `${r.sido} ${r.name}`,
+      key: `dongne/${r.id}`, eyebrow: svc("dongne").name, title: `${r.sido} ${r.name}`,
       num: pct(m.ch2045, 0, true), numColor: signColor(m.ch2045),
       label: `${dn.meta.end}년 인구 추계 · ${int(m.pop2025)}명 → ${int(m.pop2045)}명 · 지속가능성 지수 ${m.index}`,
     });
@@ -66,7 +66,7 @@ export function allCards(): Card[] {
     const s = r.summary;
     const title = r.level === "sgg" ? `${r.sido} ${r.name}` : r.name;
     cards.push({
-      key: `school/${r.id}`, eyebrow: svc("school").title, title,
+      key: `school/${r.id}`, eyebrow: svc("school").name, title,
       num: pct(s.change2035, 0, true), numColor: signColor(s.change2035),
       label: `초등학생 ${sc.meta.lastActual}→2035년 · ${int(s.current)}명 → ${int(s.y2035)}명`,
     });
@@ -76,7 +76,7 @@ export function allCards(): Card[] {
     const [label, color] = CLS[r.class] ?? ["", C.text];
     const cc = r.metrics.consumerChange2035;
     cards.push({
-      key: `commerce/${r.id}`, eyebrow: svc("commerce").title, title: `${r.sido} ${r.name}`,
+      key: `commerce/${r.id}`, eyebrow: svc("commerce").name, title: `${r.sido} ${r.name}`,
       num: r.index.toFixed(1), numColor: color,
       label: `상권 활력 지수 · ${label}${cc == null ? "" : ` · 2035년 소비인구 ${pct(cc / 100, 0, true)}`}`,
     });

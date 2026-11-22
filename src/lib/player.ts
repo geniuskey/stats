@@ -1,10 +1,11 @@
 // 연도 재생기: ▶ 버튼 + 슬라이더 + 현재 연도. 피라미드·지도·와플 등 프레임 시각화가 공용으로 쓴다.
-import { onVisible, reduced } from "./anim";
+
 
 export interface PlayerOpts {
   start?: number; // 시작 프레임 인덱스
   speed?: number; // 프레임당 ms
-  autoplay?: boolean; // 화면에 들어오면 한 번 자동 재생 (처음부터)
+  /** 쓰지 않음: 모든 재생기는 멈춘 상태로 시작하고 사용자가 ▶를 눌러야 움직인다 (보려는 시점에 이미 끝나 있지 않게) */
+  autoplay?: boolean;
   projFrom?: number; // 이 인덱스부터 '추계' 표시
   label?: (i: number) => string;
 }
@@ -113,12 +114,6 @@ export function makePlayer(host: HTMLElement, labels: (string | number)[], onFra
     btn.innerHTML = idx >= n - 1 ? REPLAY : PLAY;
   });
   paint();
-  if (opts.autoplay && !reduced() && n > 1 && !few) {
-    onVisible(wrap, () => {
-      set(0, false);
-      setTimeout(play, 500);
-    }, 0.5);
-  }
   if (idx >= n - 1) btn.innerHTML = REPLAY;
   return {
     el: wrap,

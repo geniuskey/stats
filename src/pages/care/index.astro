@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
@@ -107,11 +108,11 @@ const demBars = (key: "top" | "bottom") => {
   return (key === "top" ? s.slice(0, 10) : s.slice(-10).reverse()).map((r) => ({ name: `${r.sido} ${r.name}`, value: r.demandIdx["2045"] - 1 }));
 };
 ---
-<Base title="우리 동네 의료·돌봄" active="care" description={`시군구 인구 추계와 요양시설·요양보호사·의사·소아과 통계를 결합한 의료·돌봄 수요 전망. 75세 이상은 ${by}년 ${compact(h.old75Now)}명에서 2045년 ${compact(h.old75_2045)}명으로 늘어, 지금 수준을 유지하려면 요양 정원이 ${bedsX.toFixed(1)}배 필요합니다.`}>
+<Base title={pageTitle("care")} active="care" description={`시군구 인구 추계와 요양시설·요양보호사·의사·소아과 통계를 결합한 의료·돌봄 수요 전망. 75세 이상은 ${by}년 ${compact(h.old75Now)}명에서 2045년 ${compact(h.old75_2045)}명으로 늘어, 지금 수준을 유지하려면 요양 정원이 ${bedsX.toFixed(1)}배 필요합니다.`}>
   <div class="wrap">
     <section class="hero hero-split">
       <div>
-        <div class="eyebrow">우리 동네 의료·돌봄 · 연령별 인구 × 요양시설 × 의료인력 × 진료비</div>
+        <div class="eyebrow">{svcName("care")} · 연령별 인구 × 요양시설 × 의료인력 × 진료비</div>
         <h1>2045년, 요양원 자리는 지금의 {bedsX.toFixed(1)}배가 필요합니다</h1>
         <p class="lede">
           인구는 2045년까지 {pct(-h.pop2045, 0)} 줄지만 75세 이상은 <strong>{compact(h.old75Now)}명에서 {compact(h.old75_2045)}명</strong>으로 늘어납니다.

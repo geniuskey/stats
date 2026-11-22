@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import ChartSwitch from "../../components/ChartSwitch.astro";
@@ -112,11 +113,11 @@ const SRC = {
 };
 const ratioNote = `입학 수요 = 18세 인구(전년 말) × 18세 1명당 입학자(기준 ${ratio.toFixed(2)}, 범위 ${ratioLow.toFixed(2)}~${ratioHigh.toFixed(2)}). KOSIS에 입학정원 표가 없어 ${L}년 실제 입학자를 '지금 입학 규모'로 씀.`;
 ---
-<Base title="대학은 얼마나 남을까?" active="univ" description={`18세 인구 추계와 대학·전문대 입학자 통계를 결합한 시도별 대학 충원 전망. 지금 입학 규모(${compact(h.cap)}명)가 그대로라면 2040년에는 자리의 약 ${pct(1 - h.fill2040)}가 빕니다.`}>
+<Base title={pageTitle("univ")} active="univ" description={`18세 인구 추계와 대학·전문대 입학자 통계를 결합한 시도별 대학 충원 전망. 지금 입학 규모(${compact(h.cap)}명)가 그대로라면 2040년에는 자리의 약 ${pct(1 - h.fill2040)}가 빕니다.`}>
   <div class="wrap">
     <section class="hero hero-split">
       <div>
-        <div class="eyebrow">대학은 얼마나 남을까? · 18세 인구 × 대학 입학자 × 고교 졸업자</div>
+        <div class="eyebrow">{svcName("univ")} · 18세 인구 × 대학 입학자 × 고교 졸업자</div>
         <h1>2040년, 대학 입학 자리 10개 중 {emptyOf10}개가 빕니다</h1>
         <p class="lede">
           {bornCutoff}년 대학 입학생까지는 이미 태어났습니다. 그래서 대학 입학 연령 인구는 출산율 가정과 상관없이 거의 확정된 숫자입니다.

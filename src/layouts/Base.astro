@@ -1,6 +1,6 @@
 ---
 import "../styles/global.css";
-import { SERVICES, NAV_GROUPS } from "../lib/nav";
+import { SERVICES, NAV_GROUPS, pageTitle } from "../lib/nav";
 import { ogKey } from "../lib/og";
 import updated from "../data/updated.json";
 interface Props {
@@ -21,7 +21,7 @@ const crumbs = [{ name: "숫자 너머", url: home }];
 if (active === "methodology") crumbs.push({ name: "방법론과 한계", url: canonical });
 else if (svc) {
   const svcUrl = new URL(`${base}${svc.slug}/`, Astro.site).href;
-  crumbs.push({ name: svc.title, url: svcUrl });
+  crumbs.push({ name: svc.name, url: svcUrl });
   if (svcUrl !== canonical) crumbs.push({ name: title, url: canonical });
 }
 const ld = title === "홈"
@@ -72,7 +72,7 @@ const ld = title === "홈"
       } catch (e) {}
     </script>
   </head>
-  <body id="top" data-updated={updated.updated} data-page-title={title === "홈" ? "숫자 너머" : title}>
+  <body id="top" data-updated={updated.updated} data-page-title={title === "홈" ? "숫자 너머" : svc && title === pageTitle(svc.slug) ? svc.name : title}>
     <header class="site-header">
       <div class="wrap">
         <a class="brand" href={base}>
@@ -89,7 +89,7 @@ const ld = title === "홈"
                 <div class="nav-panel">
                   {items.map((s) => (
                     <a href={`${base}${s.slug}/`} aria-current={active === s.slug ? "page" : undefined}>
-                      <span class="nav-item-title">{s.title}</span>
+                      <span class="nav-item-title">{s.name}</span>
                       <span class="nav-item-desc">{s.desc}</span>
                     </a>
                   ))}

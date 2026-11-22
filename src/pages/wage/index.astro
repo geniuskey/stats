@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
@@ -207,10 +208,10 @@ const simJson = JSON.stringify({
 }).replace(/</g, "\\u003c");
 
 ---
-<Base title="내 월급의 실질 가치" active="wage" description={`임금·물가·주거비·세금 통계를 결합한 실질 구매력 비교. ${REF}→${BASE}년 평균 월급은 명목 ${pct(H.nominalChange2015, 0, true)}, 세후 실질 ${pct(H.netRealChange2015, 0, true)}.`}>
+<Base title={pageTitle("wage")} active="wage" description={`임금·물가·주거비·세금 통계를 결합한 실질 구매력 비교. ${REF}→${BASE}년 평균 월급은 명목 ${pct(H.nominalChange2015, 0, true)}, 세후 실질 ${pct(H.netRealChange2015, 0, true)}.`}>
   <div class="wrap">
     <section class="hero">
-      <div class="eyebrow">내 월급의 실질 가치 · 임금 × 물가 × 주거비 × 세금</div>
+      <div class="eyebrow">{svcName("wage")} · 임금 × 물가 × 주거비 × 세금</div>
       <h1>{h1}</h1>
       <p class="lede">
         고용노동부 평균 임금에 소비자물가·생활물가·주거비 지수, 그리고 연도별 세법과 4대보험 요율을 결합했습니다.{" "}

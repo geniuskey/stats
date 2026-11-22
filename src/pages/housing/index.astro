@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
@@ -204,10 +205,10 @@ const avgNote = `연도 값은 1~12월 평균, ${cy}년은 최근 12개월(~${me
 const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${(v * 100).toFixed(d)}%`);
 
 ---
-<Base title="집값을 감당할 수 있을까?" active="housing" description={`소득·주택가격·금리·대출을 결합한 지역별 주택구입 부담률. 서울에서 국민평형 아파트를 사면 월소득의 ${p1(seoul.current.burden)}를 대출 상환에 씁니다.`}>
+<Base title={pageTitle("housing")} active="housing" description={`소득·주택가격·금리·대출을 결합한 지역별 주택구입 부담률. 서울에서 국민평형 아파트를 사면 월소득의 ${p1(seoul.current.burden)}를 대출 상환에 씁니다.`}>
   <div class="wrap">
     <section class="hero">
-      <div class="eyebrow">집값을 감당할 수 있을까? · 소득 × 주택가격 × 금리 × 대출</div>
+      <div class="eyebrow">{svcName("housing")} · 소득 × 주택가격 × 금리 × 대출</div>
       <h1>서울에서 국민평형을 사면, 월소득의 {Math.round(seoul.current.burden)}%가 대출 상환입니다</h1>
       <p class="lede">
         실거래 아파트 가격, 지역별 가구소득, 주택담보대출 금리를 하나로 묶었습니다. 보통 가구가 전용 {A.area}㎡ 아파트를

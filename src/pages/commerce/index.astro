@@ -1,4 +1,5 @@
 ---
+import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
 import Stat from "../../components/Stat.astro";
@@ -153,10 +154,10 @@ const sidoMetrics = [
 ];
 
 ---
-<Base title="소멸하는 상권, 성장하는 상권" active="commerce" description={`사업체·창업·폐업·인구이동·인구추계를 결합한 시군구 상권 활력 지수. 전국 ${N}개 시군구 중 ${over.length}곳은 점포가 늘고 있지만 2035년 소비인구가 20% 이상 줄어듭니다.`}>
+<Base title={pageTitle("commerce")} active="commerce" description={`사업체·창업·폐업·인구이동·인구추계를 결합한 시군구 상권 활력 지수. 전국 ${N}개 시군구 중 ${over.length}곳은 점포가 늘고 있지만 2035년 소비인구가 20% 이상 줄어듭니다.`}>
   <div class="wrap">
     <section class="hero">
-      <div class="eyebrow">소멸하는 상권, 성장하는 상권 · 사업체 × 창업·폐업 × 인구이동 × 인구추계</div>
+      <div class="eyebrow">{svcName("commerce")} · 사업체 × 창업·폐업 × 인구이동 × 인구추계</div>
       <h1>{over.length}곳은 가게가 늘고 있지만, 10년 뒤 손님은 다섯에 하나 넘게 사라집니다</h1>
       <p class="lede">
         도소매·음식숙박 사업체의 증감, 기업의 창업·폐업, 20~30대의 전입·전출, 그리고 이 사이트의 소지역 인구추계를 하나로 묶었습니다.

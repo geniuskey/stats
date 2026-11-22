@@ -15,6 +15,8 @@ import care from "../data/care.json";
 import { compact, pct, won } from "../lib/format";
 import move from "../data/move.json";
 import { HEADLINES, shrinkCount } from "../lib/headlines";
+import track from "../data/track.json";
+import updated from "../data/updated.json";
 import KoreaMap from "../components/KoreaMap.astro";
 import Spark from "../components/Spark.astro";
 import { dongneMetrics, dongneNames, dongneNotes, dongneLinks } from "../lib/dongneMap";
@@ -54,18 +56,23 @@ const sparks: Record<string, { actual: [number, number][]; proj?: [number, numbe
   retire: { actual: E(life.male).filter(([y]) => y >= 1990), proj: E(lifeF.male).filter(([y]) => y <= 2050), color: "var(--series-3)", from: "1990", to: "2050 65세 기대여명" },
 };
 const cards = HEADLINES;
+// 결합한 공공 통계표 수: 각 데이터의 출처 목록에 적힌 KOSIS 표 ID를 센다 (빌드 때 계산)
+const allData = import.meta.glob("../data/*.json", { eager: true }) as Record<string, any>;
+const tableIds = new Set<string>();
+for (const m of Object.values(allData)) for (const s of (m.default ?? m)?.meta?.sources ?? []) for (const id of String(s).match(/(DT|INH)_[A-Za-z0-9_]+/g) ?? []) tableIds.add(id);
+const T = (track as any).summary;
 ---
 <Base title="홈" description="통계청 KOSIS 공공 통계를 결합해 시군구 인구 추계, 학령인구와 학교 전망, 실질임금, 주택구입 부담, 상권 활력, 은퇴 자금까지 기존에 없던 지표와 2050년 미래를 계산합니다.">
   <div class="wrap">
     <section class="hero hero-split home-hero">
       <div>
-        <div class="eyebrow">공공 통계 × 결합 × 예측</div>
-        <h1>통계를 보여주지 않습니다.<br />통계를 엮어 미래를 계산합니다.</h1>
+        <div class="eyebrow">결합 지표 · 시나리오 추계 · 과거 검증</div>
+        <h1>공공 통계를 결합해 만든 지표와 2050년까지의 추계</h1>
         <p class="lede">
-          출생아 수만으로는 학교의 미래를 알 수 없고, 집값만으로는 내 집 마련의 어려움을 알 수 없습니다. 이 사이트는 통계청 KOSIS의 공공 통계 여러 개를 결합해{" "}
-          <strong>기존에 없던 지표</strong>와 <strong>시나리오 기반 미래 추계</strong>를 만듭니다.
+          출생아 수만으로는 학교의 미래를, 집값만으로는 내 집 마련의 부담을 알 수 없습니다. 숫자 너머는 통계청 KOSIS 등 공공 통계표 {tableIds.size}종을 같은 지역과 시점 기준으로 맞춰{" "}
+          <strong>기존에 없던 지표</strong>를 만들고, 모든 추계를 <strong>시나리오 범위와 과거 검증 오차</strong>와 함께 공개합니다.
         </p>
-        <p class="lede" style="font-size:16px">오른쪽 지도는 전국 229개 시군구의 인구가 {by}년부터 2045년까지 어떻게 바뀌는지 재생합니다. <strong data-count>{shrink}곳</strong>이 줄어듭니다.</p>
+        <p class="lede" style="font-size:16px">오른쪽 지도는 전국 229개 시군구의 인구가 {by}년부터 2045년까지 어떻게 바뀌는지 보여 줍니다(중위 추계, ▶를 누르면 재생). {shrink}곳이 줄어듭니다.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
           <a class="btn btn-primary" href={`${base}dongne/`}>우리 동네 찾기</a>
           <a class="btn" href={`${base}me/`}>나는 어디쯤?</a>
@@ -77,6 +84,14 @@ const cards = HEADLINES;
       </div>
     </section>
 
+    <h2 class="sr-only">신뢰 지표</h2>
+    <dl class="trust">
+      <div><dt>결합한 공공 통계표</dt><dd>{tableIds.size}<small>종</small></dd><p>KOSIS 표 ID를 그림마다 표기</p></div>
+      <div><dt>인구 추계 1년 후 오차</dt><dd>{(T.pop1y * 100).toFixed(1)}<small>%</small></dd><p>시군구 평균, <a href={`${base}track/`}>과거 검증</a></p></div>
+      <div><dt>출생아 나우캐스트 오차</dt><dd>{(T.births8m * 100).toFixed(1)}<small>%</small></dd><p>8월까지 자료로 추정한 연간 값</p></div>
+      <div><dt>자료 갱신</dt><dd class="trust-date">{updated.updated}</dd><p>월 2회 자동 수집·검증, <a href={`${base}methodology/`}>방법론</a></p></div>
+    </dl>
+
     <h2 class="sr-only">서비스</h2>
     <section class="grid grid-2" style="margin-top:8px">
       {SERVICES.map((s) => {
@@ -84,9 +99,10 @@ const cards = HEADLINES;
         return (
           <a class={`card svc reveal${s.slug === "me" ? " svc-wide" : ""}`} href={`${base}${s.slug}/`}>
             <div class="combo">{s.combo.map((c) => <span class="badge">{c}</span>)}</div>
-            <h3>{s.title}</h3>
+            <h3>{s.name}</h3>
+            <p class="svc-q">{s.title}</p>
             <p>{s.desc}</p>
-            <div class="svc-num" data-count>{cards[s.slug].num}</div>
+            <div class="svc-num">{cards[s.slug].num}</div>
             <div class="svc-num-label">{cards[s.slug].label}</div>
             {sp && <Spark actual={sp.actual} proj={sp.proj} color={sp.color} />}
             {sp && <div class="svc-foot"><span>{sp.from}</span><span>{sp.to}{sp.proj ? " (점선 추계)" : ""}</span></div>}
