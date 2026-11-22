@@ -98,3 +98,13 @@ export function manwon(v: number): string {
   }
   return s + Math.round(a).toLocaleString("ko-KR") + "만원";
 }
+
+/** 분포의 평균: 구간 안은 고르게(구간 중점), 마지막 점 위는 파레토 꼬리 평균 xl·α/(α−1) */
+export function distMean(d: Dist): number {
+  const p = withOrigin(d.pts);
+  let m = 0;
+  for (let i = 1; i < p.length; i++) m += ((p[i][0] + p[i - 1][0]) / 2) * (p[i][1] - p[i - 1][1]);
+  const [xl, cl] = p[p.length - 1];
+  const a = Math.max(d.alpha, 1.01);
+  return m + (1 - cl) * xl * (a / (a - 1));
+}

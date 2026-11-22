@@ -5,7 +5,7 @@ import korea from "../../data/korea.json";
 import dongne from "../../data/dongne.json";
 import housing from "../../data/housing.json";
 import { int, compact } from "../../lib/format";
-import { quantile } from "../../lib/me";
+import { quantile, distMean } from "../../lib/me";
 
 const M = me as any;
 const K = korea as any;
@@ -43,6 +43,16 @@ const cfgJson = JSON.stringify(cfg).replace(/</g, "\\u003c");
 const S = M.salary, HH = M.household, J = M.job;
 const salaryMedian = quantile(S, 0.5);
 const nowYear = 2026;
+
+// 기본값: 대한민국 평균 (입력칸에 미리 채워 둔다)
+const meanAge = nat1.reduce((a, v, i) => a + (i + 0.5) * v, 0) / nat1.reduce((a, b) => a + b, 0);
+const avg = {
+  birth: Math.round(popBase - meanAge), // 전국 주민등록 인구 평균 나이
+  salary: Math.round(distMean(S) / 10) * 10, // 근로소득자 총급여 평균 (분포에서 계산)
+  hinc: Math.round(HH.income.mean), // 가계금융복지조사 가구 경상소득 평균
+  net: Math.round(HH.net.mean), // 가계금융복지조사 가구 순자산 평균
+  size: 2, // 평균 가구원 수 약 2.2명 (인구주택총조사 2024)
+};
 ---
 <Base title="나는 어디쯤?" active="me" description={`나이·연봉·가구소득·순자산을 넣으면 대한민국 통계 분포에서 내 위치를 알려 줍니다. 근로소득자 ${compact(S.n)}명의 연봉 중앙값은 약 ${int(salaryMedian)}만원. 입력값은 브라우저 밖으로 나가지 않습니다.`}>
   <div class="wrap">
@@ -59,7 +69,7 @@ const nowYear = 2026;
     <section class="card" id="me-form" aria-label="내 정보 입력">
       <div class="form-grid">
         <label class="field">출생연도
-          <input id="f-birth" type="number" inputmode="numeric" min="1920" max={String(nowYear)} step="1" placeholder="예: 1990" />
+          <input id="f-birth" type="number" inputmode="numeric" min="1920" max={String(nowYear)} step="1" value={String(avg.birth)} placeholder="예: 1990" />
         </label>
         <div class="field">성별
           <div class="seg" id="f-sex" role="group" aria-label="성별">
@@ -78,22 +88,22 @@ const nowYear = 2026;
           </select>
         </label>
         <label class="field">내 연봉 (세전, 만원)
-          <input id="f-salary" type="number" inputmode="numeric" min="0" step="100" placeholder="예: 4000" />
+          <input id="f-salary" type="number" inputmode="numeric" min="0" step="100" value={String(avg.salary)} placeholder="예: 4000" />
         </label>
         <label class="field">우리 집 연소득 (만원)
-          <input id="f-hinc" type="number" inputmode="numeric" min="0" step="100" placeholder="가구원 소득 합계" />
+          <input id="f-hinc" type="number" inputmode="numeric" min="0" step="100" value={String(avg.hinc)} placeholder="가구원 소득 합계" />
         </label>
         <label class="field">우리 집 순자산 (만원)
-          <input id="f-net" type="number" inputmode="numeric" step="500" placeholder="자산 − 부채" />
+          <input id="f-net" type="number" inputmode="numeric" step="500" value={String(avg.net)} placeholder="자산 − 부채" />
         </label>
         <label class="field">가구원 수
           <select id="f-size">
             <option value="">선택 안 함</option>
-            <option value="1">1인</option><option value="2">2인</option><option value="3">3인</option><option value="4">4인</option><option value="5">5인 이상</option>
+            <option value="1">1인</option><option value="2" selected={avg.size === 2}>2인</option><option value="3">3인</option><option value="4">4인</option><option value="5">5인 이상</option>
           </select>
         </label>
       </div>
-      <p class="small muted" style="margin:14px 0 0">비워 둔 칸은 건너뜁니다. 연봉은 비과세 수당을 뺀 총급여, 가구소득은 근로·사업·재산·이전소득을 더한 연간 경상소득, 순자산은 집·예금·주식 등 자산에서 대출 등 부채를 뺀 값입니다.</p>
+      <p class="small muted" style="margin:14px 0 0">처음에는 대한민국 평균값({avg.birth}년생(평균 나이), 연봉 평균 {int(avg.salary)}만원, 가구 연소득 평균 {int(avg.hinc)}만원, 순자산 평균 {int(avg.net)}만원, 2인 가구)이 들어 있습니다. 내 숫자로 바꿔 보세요. 비워 둔 칸은 건너뜁니다. 연봉은 비과세 수당을 뺀 총급여, 가구소득은 근로·사업·재산·이전소득을 더한 연간 경상소득, 순자산은 집·예금·주식 등 자산에서 대출 등 부채를 뺀 값입니다.</p>
     </section>
 
     <section class="section" id="me-out" aria-live="polite">
