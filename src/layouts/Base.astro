@@ -43,6 +43,7 @@ const ld = title === "홈"
     </script>
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
+    <meta name="author" content="Euiyun Lab" />
     {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
@@ -120,7 +121,7 @@ const ld = title === "홈"
           이 사이트의 추계·지표는 공공 통계를 결합해 독자적으로 계산한 값이며 국가승인통계가 아닙니다.
         </p>
         <p>자료 갱신 <time datetime={updated.updated}>{updated.updated}</time> · 매월 2회 KOSIS 최신 자료를 받아 검증한 뒤 반영합니다.</p>
-        <p><a href={`${base}methodology/`}>방법론과 한계</a> · <a href="https://github.com/geniuskey/stats">소스 코드</a></p>
+        <p><a href={`${base}methodology/`}>방법론과 한계</a> · <a href="https://github.com/geniuskey/stats">소스 코드</a> · © 2026 <a href="https://euiyun.com">Euiyun Lab</a></p>
       </div>
     </footer>
     <script>
