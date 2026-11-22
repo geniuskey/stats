@@ -163,12 +163,20 @@ def tfr_denominator(ann_b, ann_t):
 
 
 def est_den(den, y):
-    """분모(y) = 분모(y−1) × 최근 3년 평균 변화율."""
+    """마지막 확정 연도의 분모를 최근 연평균 변화율로 연장한다."""
     ys = [t for t in range(y - 4, y) if t in den]
     if len(ys) < 2:
         return None
-    rates = [den[b] / den[a] for a, b in zip(ys, ys[1:])]
-    return den[y - 1] * (sum(rates) / len(rates)) if y - 1 in den else None
+    rates = [(den[b] / den[a]) ** (1 / (b - a)) for a, b in zip(ys, ys[1:])]
+    last = ys[-1]
+    return den[last] * (sum(rates) / len(rates)) ** (y - last)
+
+
+def annual_or_monthly(annual, monthly, year):
+    if year in annual:
+        return annual[year]
+    months = [monthly.get((year, m)) for m in range(1, 13)]
+    return sum(months) if None not in months else None
 
 
 # ── 내년 출생아 (혼인 시차 회귀) ───────────────────────────
@@ -242,9 +250,12 @@ def build():
     ab, am, at = nat_a["births"], nat_a["marriages"], nat_a["tfr"]
     ly, lm = latest_month(mb)                  # 최신 월 (예: 2026, 8)
     last_annual = max(ab)                      # 확정 연간 (예: 2025)
+    last_tfr = max(at)
     # 기준 연도는 늘 최신 월자료가 있는 해. 12월까지 나왔으면(연간 확정 전후 모두) 월 합계가 곧 연간이고,
     # 다음 해 1월 자료가 나오면 그때 다음 해로 넘어간다 (월자료 없는 해를 기준으로 잡으면 KeyError).
     year, M = ly, lm
+    prev_births = annual_or_monthly(ab, mb, year - 1)
+    prev_marriages = annual_or_monthly(am, mm, year - 1)
     full = complete_years(mb)
 
     bt_b = backtest_annual(mb, ab, full)
@@ -270,18 +281,21 @@ def build():
             tfr_bt.append(round((ab[y] / d) / at[y] - 1, 4))  # 출생아를 정확히 알 때 분모 추정 오차
 
     # 내년 출생아
-    Bx = {**ab, year: nb["point"]}
-    Mx = {**am, year: nm["point"]}
     coef, rows = fit_lag(ab, am, last_annual)
-    x_next = [1.0, math.log(Mx[year] / Mx[year - 1]), math.log(Mx[year - 1] / Mx[year - 2])]
+    marriages_2y_ago = annual_or_monthly(am, mm, year - 2)
+    x_next = [1.0, math.log(nm["point"] / prev_marriages), math.log(prev_marriages / marriages_2y_ago)]
     g_next = sum(c * v for c, v in zip(coef, x_next))
     lag_bt = backtest_lag(ab, am, last_annual)
     lag_errs = [e["err"] for e in lag_bt]
-    nxt = Bx[year] * math.exp(g_next)
+    nxt = nb["point"] * math.exp(g_next)
     # 범위: 올해 추정 범위 × 1년 앞 예측 오차(10~90%)
     lo_e, hi_e = quantile(lag_errs, 0.1), quantile(lag_errs, 0.9)
     next_births = {"point": nxt, "lo": nb["lo"] * math.exp(g_next) / (1 + hi_e), "hi": nb["hi"] * math.exp(g_next) / (1 + lo_e)}
     resid = [g - sum(c * v for c, v in zip(coef, x)) for _, x, g in rows]
+
+    # 12개월 실측이 모두 나오면 마지막 예측 시점인 11월까지의 검증을 표시한다.
+    bt_month = min(M, 11)
+    bt_method = pick(bt_b[bt_month])
 
     # 백테스트 요약 (선택된 방법 기준, 최근 20년)
     def bt_summary(bt):
@@ -294,8 +308,8 @@ def build():
         return out
 
     bt_detail = {  # 현재 기준 월 M에서 과거 연도별 오차 (차트용)
-        str(y): round(e, 4) for y, e in bt_b[min(M, 11)][pick(bt_b[min(M, 11)])]
-    } if M < 12 else {}
+        str(y): round(e, 4) for y, e in bt_b[bt_month][bt_method]
+    }
 
     # 월별 차트 데이터 (최근 5년 + 올해)
     def months(series, y):
@@ -319,6 +333,7 @@ def build():
     for sd in SIDO:
         sm = monthly.get(sd, {})
         sb, sa = sm.get("births", {}), annual.get(sd, {}).get("births", {})
+        prev_sido = annual_or_monthly(sa, sb, year - 1)
         if (year, M) not in sb and M < 12:
             continue
         ytd = sum(sb[(year, m)] for m in range(1, M + 1))
@@ -328,9 +343,9 @@ def build():
             "id": sd, "name": SIDO[sd][0],
             "ytd": rnd(ytd), "ytdPrev": rnd(ytd_prev),
             "ytdChange": round(ytd / ytd_prev - 1, 4) if ytd_prev else None,
-            "est": rnd(est), "prevYear": rnd(sa.get(year - 1)),
-            "estChange": round(est / sa[year - 1] - 1, 4) if est and sa.get(year - 1) else None,
-            "tfrPrev": annual.get(sd, {}).get("tfr", {}).get(year - 1),
+            "est": rnd(est), "prevYear": rnd(sa.get(last_annual)),
+            "estChange": round(est / prev_sido - 1, 4) if est and prev_sido else None,
+            "tfrPrev": annual.get(sd, {}).get("tfr", {}).get(last_tfr),
             "hist": {str(y): rnd(v) for y, v in sorted(sa.items()) if y >= 2000},
         })
 
@@ -350,31 +365,28 @@ def build():
             e["nextActual"] = rnd(ab[e["nextYear"]])
             e["nextErr"] = round(e["next"] / ab[e["nextYear"]] - 1, 4)
 
-    # 과거 '그해 M월 기준' 의사 실시간 기록 (성적표용): 최근 10년
-    pseudo = []
-    if M < 12:
-        meth = pick(bt_b[M])
-        for y, e in bt_b[M][meth]:
-            if y < 2006:
-                continue
-            pseudo.append({"year": y, "pred": rnd(ab[y] * (1 + e)), "actual": rnd(ab[y]), "err": round(e, 4)})
+    # 과거 '그해 기준월까지' 의사 실시간 기록 (성적표용)
+    pseudo = [
+        {"year": y, "pred": rnd(ab[y] * (1 + e)), "actual": rnd(ab[y]), "err": round(e, 4)}
+        for y, e in bt_b[bt_month][bt_method] if y >= 2006
+    ]
 
     return {
         "meta": {
-            "asof": asof, "year": year, "month": M, "lastAnnual": last_annual,
+            "asof": asof, "year": year, "month": M, "lastAnnual": last_annual, "lastTfr": last_tfr,
             "sources": [
                 "통계청 인구동향조사 월·분기·연간 출생·사망·혼인·이혼 (KOSIS DT_1B8000G)",
             ],
         },
         "headline": {
             "births": rnd(nb["point"]), "lo": rnd(nb["lo"]), "hi": rnd(nb["hi"]),
-            "prev": rnd(ab.get(year - 1)), "change": round(nb["point"] / ab[year - 1] - 1, 4) if ab.get(year - 1) else None,
+            "prev": rnd(prev_births), "change": round(nb["point"] / prev_births - 1, 4) if prev_births else None,
             "tfr": rnd(tfr_now["point"], 3) if tfr_now else None,
             "tfrLo": rnd(tfr_now["lo"], 3) if tfr_now else None,
             "tfrHi": rnd(tfr_now["hi"], 3) if tfr_now else None,
-            "tfrPrev": at.get(year - 1),
-            "marriages": rnd(nm["point"]), "marriagesPrev": rnd(am.get(year - 1)),
-            "marriagesChange": round(nm["point"] / am[year - 1] - 1, 4) if am.get(year - 1) else None,
+            "tfrPrev": at[last_tfr],
+            "marriages": rnd(nm["point"]), "marriagesPrev": rnd(prev_marriages),
+            "marriagesChange": round(nm["point"] / prev_marriages - 1, 4) if prev_marriages else None,
             "next": rnd(next_births["point"]), "nextLo": rnd(next_births["lo"]), "nextHi": rnd(next_births["hi"]),
             "nextChange": round(next_births["point"] / nb["point"] - 1, 4),
             "ytd": rnd(sum(mb[(year, m)] for m in range(1, M + 1))),

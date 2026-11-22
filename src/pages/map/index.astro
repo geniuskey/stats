@@ -504,14 +504,17 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const X = (y: number) => L + ((y - y0) / (y1 - y0 || 1)) * (W - L - Rr);
     const Y = (v: number) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
     const path = (pts: [number, number | null][]) => pts.filter((p) => p[1] != null).map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]!).toFixed(1)}`).join("");
-    const past = main.filter((p) => p[0] < m.projFrom), fut = main.filter((p) => p[0] >= m.projFrom - 1 && p[0] >= (past.length ? past[past.length - 1][0] : 0));
+    const past = main.filter((p) => p[0] < m.projFrom);
+    const fut = main.filter((p) => p[0] >= m.projFrom);
+    const lastPast = past[past.length - 1];
+    const boundary = lastPast ? (lastPast[0] + m.projFrom) / 2 : m.projFrom;
+    if (lastPast && fut.length) fut.unshift(lastPast);
     let band = "";
     if (others.length) {
       const fy = m.years.filter((y: number) => y >= m.projFrom);
       const mins = fy.map((y: number) => Math.min(...others.map((s) => s.find((p) => p[0] === y)?.[1] ?? Infinity)));
       const maxs = fy.map((y: number) => Math.max(...others.map((s) => s.find((p) => p[0] === y)?.[1] ?? -Infinity)));
       if (fy.length && isFinite(mins[0])) {
-        const lastPast = past[past.length - 1];
         const top = fy.map((y: number, i: number) => `${X(y).toFixed(1)},${Y(maxs[i]).toFixed(1)}`);
         const bot = fy.map((y: number, i: number) => `${X(y).toFixed(1)},${Y(mins[i]).toFixed(1)}`).reverse();
         const start = lastPast?.[1] != null ? [`${X(lastPast[0]).toFixed(1)},${Y(lastPast[1]).toFixed(1)}`] : [];
@@ -523,7 +526,7 @@ const json = JSON.stringify(payload).replace(/</g, "\\u003c");
     const last = main[main.length - 1];
     return `<svg class="mp-spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="${m.label} 연도별 추이">
       ${band}
-      ${m.projFrom <= y1 ? `<line x1="${X(m.projFrom - 0.5)}" x2="${X(m.projFrom - 0.5)}" y1="${T}" y2="${H - B}" stroke="${c1}" stroke-opacity="0.15"/>` : ""}
+      ${m.projFrom <= y1 ? `<line x1="${X(boundary)}" x2="${X(boundary)}" y1="${T}" y2="${H - B}" stroke="${c1}" stroke-opacity="0.15"/>` : ""}
       <path d="${path(past)}" fill="none" stroke="${c1}" stroke-width="2"/>
       <path d="${path(fut)}" fill="none" stroke="${c2}" stroke-width="2" stroke-dasharray="4 3"/>
       ${cv != null ? `<circle cx="${X(cy)}" cy="${Y(cv)}" r="4.5" fill="${cy >= m.projFrom ? c2 : c1}" stroke="${resolve("var(--surface-1)")}" stroke-width="2"/>` : ""}

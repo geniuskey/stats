@@ -3,7 +3,7 @@
 KOSIS가 빈 표를 주거나 표 ID·단위가 바뀌면 ETL은 오류 없이 엉뚱한 숫자를 만들 수 있다.
 자동 갱신이 그런 숫자를 그대로 배포하지 않도록 두 단계로 확인한다.
 
-1. 고정 규칙: 지역 수, 핵심 지표의 상식적인 범위 (RULES)
+1. 고정 규칙: 필수 모듈, 지역 수, 핵심 지표의 상식적인 범위 (RULES)
 2. 직전 버전과 비교 (기본: git HEAD)
    - 직전에 있던 키·지역(id)이 사라졌는지
    - 숫자였던 값이 null·문자열·NaN으로 바뀌었는지
@@ -109,6 +109,8 @@ def check_rules(name: str, data) -> list[str]:
         if not isinstance(n, (int, float)) or isinstance(n, bool) or not lo <= n <= hi:
             what = "개수" if isinstance(v, (list, dict)) else "값"
             errors.append(f"`{path}` {what} {n!r} — 허용 범위 {lo:g}~{hi:g}")
+    if name == "births":
+        errors.extend(check_birth_months(data))
     return errors
 
 
@@ -117,19 +119,87 @@ def is_num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def id_key(items: list) -> str | None:
-    """목록의 원소를 짝지을 키: 모든 원소에 있고 값이 겹치지 않는 첫 키."""
-    if not items or not all(isinstance(x, dict) for x in items):
+def check_birth_months(data) -> list[str]:
+    try:
+        year, month = get(data, "meta.year"), get(data, "meta.month")
+        actual = get(data, f"monthly.births.{year}")
+        forecast = get(data, "monthly.forecast")
+    except (KeyError, IndexError, ValueError, TypeError):
+        return ["출생 월별 실측·예측 자료 없음"]
+    if type(year) is not int or type(month) is not int or not 1 <= month <= 12:
+        return ["출생 자료 기준 연월이 올바르지 않음"]
+    errors = []
+    if not isinstance(actual, list) or len(actual) != 12 or not all(finite(v) for v in actual[:month]):
+        errors.append(f"`monthly.births.{year}`의 1~{month}월 실측 필요")
+    expected = {str(m) for m in range(month + 1, 13)}
+    if not isinstance(forecast, dict) or forecast.keys() != expected or not all(finite(v) for v in forecast.values()):
+        errors.append("`monthly.forecast`에 실측이 나오지 않은 달의 예측 필요")
+    return errors
+
+
+def finite(v) -> bool:
+    return type(v) is int or isinstance(v, float) and math.isfinite(v)
+
+
+def replaced_forecasts(name: str, old: dict, new: dict) -> set[str]:
+    """같은 시점의 실측이 추가되어 만료된 예측만 삭제를 허용한다."""
+    if name == "births":
+        year, month = old["meta"]["year"], old["meta"]["month"]
+        new_date = new["meta"]["year"], new["meta"]["month"]
+        if new_date <= (year, month):
+            return set()
+        actual = new["monthly"]["births"].get(str(year))
+        if not isinstance(actual, list):
+            return set()
+        last_month = 12 if new_date[0] > year else new_date[1]
+        return {f"monthly.forecast.{m}" for m, value in enumerate(actual[:last_month], 1) if finite(value)}
+    if name == "housing" and new["meta"]["currentYear"] > old["meta"]["currentYear"]:
+        last_year = new["meta"]["currentYear"]
+        return {
+            f"regions[id={region['id']}].outlook.{price}.{rate}.{year}"
+            for region in new["regions"]
+            for year, actual in region["hist"].items()
+            if old["meta"]["currentYear"] < int(year) <= last_year
+            and finite(actual.get("burden")) and finite(actual.get("pir"))
+            for price, rates in region["outlook"].items()
+            for rate in rates
+        }
+    return set()
+
+
+def birth_period_changes(old: dict, new: dict) -> set[str]:
+    old_year, old_month = old["meta"]["year"], old["meta"]["month"]
+    year, month = new["meta"]["year"], new["meta"]["month"]
+    if (year, month) <= (old_year, old_month):
+        return set()
+
+    # 기준월이 바뀐 누계와 백테스트는 같은 기간의 숫자끼리 비교할 수 없다.
+    fields = ["ytd", "ytdPrev", "ytdChange"]
+    if year != old_year:
+        fields.append("estChange")
+    paths = {"meta.month", "headline.ytd", "headline.ytdPrev"}
+    paths.update(f"sidos[id={sido['id']}].{field}" for sido in new["sidos"] for field in fields)
+    if min(month, 11) != min(old_month, 11):
+        paths.update(f"backtest.detail.{y}" for y in new["backtest"]["detail"])
+        paths.update(f"backtest.pseudo[year={row['year']}].err" for row in new["backtest"]["pseudo"])
+    return paths
+
+
+def id_key(old: list, new: list) -> str | None:
+    """이전과 새 목록 모두에서 원소를 고유하게 식별하는 키."""
+    if not old or not all(isinstance(x, dict) for x in old + new):
         return None
     for k in ID_KEYS:
-        vals = [x.get(k) for x in items]
-        if None not in vals and len(set(map(str, vals))) == len(vals):
+        values = [[x.get(k) for x in items] for items in (old, new)]
+        if all(None not in vals and len(set(map(str, vals))) == len(vals) for vals in values):
             return k
     return None
 
 
 class Diff:
-    def __init__(self):
+    def __init__(self, allowed_missing=(), period_changes=()):
+        self.allowed_missing = allowed_missing
+        self.period_changes = period_changes
         self.missing: list[str] = []
         self.broken: list[str] = []
         self.shrunk: list[str] = []
@@ -143,16 +213,16 @@ class Diff:
                 return
             for k, v in old.items():
                 p = f"{path}.{k}" if path else k
-                if k not in new:
-                    self.missing.append(f"`{p}`")
-                else:
+                if k in new:
                     self.walk(v, new[k], p)
+                elif p not in self.allowed_missing:
+                    self.missing.append(f"`{p}`")
         elif isinstance(old, list):
             if not isinstance(new, list):
                 self.broken.append(f"`{path}` 목록 → {type(new).__name__}")
                 return
-            k = id_key(old)
-            if k and id_key(new) == k:
+            k = id_key(old, new)
+            if k:
                 by = {str(x[k]): x for x in new}
                 for x in old:
                     p = f"{path}[{k}={x[k]}]"
@@ -166,8 +236,10 @@ class Diff:
                 for i, (a, b) in enumerate(zip(old, new)):
                     self.walk(a, b, f"{path}[{i}]")
         elif is_num(old):
-            if not is_num(new) or not math.isfinite(new):
+            if not finite(new):
                 self.broken.append(f"`{path}` {old!r} → {new!r}")
+                return
+            if path in self.period_changes:
                 return
             self.numbers += 1
             if old != 0:
@@ -201,21 +273,26 @@ def main() -> int:
     data_dir = args.data
 
     report = ["## 데이터 검증", ""]
-    failed = False
+    files = {f.stem: f for f in data_dir.glob("*.json") if f.name not in SKIP}
+    missing = sorted(RULES.keys() - files.keys())
+    failed = bool(missing)
+    if missing:
+        report.append("- ❌ 필수 파일 없음: " + ", ".join(f"`{name}.json`" for name in missing))
     changed = []
 
-    for f in sorted(data_dir.glob("*.json")):
-        if f.name in SKIP:
-            continue
-        name = f.stem
+    for name, f in sorted(files.items()):
         errors: list[str] = []
         warns: list[str] = []
-        raw = f.read_bytes()
         try:
-            new = json.loads(raw, parse_constant=reject_constant)
-        except ValueError as e:
+            new = json.loads(f.read_bytes(), parse_constant=reject_constant)
+        except (OSError, ValueError) as e:
             errors.append(f"읽을 수 없음: {e}")
             new = None
+
+        else:
+            if not isinstance(new, dict):
+                errors.append("최상위 값은 JSON 객체여야 합니다")
+                new = None
 
         if new is not None:
             errors += check_rules(name, new)
@@ -224,7 +301,13 @@ def main() -> int:
                 warns.append(f"{args.baseline}에 직전 버전이 없어 비교 생략")
             elif old != new:
                 changed.append(name)
-                d = Diff()
+                try:
+                    allowed_missing = replaced_forecasts(name, old, new) if not errors else set()
+                    period_changes = birth_period_changes(old, new) if name == "births" and not errors else set()
+                except (AttributeError, KeyError, TypeError, ValueError):
+                    allowed_missing = set()  # 누락되거나 깨진 구조는 비교 규칙대로 검사
+                    period_changes = set()
+                d = Diff(allowed_missing, period_changes)
                 d.walk(old, new, "")
                 if d.missing:
                     errors.append(f"사라진 항목 {len(d.missing)}개: " + ", ".join(d.missing[:8]))

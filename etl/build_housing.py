@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import sys
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import kosis
@@ -31,7 +32,7 @@ LTV = 0.5
 TERM_YEARS = 30
 PYEONG = 3.3058
 FIRST_YEAR = 2016    # 소득 자료(2017년 조사의 전년도 소득) 시작
-OUTLOOK_END = 2030
+OUTLOOK_YEARS = 4
 
 PRICE_CODE = {
     "000": "00", "030": "11", "040": "26", "050": "27", "060": "28", "0307": "29", "080": "30",
@@ -63,11 +64,9 @@ def payment(principal: float, annual_rate_pct: float, years: int = TERM_YEARS) -
     return principal * r / (1 - (1 + r) ** -n)
 
 
-def monthly(org, tbl, codes, objs_extra=None, start="200601", end="202612"):
+def monthly(org, tbl, codes, *, start="200601", end):
     out: dict[str, dict[str, float]] = defaultdict(dict)
     objs = {1: "+".join(codes)}
-    if objs_extra:
-        objs.update(objs_extra)
     rows = kosis.data(org, tbl, objs=objs, prd_se="M", start=start, end=end)
     for r in rows:
         if r["DT"] in ("", "-", None):
@@ -93,15 +92,18 @@ def r1(x, n=1):
 
 
 def build():
-    price_m = monthly("408", "DT_KAB_11672_S15", list(PRICE_CODE) + list(SEOUL_ZONES))
-    jeonse_m = monthly("408", "DT_KAB_11672_S25", list(PRICE_CODE) + list(SEOUL_ZONES), start="201401")
-    rate_m = monthly("301", "DT_121Y006", [MORTGAGE], start="200601")[MORTGAGE]
+    today = datetime.now(timezone(timedelta(hours=9)))
+    end_month, end_year = today.strftime("%Y%m"), today.strftime("%Y")
+    price_m = monthly("408", "DT_KAB_11672_S15", list(PRICE_CODE) + list(SEOUL_ZONES), end=end_month)
+    jeonse_m = monthly("408", "DT_KAB_11672_S25", list(PRICE_CODE) + list(SEOUL_ZONES), start="201401", end=end_month)
+    rate_m = monthly("301", "DT_121Y006", [MORTGAGE], end=end_month)[MORTGAGE]
     last_price_ym = max(price_m["000"])
     last_rate_ym = max(rate_m)
     cur_year = int(last_price_ym[:4])
+    outlook_end = cur_year + OUTLOOK_YEARS
 
     # 소득: 조사연도 Y의 '전년도 경상소득' → 소득연도 Y-1
-    inc_rows = kosis.data("101", "INH_1HD_AAA01_01", objs={1: "ALL", 2: "C04"}, start="2017", end="2030")
+    inc_rows = kosis.data("101", "INH_1HD_AAA01_01", objs={1: "ALL", 2: "C04"}, start="2017", end=end_year)
     income: dict[str, dict[int, float]] = defaultdict(dict)
     for r in inc_rows:
         k = INCOME_CODE.get(r["C1"])
@@ -114,11 +116,11 @@ def build():
         y0 = y1 - 3
         g = (s[y1] / s[y0]) ** (1 / 3) - 1 if y0 in s else 0.03
         inc_growth[k] = g
-        for y in range(y1 + 1, OUTLOOK_END + 1):  # 이후 연도는 최근 3년 연평균 증가율로 연장(추정)
+        for y in range(y1 + 1, outlook_end + 1):  # 이후 연도는 최근 3년 연평균 증가율로 연장(추정)
             s[y] = s[y - 1] * (1 + g)
 
     # 대출 잔액
-    loan_rows = kosis.data("301", "DT_181Y002", objs={1: "+".join(LOAN_ITEMS)}, start="2013", end="2030")
+    loan_rows = kosis.data("301", "DT_181Y002", objs={1: "+".join(LOAN_ITEMS)}, start="2013", end=end_year)
     loans = defaultdict(dict)
     for r in loan_rows:
         if r["DT"] not in ("", "-"):
@@ -164,7 +166,7 @@ def build():
         cur = hist[max(hist)]
         first = hist[min(hist)]
         p_now = cur["priceM2"]
-        # 가격 추세: 최근 10년(또는 가용 기간) 연평균 상승률
+        # 가격 추세: 화면의 비교 시작 연도부터 최근 실측까지의 연평균 상승률
         y_first = min(hist)
         span = max(hist) - y_first
         price_cagr = (p_now / first["priceM2"]) ** (1 / span) - 1 if span > 0 else 0.0
@@ -180,7 +182,7 @@ def build():
             outlook[ps] = {}
             for rs, dr in rate_scen.items():
                 row = {}
-                for i, y in enumerate(range(cur_year + 1, OUTLOOK_END + 1), start=1):
+                for i, y in enumerate(range(cur_year + 1, outlook_end + 1), start=1):
                     frac = min(i / 2, 1.0)  # 금리는 2년에 걸쳐 목표 수준으로 이동
                     rate = cur["rate"] + dr * frac
                     p = p_now * (1 + g) ** i
@@ -202,7 +204,7 @@ def build():
             "outlook": outlook,
             "monthly": {
                 ym: r1(trailing_mean(price_m[code], ym))
-                for ym in sorted(price_m[code]) if ym >= "200712" and ym[4:] in ("03", "06", "09", "12") or ym == last_price_ym
+                for ym in sorted(price_m[code]) if ym >= "200712" or ym == last_price_ym
             },
         })
 

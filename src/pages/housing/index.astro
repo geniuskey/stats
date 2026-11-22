@@ -19,6 +19,7 @@ const sidos = regions.filter((r) => r.level === "sido");
 const meta = D.meta;
 const A = meta.assumptions;
 const cy = meta.currentYear;
+const outlookEnd = Math.max(...Object.keys(nat.outlook.trend.hold).map(Number));
 const fy = nat.change.fromYear;
 const histYears = Object.keys(nat.hist).map(Number);
 
@@ -88,7 +89,7 @@ const scenRegions = lineRegions.map((l) => ({
   outlook: R[l.id].outlook,
 }));
 const scenSido = [nat, ...sidos].map((r) => ({ id: r.id, name: r.name, now: r.current.burden, outlook: r.outlook }));
-const scenJson = JSON.stringify({ regions: scenRegions, sido: scenSido, cy }).replace(/</g, "\\u003c");
+const scenJson = JSON.stringify({ regions: scenRegions, sido: scenSido, cy, outlookEnd }).replace(/</g, "\\u003c");
 
 // 계산기
 const calcJson = JSON.stringify({ ...D.calculator, A }).replace(/</g, "\\u003c");
@@ -210,7 +211,7 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
     </div>
 
     <section class="section">
-      <h2>10년 사이 무엇이 달라졌나</h2>
+      <h2>{cy - fy}년 사이 무엇이 달라졌나</h2>
       <p class="section-desc">연도 값은 1~12월 평균이고, {cy}년은 최근 12개월(~{meta.lastPriceMonth}) 평균입니다. 부담률은 집값·소득·금리가 함께 움직인 결과입니다. 2022년 이후 금리 상승이 부담을 한 단계 끌어올렸습니다.</p>
       <div class="grid grid-2">
         <Chart spec={burdenSpec} table={histTable("burden")} title="주택구입 부담률" sub={`월 상환액 ÷ 월소득, 전용 ${A.area}㎡ · LTV ${A.ltv * 100}% · ${A.termYears}년`} />
@@ -313,8 +314,8 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
     </section>
 
     <section class="section" id="scenario">
-      <h2>2030년, 부담은 어디로</h2>
-      <p class="section-desc">집값과 금리 시나리오를 고르면 2030년까지의 부담률을 다시 계산합니다. 소득은 지역별 최근 3년 증가율로 늘고, 금리는 2년에 걸쳐 목표 수준으로 이동한다고 가정합니다. <strong>예측이 아니라 "이 조건이면 이렇게 된다"는 조건부 시나리오입니다.</strong></p>
+      <h2>{outlookEnd}년, 부담은 어디로</h2>
+      <p class="section-desc">집값과 금리 시나리오를 고르면 {outlookEnd}년까지의 부담률을 다시 계산합니다. 소득은 지역별 최근 3년 증가율로 늘고, 금리는 2년에 걸쳐 목표 수준으로 이동한다고 가정합니다. <strong>예측이 아니라 "이 조건이면 이렇게 된다"는 조건부 시나리오입니다.</strong></p>
       <div class="controls">
         <div class="seg" role="group" aria-label="집값 시나리오" data-scen="price">
           <button type="button" data-v="down" aria-pressed="false">집값 연 −2%</button>
@@ -334,11 +335,11 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
           <div class="chart" id="scen-chart"></div>
         </figure>
         <div class="card">
-          <h3 class="card-title">2030년 시도별 부담률</h3>
+          <h3 class="card-title">{outlookEnd}년 시도별 부담률</h3>
           <p class="card-sub">선택한 시나리오 · 현재 대비 변화</p>
           <div class="table-wrap" style="max-height:380px">
             <table>
-              <thead><tr><th>지역</th><th class="num">{cy}</th><th class="num">2030</th><th class="num">변화</th></tr></thead>
+              <thead><tr><th>지역</th><th class="num">{cy}</th><th class="num">{outlookEnd}</th><th class="num">변화</th></tr></thead>
               <tbody id="scen-table"></tbody>
             </table>
           </div>
@@ -424,7 +425,7 @@ PIR = {A.area}㎡ 가격 ÷ 가구 연소득
 1년치 소득 면적(평) = 가구 연소득 ÷ ㎡당 가격 ÷ {A.pyeong}</pre>
       <h3>2. 시점 맞추기</h3>
       <p>실거래 평균가격은 그달 어떤 단지·면적이 거래됐는지에 따라 크게 흔들리므로 12개월 평균을 씁니다. 가계금융복지조사의 소득은 조사 전년도 소득이라 1년 앞당겨 맞췄고, 아직 발표되지 않은 {meta.lastIncomeYear + 1}년 이후 소득은 지역별 최근 3년 연평균 증가율로 연장한 추정치입니다. 금리는 전국 단일 값을 모든 지역에 적용합니다.</p>
-      <h3>3. 2030 시나리오</h3>
+      <h3>3. {outlookEnd}년 시나리오</h3>
       <p>집값 3가지(연 −2%, 횡보, {fy}년 이후 지역별 연평균 상승률 지속)와 금리 3가지(−1%p, 유지, +1%p, 2년에 걸쳐 이동)를 조합한 9개 경로를 계산합니다. 미래 집값을 맞히려는 예측이 아니라 조건별 부담 수준을 보여주는 시뮬레이션입니다.</p>
       <h3>4. 시군구 지표 (국토교통부 실거래가)</h3>
       <p>국토교통부 아파트 매매·전월세 실거래 자료를 시군구별로 모았습니다({periodLabel}, 신고 기한 30일이 지난 달까지). 84㎡ 가격은 전용 {sm.assumptions.areaRange[0]}~{sm.assumptions.areaRange[1]}㎡ 중개거래(해제·직거래 제외)의 ㎡당 가격 중앙값에 84를 곱했습니다. 부담률·PIR은 위와 같은 식에 시도 가구소득을 넣었습니다. 전세가율은 단지 구성 차이를 없애려고 같은 단지 안에서 전세 보증금과 매매가를 비교한 뒤 단지별 비율의 중앙값을 썼습니다. 재계약 인상률은 종전·이번 계약이 모두 전세인 갱신 계약만 씁니다. 2026년 새로 생긴 전남광주통합특별시 코드와 인천의 새 구(제물포·영종·서해·검단)는 법정동 기준으로 2025년 시군구 경계에 다시 나눴습니다.</p>
@@ -617,7 +618,7 @@ PIR = {A.area}㎡ 가격 ÷ 가구 연소득
     mount(chartEl, { type: "line", yFormat: "pct", zeroBased: true, height: 320, projStart: S.cy, series, legend: true } as any);
     tbody.textContent = "";
     for (const r of S.sido) {
-      const v = r.outlook[state.price][state.rate]["2030"].burden;
+      const v = r.outlook[state.price][state.rate][S.outlookEnd].burden;
       const tr = document.createElement("tr");
       const d = v - r.now;
       for (const [i, txt] of [r.name, `${r.now.toFixed(1)}%`, `${v.toFixed(1)}%`, `${d > 0 ? "+" : ""}${d.toFixed(1)}%p`].entries()) {

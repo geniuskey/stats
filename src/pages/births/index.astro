@@ -13,6 +13,7 @@ const d = data as any;
 const base = import.meta.env.BASE_URL;
 const h = d.headline;
 const { year, month: M, lastAnnual: LA, asof } = d.meta;
+const lastTfr = d.meta.lastTfr ?? LA;
 const asofLabel = `${asof.slice(0, 4)}년 ${+asof.slice(5)}월`;
 const nextYear = year + 1;
 const man = (v: number) => `${(v / 1e4).toFixed(1)}만`;
@@ -99,13 +100,14 @@ const marSpec = {
 
 // 4) 백테스트: 몇 월까지 알면 얼마나 정확한가
 const bm = d.backtest.byMonth;
+const btMonth = Math.min(M, 11);
+const bt = bm[String(btMonth)];
 const btSpec = {
   type: "column" as const, yFormat: "pct1" as const, height: 240,
   categories: Object.keys(bm).map((m) => `${m}월`),
   values: Object.values(bm).map((v: any) => v.mae),
-  colors: Object.keys(bm).map((m) => (+m === M ? "var(--series-1)" : "var(--seq-300)")),
+  colors: Object.keys(bm).map((m) => (+m === btMonth ? "var(--series-1)" : "var(--seq-300)")),
 };
-const detail = Object.entries(d.backtest.detail).filter(([y]) => +y >= LA - 14);
 const methodName: Record<string, string> = { season: "계절 비중법", trend: "추세법" };
 
 // 시도
@@ -135,7 +137,7 @@ const log = d.log as any[];
 
     <div class="grid grid-4">
       <Stat label={`${year}년 출생아 (추정)`} value={man(h.births)} unit="명" note={`${pct(h.change, 1, true)} · 범위 ${man(h.lo)}~${man(h.hi)}`} tone={h.change >= 0 ? "up" : "down"} />
-      <Stat label={`${year}년 합계출산율 (추정)`} value={String(h.tfr)} unit="명" note={`${LA}년 ${h.tfrPrev} · 범위 ${h.tfrLo}~${h.tfrHi}`} tone={h.tfr >= h.tfrPrev ? "up" : "down"} />
+      <Stat label={`${year}년 합계출산율 (추정)`} value={String(h.tfr)} unit="명" note={`${lastTfr}년 ${h.tfrPrev} · 범위 ${h.tfrLo}~${h.tfrHi}`} tone={h.tfr >= h.tfrPrev ? "up" : "down"} />
       <Stat label={`1~${M}월 누계`} value={compact(h.ytd)} unit="명" note={`작년 같은 기간 ${compact(h.ytdPrev)}명 (${pct(h.ytd / h.ytdPrev - 1, 1, true)})`} />
       <Stat label={`${nextYear}년 출생아 (예측)`} value={man(h.next)} unit="명" note={`${pct(h.nextChange, 1, true)} · 범위 ${man(h.nextLo)}~${man(h.nextHi)}`} tone={h.nextChange >= 0 ? "up" : "down"} />
     </div>
@@ -178,7 +180,7 @@ const log = d.log as any[];
       </div>
       <div class="table-wrap" style="margin-top:16px">
         <table>
-          <thead><tr><th>시도</th><th class="num">1~{M}월 {year}</th><th class="num">1~{M}월 {year - 1}</th><th class="num">증감</th><th class="num">{year} 연간 추정</th><th class="num">{LA} 확정</th><th class="num">{LA} 합계출산율</th></tr></thead>
+          <thead><tr><th>시도</th><th class="num">1~{M}월 {year}</th><th class="num">1~{M}월 {year - 1}</th><th class="num">증감</th><th class="num">{year} 연간 추정</th><th class="num">{LA} 확정</th><th class="num">{lastTfr} 합계출산율</th></tr></thead>
           <tbody>
             {sidos.map((s) => (
               <tr><td>{s.name}</td><td class="num">{int(s.ytd)}</td><td class="num">{int(s.ytdPrev)}</td><td class="num">{pct(s.ytdChange, 1, true)}</td><td class="num">{int(s.est)}</td><td class="num">{int(s.prevYear)}</td><td class="num">{s.tfrPrev ?? "–"}</td></tr>
@@ -189,10 +191,10 @@ const log = d.log as any[];
     </section>
 
     <section class="section grid grid-2" id="backtest">
-      <Chart spec={btSpec} title="몇 월까지 알면 얼마나 정확한가" sub={`과거 20년, 연간 출생아 추정의 평균 절대오차. 진한 막대가 지금(${M}월)`} />
+      <Chart spec={btSpec} title="몇 월까지 알면 얼마나 정확한가" sub={`과거 20년, 연간 출생아 추정의 평균 절대오차. 진한 막대는 ${btMonth}월 기준`} />
       <div class="card">
-        <h3 class="card-title">과거 검증: "{M}월까지만 알았다면"</h3>
-        <p class="card-sub">해마다 1~{M}월 자료만으로 같은 방법({methodName[d.backtest.byMonth[String(M)]?.method] ?? "–"})을 돌린 추정치와 확정치의 차이</p>
+        <h3 class="card-title">과거 검증: "{btMonth}월까지만 알았다면"</h3>
+        <p class="card-sub">해마다 1~{btMonth}월 자료만으로 같은 방법({methodName[bt.method] ?? "–"})을 돌린 추정치와 확정치의 차이</p>
         <div class="table-wrap" style="max-height:320px">
           <table>
             <thead><tr><th>연도</th><th class="num">추정</th><th class="num">확정</th><th class="num">오차</th></tr></thead>
@@ -203,7 +205,7 @@ const log = d.log as any[];
             </tbody>
           </table>
         </div>
-        <p class="small muted" style="margin-top:10px">{M}월 기준 최대 오차는 {pct(bm[String(M)].max, 1)}. 범위(10~90%)는 이 오차 분포에서 나옵니다. 추정 기록은 갱신 때마다 <a href={`${base}track/`}>예측 성적표</a>에 쌓이고, 확정치가 나오면 채점됩니다.</p>
+        <p class="small muted" style="margin-top:10px">{btMonth}월 기준 최대 오차는 {pct(bt.max, 1)}. 범위(10~90%)는 이 오차 분포에서 나옵니다. 추정 기록은 갱신 때마다 <a href={`${base}track/`}>예측 성적표</a>에 쌓이고, 확정치가 나오면 채점됩니다.</p>
       </div>
     </section>
 

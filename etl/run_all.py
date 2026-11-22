@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import pickle
 import sys
+from functools import cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -11,6 +12,7 @@ OUT = ROOT / "src" / "data"
 PICKLE = ROOT / "data" / "raw" / "pop.pkl"
 
 
+@cache
 def population():
     import pop
     if PICKLE.exists() and "--fresh" not in sys.argv:

@@ -46,14 +46,15 @@ export const SIDO_IDS: string[] = (HS.regions as any[]).filter((r) => r.level ==
 const dnYears = range(2015, DN.meta.end);
 const scYears = range(2015, SC.meta.projEnd);
 const cmYears = range(2015, 2045);
-const caYears = Object.keys(CA.regions[0].old75).map(Number);
-const hsYears = [...Object.keys(HS.regions.find((r: any) => r.id === "11").hist).map(Number), 2027, 2028, 2029, 2030];
+const caYears: number[] = CA.meta.years;
+const hsNational = HS.regions.find((r: any) => r.id === "00");
+const hsLast: number = HS.meta.currentYear;
+const hsYears = [...Object.keys(hsNational.hist), ...Object.keys(hsNational.outlook.trend.hold)].map(Number);
 const HY = (housingSgg as any).yearly;
 const hyYears: number[] = [...HY.years, HY.years[HY.years.length - 1] + 1];
 const hyLabels = { [hyYears[hyYears.length - 1]]: "최근 1년" };
 const hyRecent = `${HY.recent[0].slice(0, 4)}.${HY.recent[0].slice(4)}~${HY.recent[1].slice(0, 4)}.${HY.recent[1].slice(4)}`;
 const NO_PROJ = 9999;
-const hsLast = Math.max(...Object.keys(HS.regions.find((r: any) => r.id === "11").hist).map(Number));
 
 export const TIME_METRICS: TimeMetric[] = [
   { key: "t_pop", group: "인구 전망", label: `인구 (${by}=100)`, format: "int", kind: "div", mid: 100, breaks: [60, 75, 90, 97, 103, 110, 125],
@@ -67,7 +68,7 @@ export const TIME_METRICS: TimeMetric[] = [
   { key: "t_school", group: "학교·돌봄·상권", label: `초등학생 (${by}=100)`, format: "int", kind: "div", mid: 100, breaks: [40, 60, 80, 95, 105, 120, 140],
     desc: `${by}년 초등학생 수를 100으로 본 그해 학생 수. ${SC.meta.lastActual + 1}년부터 추계.`, level: "sgg", years: scYears, projFrom: SC.meta.lastActual + 1, start: 2035, scen: [POP_SCEN] },
   { key: "t_old75", group: "학교·돌봄·상권", label: `75세 이상 (${caYears[0]}=100)`, format: "int", kind: "seq-warm", breaks: [110, 130, 150, 170, 190, 210, 240],
-    desc: "돌봄 수요의 중심인 75세 이상 인구. 5년 간격 추계(중위).", level: "sgg", years: caYears, projFrom: caYears[0] + 1, start: caYears[caYears.length - 1], scen: [] },
+    desc: "돌봄 수요의 중심인 75세 이상 인구. 5년 간격 추계(중위).", level: "sgg", years: caYears, projFrom: CA.meta.projYears[0], start: caYears[caYears.length - 1], scen: [] },
   { key: "t_cons", group: "학교·돌봄·상권", label: `소비인구 (${by}=100)`, format: "int", kind: "div", mid: 100, breaks: [60, 75, 90, 97, 103, 110, 125],
     desc: "연령별 소비 수준으로 가중한 인구. 동네 상권이 기댈 수요입니다.", level: "sgg", years: cmYears, projFrom: by + 1, start: 2045, scen: [POP_SCEN] },
   { key: "t_hburden", group: "집값", label: "주택구입 부담률", format: "pct", kind: "seq", breaks: [0.05, 0.1, 0.15, 0.2, 0.3, 0.45, 0.6],
@@ -79,7 +80,7 @@ export const TIME_METRICS: TimeMetric[] = [
   { key: "t_hrenew", group: "집값", label: "전세 재계약 인상률", format: "pct1S", kind: "div", breaks: [-0.02, -0.001, 0.001, 0.02, 0.04, 0.05],
     desc: "전세 갱신 계약의 보증금 인상률 중앙값. 2023년 역전세 때는 내린 곳이 많았습니다.", level: "sgg", years: hyYears, projFrom: NO_PROJ, start: hyYears[hyYears.length - 1], scen: [], yearLabels: hyLabels },
   { key: "t_burden", group: "집값", label: "부담률 전망 (시도)", format: "pct", kind: "seq", breaks: [0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5],
-    desc: "84㎡ 평균가의 대출 월 상환액 ÷ 가구 월소득 (시도 단위). 2027년부터는 집값·금리 조건부 시나리오.", level: "sido", years: hsYears, projFrom: hsLast + 1, start: hsLast,
+    desc: `84㎡ 평균가의 대출 월 상환액 ÷ 가구 월소득 (시도 단위). ${hsLast + 1}년부터는 집값·금리 조건부 시나리오.`, level: "sido", years: hsYears, projFrom: hsLast + 1, start: hsLast,
     scen: [
       { id: "price", label: "집값", def: "trend", options: [{ v: "down", label: "연 −2%" }, { v: "flat", label: "횡보" }, { v: "trend", label: "추세" }] },
       { id: "rate", label: "금리", def: "hold", options: [{ v: "cut", label: "−1%p" }, { v: "hold", label: "유지" }, { v: "hike", label: "+1%p" }] },
