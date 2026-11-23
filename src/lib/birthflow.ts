@@ -4,7 +4,7 @@
 import { fmt, tick } from "./format";
 import { el, legend, makeTooltip, ttRow, placeTooltip, niceTicks } from "./charts";
 import { makePlayer } from "./player";
-import { getBorn } from "./born";
+import { people } from "./profile";
 
 export interface BirthFlowSpec {
   type: "birthflow";
@@ -19,7 +19,7 @@ export interface BirthFlowSpec {
   marks?: number[]; // 이름표를 달고 따라갈 출생연도
   speed?: number; // 1년 이동에 걸리는 ms
   height?: number;
-  me?: boolean; // 내 출생연도 막대를 따로 칠하고 이름표를 단다
+  me?: boolean; // 나·자녀 출생연도 막대를 따로 칠하고 이름표를 단다
 }
 
 export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
@@ -29,13 +29,14 @@ export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
   const W = Math.max(host.clientWidth, 280);
   const H = spec.height ?? 340;
   const narrow = W < 520;
-  const me = spec.me ? getBorn() : null;
-  const meIdx = me != null ? born.indexOf(me) : -1;
+  // 그림 범위 안에 있는 나·자녀
+  const ppl = (spec.me ? people() : []).filter((pp) => born.includes(pp.born));
+  const colorOf = (b: number) => ppl.find((pp) => pp.born === b)?.color;
   legend(host, [
     { name: "출생아 → 입학자", color: "var(--series-1)", kind: "rect" },
     { name: `${spec.capLabel ?? "지금 입학 규모"} ${tick(cap, "man")}`, color: "var(--text-primary)", kind: "dash" },
     { name: "빈 자리", color: "var(--critical)", kind: "dash" },
-    ...(meIdx >= 0 ? [{ name: `나 (${me}년생)`, color: "var(--me)", kind: "rect" as const }] : []),
+    ...ppl.map((pp) => ({ name: pp.kid ? `${pp.who} 아이` : `나 (${pp.born}년생)`, color: pp.color, kind: "rect" as const })),
   ]);
   const box = document.createElement("div");
   box.style.position = "relative";
@@ -81,7 +82,7 @@ export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
 
   const gGap = el("g", {}, svg);
   const gBar = el("g", {}, svg);
-  const bars = born.map((b) => el("rect", { width: bw, rx: Math.min(2, bw / 3), fill: b === me ? "var(--me)" : "var(--series-1)", "fill-opacity": spec.estFrom != null && b >= spec.estFrom ? 0.5 : 1 }, gBar));
+  const bars = born.map((b) => el("rect", { width: bw, rx: Math.min(2, bw / 3), fill: colorOf(b) ?? "var(--series-1)", "fill-opacity": spec.estFrom != null && b >= spec.estFrom ? 0.5 : 1 }, gBar));
   const gaps = born.map(() => el("rect", { width: bw, fill: "none", stroke: "var(--critical)", "stroke-width": 1, "stroke-dasharray": "3 2" }, gGap));
 
   // 지금 입학 규모 선: 입학 연도 범위에만
@@ -90,13 +91,13 @@ export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
 
   // 따라가는 이름표
   // 내 출생연도 이름표를 더한다. 가까운(3년 이내) 기본 이름표는 겹치지 않게 뺀다
-  const markYears = meIdx >= 0 ? [...(spec.marks ?? []).filter((b) => Math.abs(b - me!) > 3), me!] : (spec.marks ?? []);
+  const markYears = [...(spec.marks ?? []).filter((b) => ppl.every((pp) => Math.abs(b - pp.born) > 3)), ...ppl.map((pp) => pp.born)];
   const marks = markYears.map((b) => {
     const i = born.indexOf(b);
     const g = el("g", {}, svg);
-    const ln = el("line", { stroke: b === me ? "var(--me)" : "var(--text-secondary)", "stroke-width": 1 }, g);
+    const ln = el("line", { stroke: colorOf(b) ?? "var(--text-secondary)", "stroke-width": 1 }, g);
     const t = el("text", { "text-anchor": "middle", class: "coh-gen-name halo" }, g);
-    if (b === me) t.style.fill = "var(--me)";
+    if (colorOf(b)) t.style.fill = colorOf(b)!;
     return { i, g, ln, t };
   }).filter((mk) => mk.i >= 0);
 
@@ -140,7 +141,9 @@ export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
       mk.t.setAttribute("x", Math.max(m.l + 40, Math.min(m.l + pw - 60, cx)).toFixed(1));
       mk.t.setAttribute("y", (yb - 16).toFixed(1));
       const yr = born[mk.i] + Math.floor(k);
-      mk.t.textContent = k >= lag ? (narrow ? `${born[mk.i]}→${born[mk.i] + lag}` : `${born[mk.i]}년생 → ${born[mk.i] + lag} 입학`) : `${born[mk.i]}년생`;
+      const who = ppl.find((pp) => pp.born === born[mk.i]);
+      const nm = who && !who.kid ? `나 ${born[mk.i]}` : `${born[mk.i]}년생`;
+      mk.t.textContent = k >= lag ? (narrow ? `${born[mk.i]}→${born[mk.i] + lag}` : `${nm} → ${born[mk.i] + lag} 입학`) : nm;
       mk.g.setAttribute("data-year", String(yr));
     }
     if (worst >= 0 && show >= 1) {

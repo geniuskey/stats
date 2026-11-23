@@ -226,7 +226,7 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
       <Stat label="서울, 1년치 소득으로 사는 면적" value={d1(seoul.current.pyeong)} unit="평" note={`${fy}년 ${d1(seoulFirst.pyeong)}평 · 전용면적 기준`} />
     </div>
     <div class="me-box" id="me-box" hidden></div>
-    <script type="application/json" id="me-data" set:html={JSON.stringify({ cy, loans: D.loans.byAge, seoul: { hist: seoul.hist, cur: seoul.current }, nat: { hist: nat.hist, cur: nat.current } })} />
+    <script type="application/json" id="me-data" set:html={JSON.stringify({ cy, loans: D.loans.byAge, seoul: { hist: seoul.hist, cur: seoul.current }, nat: { hist: nat.hist, cur: nat.current }, sido: Object.fromEntries((D.regions as any[]).filter((r) => r.level === "sido").map((r) => [r.id, { name: r.name, cur: r.current, hist: r.hist }])) })} />
 
     <section class="section">
       <h2>{cy - fy}년 사이 무엇이 달라졌나</h2>
@@ -463,12 +463,38 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
 </Base>
 
 <script>
-  import { meBox, pageJson } from "../../lib/born";
+  import { meBox, pageJson, getProfile, type Profile } from "../../lib/profile";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 30세였던 해의 집값·PIR과 지금 비교, 내 나이대 차주당 대출 잔액
   const D = pageJson("me-data");
   const eok = (man: number) => `${(man / 1e4).toFixed(1)}억`;
-  meBox(document.getElementById("me-box"), (b) => {
+  // 내 시도·우리 집 소득 칸
+  const regionPart = (P: Profile) => {
+    const sd = P.region ? D.sido[P.region.sidoCode] : null;
+    const tiles: { k: string; v: string; n?: string }[] = [];
+    let lead = "";
+    if (sd) {
+      tiles.push({ k: `${sd.name} 84㎡ 평균`, v: eok(sd.cur.price84), n: `지역 평균 가구 연소득 ${fmt(sd.cur.pir, "dec1")}년치 · 부담률 ${fmt(sd.cur.burden, "dec1")}%` });
+      if (P.hinc) {
+        const mine = sd.cur.payment / (P.hinc / 12) * 100;
+        const yrs = sd.cur.price84 / P.hinc;
+        tiles.push({ k: "우리 집 소득으로", v: `${fmt(yrs, "dec1")}년치`, n: `월 상환 ${fmt(sd.cur.payment, "int")}만원 = 월소득의 ${fmt(mine, "int")}% (${mine <= 25 ? "여유" : mine <= 40 ? "빠듯" : "어려움"})` });
+        lead = `${sd.name} 84㎡ 아파트(평균 <strong>${eok(sd.cur.price84)}</strong>)는 우리 집 연소득 ${fmt(P.hinc, "int")}만원의 ${fmt(yrs, "dec1")}년치입니다. 절반을 ${30}년 대출로 사면 월 상환액이 소득의 <strong>${fmt(mine, "int")}%</strong>입니다.`;
+      } else lead = `${sd.name} 84㎡ 아파트는 평균 <strong>${eok(sd.cur.price84)}</strong>, 지역 평균 가구 연소득의 ${fmt(sd.cur.pir, "dec1")}년치입니다. 우리 집 연소득을 넣으면 내 부담률로 계산합니다.`;
+    } else if (P.hinc) {
+      const mine = D.nat.cur.payment / (P.hinc / 12) * 100;
+      tiles.push({ k: "우리 집 소득으로 전국 84㎡", v: `${fmt(D.nat.cur.price84 / P.hinc, "dec1")}년치`, n: `월 상환 = 월소득의 ${fmt(mine, "int")}%` });
+    }
+    return { tiles, lead };
+  };
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const rp = regionPart(P);
+    if (b == null) return rp.tiles.length ? { ...rp, foot: P.hinc ? "아래 계산기에도 우리 집 연소득이 채워집니다." : "" } : null;
+    const r0 = mine(b);
+    if (!r0) return rp.tiles.length ? rp : null;
+    return { lead: rp.lead || r0.lead, tiles: [...rp.tiles, ...r0.tiles], foot: r0.foot };
+  }, { need: ["born", "region", "hinc"], uses: ["born", "region"] });
+  function mine(b: number) {
     const age = D.cy - b;
     if (age < 15) return null;
     const y30 = b + 30;
@@ -493,8 +519,8 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
       const ly = Object.keys(ln).at(-1)!;
       tiles.push({ k: `${band} 차주당 가계대출`, v: `${eok(ln[ly])}원`, n: `${ly}년 · 전체 평균 ${eok(D.loans["전체"][ly])}원` });
     }
-    return { lead, tiles, foot: "가구 연소득은 가계금융복지조사 지역 평균, 가격은 최근 12개월 실거래 평균입니다." };
-  });
+    return { lead, tiles, foot: `가구 연소득은 가계금융복지조사 지역 평균, 가격은 최근 12개월 실거래 평균입니다.${getProfile().hinc ? " 계산기에는 우리 집 연소득이 채워집니다." : ""}` };
+  }
 </script>
 
 <style>
@@ -648,6 +674,7 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
 </style>
 
 <script>
+  import { onProfile } from "../../lib/profile";
   import { mount } from "../../lib/charts";
   import { won, int } from "../../lib/format";
 
@@ -839,5 +866,9 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
   });
 
   ["c-income", "c-equity", "c-rate", "c-term", "c-area"].forEach((id) => document.getElementById(id)!.addEventListener("input", calc));
-  calc();
+  // 저장된 우리 집 연소득으로 계산기를 채운다
+  onProfile((P) => {
+    if (P.hinc) $("c-income").value = String(P.hinc);
+    calc();
+  });
 </script>

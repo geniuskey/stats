@@ -32,6 +32,8 @@ const mostDecline = [...R].sort((a, b) => a.m.ch2045 - b.m.ch2045).slice(0, 10);
 const vsOfficial = R.filter((r) => r.m.official2042).map((r) => ({ ...r, gap: r.m.ours2042 / r.m.official2042 - 1 }));
 const above = [...vsOfficial].sort((a, b) => b.gap - a.gap).slice(0, 8);
 const below = [...vsOfficial].sort((a, b) => a.gap - b.gap).slice(0, 8);
+// 내 동네 상자: 시군구별 핵심 지표
+const meJson = JSON.stringify({ by, end, n: R.length, r: Object.fromEntries(R.map((r) => [r.id, [r.m.ch2045, r.m.index, r.m.rank, r.m.risk, r.m.outlook, r.m.oldShare2045, r.m.oldShare2025]])) });
 const search = R.map((r) => ({ name: r.name, sub: r.sido, href: `${base}dongne/${r.id}/` }));
 const riskOrder = ["소멸고위험", "소멸위험", "주의", "보통"];
 const outlookOrder = ["급감", "축소", "유지", "성장"];
@@ -56,6 +58,8 @@ const riskColors: Record<string, string> = { 소멸고위험: "var(--div-neg)", 
       <Stat label="소멸위험 지역 (지수 0.5 미만)" value={`${(d.risk["소멸위험"] ?? 0) + (d.risk["소멸고위험"] ?? 0)}곳`} note={`그중 고위험(0.2 미만) ${d.risk["소멸고위험"] ?? 0}곳`} />
       <Stat label={`${end}년까지 주민 절반이 65세+`} value={`${halve}곳`} note="고령자 비중 50% 도달" />
     </div>
+    <div class="me-box" id="me-box" hidden></div>
+    <script type="application/json" id="me-data" set:html={meJson} />
 
     <section class="section" id="map">
       <h2>지도로 보는 {R.length}개 시군구</h2>
@@ -163,4 +167,31 @@ const riskColors: Record<string, string> = { 소멸고위험: "var(--div-neg)", 
     }));
   const f = document.getElementById("tbl-filter") as HTMLInputElement;
   f.addEventListener("input", () => { const q = f.value.trim(); [...tbody.rows].forEach((r) => (r.hidden = !!q && !(r.dataset.name ?? "").includes(q))); });
+</script>
+
+<script>
+  import { meBox, pageJson, josa } from "../../lib/profile";
+  import { fmt } from "../../lib/format";
+  // 내 동네: 저장된 사는 곳의 전망·지수와 상세 페이지 바로가기
+  const D = pageJson("me-data");
+  const base = import.meta.env.BASE_URL;
+  meBox(
+    document.getElementById("me-box"),
+    (b, P) => {
+      if (!P.region) return { lead: `사는 곳을 넣으면 내 동네의 ${D.end}년 전망을 바로 보여 드립니다.` };
+      const r = D.r[P.region.id];
+      if (!r) return null;
+      const [ch, idx, rank, risk, outlook, old45, old25] = r;
+      const tiles = [
+        { k: `${P.region.name} 인구 ${D.by}→${D.end}`, v: fmt(ch, "pctS"), n: `'${outlook}' 전망 (중위)`, href: `${base}dongne/${P.region.id}/` },
+        { k: "지속가능성 지수", v: String(idx), n: `전국 ${D.n}곳 중 ${rank}위 · ${risk}` },
+        { k: "65세 이상 비중", v: `${fmt(old25, "pct")} → ${fmt(old45, "pct")}`, n: `${D.by} → ${D.end}` },
+      ];
+      return {
+        lead: `내 동네 <strong>${P.region.sido} ${josa(P.region.name, "은", "는")}</strong> ${D.end}년까지 인구가 ${fmt(Math.abs(ch), "pct")} ${ch < 0 ? "줄어드는" : "늘어나는"} '${outlook}' 전망입니다. 지도에서 점선 테두리가 내 동네입니다.`,
+        tiles,
+      };
+    },
+    { need: ["region", "born"], uses: ["region"] },
+  );
 </script>

@@ -5,6 +5,13 @@ import me from "../../data/me.json";
 import korea from "../../data/korea.json";
 import dongne from "../../data/dongne.json";
 import housing from "../../data/housing.json";
+import school from "../../data/school.json";
+import univ from "../../data/univ.json";
+import care from "../../data/care.json";
+import move from "../../data/move.json";
+import commerce from "../../data/commerce.json";
+import wage from "../../data/wage.json";
+import retire from "../../data/retire.json";
 import { int, compact } from "../../lib/format";
 import { quantile, distMean } from "../../lib/me";
 import PageMeta from "../../components/PageMeta.astro";
@@ -36,11 +43,31 @@ const sidos = [...new Set(regions.map((r) => r.sido))].sort((a, b) => a.localeCo
 const house: Record<string, any> = {};
 for (const r of H.regions as any[]) if (r.level !== "zone" && r.current) house[r.name] = { price84: r.current.price84, pir: r.current.pir, income: r.current.income };
 
-const cfg = {
+const cfg: any = {
   me: M, nat1, nat2050, popBase, end: D.meta.end, regions, house,
   natPop: nat1.reduce((a, b) => a + b, 0),
   base,
 };
+// '내 기준 한눈에' 요약 카드: 페이지마다 핵심 숫자 한두 개 (시군구·시도별로 짧게)
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+const SC = school as any, UV = univ as any, CA = care as any, MV = move as any, CO = commerce as any, WG = wage as any, RT = retire as any;
+const sum = {
+  korea: Object.fromEntries((K.sidos as any[]).map((x) => [x.id, r3(x.series[2050].total / x.series[K.meta.baseYear].total - 1)])),
+  koreaNat: r3(K.national.mid[2050].total / K.national.mid[K.meta.baseYear].total - 1),
+  school: Object.fromEntries((SC.regions as any[]).filter((x) => x.level === "sgg").map((x) => [x.id, [x.summary.current, r3(x.summary.change2035)]])),
+  schoolEnt: (SC.regions as any[]).find((x) => x.key === "00").entrants,
+  univ: Object.fromEntries((UV.sidos as any[]).map((x) => [x.id, r3(x.fill2040)])),
+  univFill: UV.national.fill, univLag: 19,
+  care: Object.fromEntries((CA.regions as any[]).filter((x) => x.level === "sgg").map((x) => [x.id, [r3(x.old75["2035"] / x.old75[String(CA.meta.baseYear)] - 1), r3(x.demandIdx["2045"] - 1)]])),
+  move: Object.fromEntries(Object.entries(MV.regions as Record<string, any>).map(([id, x]) => [id, Math.round(x.rate * 10) / 10])),
+  commerce: Object.fromEntries((CO.regions as any[]).map((x) => [x.id, [x.index, x.class]])),
+  commerceCls: Object.fromEntries(Object.entries(CO.meta.classes as Record<string, string>).map(([k, v]) => [k, v.split(":")[0]])),
+  wageLast: WG.meta.lastYear, wageTax: WG.calculator.taxTable, wageCpi: { now: WG.calculator.cpi[WG.meta.lastYear], ref: WG.calculator.cpi[WG.meta.lastYear - 10] },
+  wageSido: Object.fromEntries((WG.regions as any[]).map((x) => [x.code, r3(x.realChange)])),
+  house: Object.fromEntries((H.regions as any[]).filter((x) => x.level === "sido").map((x) => [x.id, [x.current.price84, x.current.pir, x.name]])),
+  life: RT.lifeFuture["65"],
+};
+cfg.sum = sum;
 const cfgJson = JSON.stringify(cfg).replace(/</g, "\\u003c");
 
 const S = M.salary, HH = M.household, J = M.job;
@@ -66,7 +93,7 @@ const avg = {
         국세청 연말정산, 임금근로일자리 통계, 가계금융복지조사, 생명표, 주민등록 인구를 한데 모았습니다. 내 숫자를 넣으면 같은 나라, 같은 나이, 같은 동네 사람들 사이에서 내가 어디쯤인지 계산합니다.
       </p>
       <p class="privacy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
-        입력값은 이 브라우저 안에서만 계산하고 서버로 보내지 않습니다. 출생연도는 상단 메뉴의 '내 출생연도'와 함께 이 브라우저에만 기억되고, 나머지 값은 새로고침하면 지워집니다.</p>
+        입력값은 이 브라우저 안에서만 계산하고 서버로 보내지 않습니다. 바꾼 값은 상단 '내 정보'와 함께 이 브라우저에만 기억되어 다른 페이지도 내 기준으로 보여 주며, 설정 창의 '내 정보 모두 지우기'로 언제든 지울 수 있습니다.</p>
       <PageMeta basis={`연봉 ${S.year}년 귀속 · 가구 ${HH.year}년 조사(소득 ${HH.incomeYear}년) · 생명표 ${M.life.year}년 · 인구 ${popBase}년 말`} orgs={["국세청", "통계청", "한국은행", "금융감독원", "행정안전부"]} />
     </section>
 
@@ -106,8 +133,17 @@ const avg = {
             <option value="1">1인</option><option value="2" selected={avg.size === 2}>2인</option><option value="3">3인</option><option value="4">4인</option><option value="5">5인 이상</option>
           </select>
         </label>
+        <label class="field">자녀 출생연도
+          <input id="f-kids" type="text" inputmode="numeric" placeholder="예: 2018, 2021" />
+        </label>
       </div>
-      <p class="small muted" style="margin:14px 0 0">처음에는 대한민국 평균값({avg.birth}년생(평균 나이), 연봉 평균 {int(avg.salary)}만원, 가구 연소득 평균 {int(avg.hinc)}만원, 순자산 평균 {int(avg.net)}만원, 2인 가구)이 들어 있습니다. 내 숫자로 바꿔 보세요. 비워 둔 칸은 건너뜁니다. 연봉은 비과세 수당을 뺀 총급여, 가구소득은 근로·사업·재산·이전소득을 더한 연간 경상소득, 순자산은 집·예금·주식 등 자산에서 대출 등 부채를 뺀 값입니다.</p>
+      <p class="small muted" style="margin:14px 0 0">내 정보를 저장하기 전에는 대한민국 평균값({avg.birth}년생(평균 나이), 연봉 평균 {int(avg.salary)}만원, 가구 연소득 평균 {int(avg.hinc)}만원, 순자산 평균 {int(avg.net)}만원, 2인 가구)이 들어 있습니다. 내 숫자로 바꾸면 이 브라우저에 기억됩니다. 비워 둔 칸은 건너뜁니다. 연봉은 비과세 수당을 뺀 총급여, 가구소득은 근로·사업·재산·이전소득을 더한 연간 경상소득, 순자산은 집·예금·주식 등 자산에서 대출 등 부채를 뺀 값입니다.</p>
+    </section>
+
+    <section class="section" id="me-sum" hidden>
+      <h2>내 기준 한눈에</h2>
+      <p class="section-desc">저장된 내 정보로 각 페이지의 핵심 숫자를 모았습니다. 카드를 누르면 그 페이지로 가서 자세히 볼 수 있습니다.</p>
+      <div class="me-sum-grid" id="me-sum-grid"></div>
     </section>
 
     <section class="section" id="me-out" aria-live="polite">
@@ -222,7 +258,7 @@ const avg = {
 </style>
 
 <script>
-  import { getBorn, setBorn, onBorn, BORN_MIN } from "../../lib/born";
+  import { getProfile, setProfile, onProfile, BORN_MIN, type Profile, type Sex } from "../../lib/profile";
   import { cdf, quantile, floorShare, lognormalCdf, olderShare, topLabel, lineLabel, manwon, type Dist } from "../../lib/me";
 
   const cfg = JSON.parse(document.getElementById("me-data")!.textContent || "{}");
@@ -491,18 +527,141 @@ const avg = {
         .join("") + `<div class="pr-ends" aria-hidden="true"><span></span><span><span>하위</span><span>상위</span></span><span></span></div>`;
     $("me-cards").innerHTML = cards.join("");
   }
-  // 상단 '내 출생연도'와 맞춘다: 설정돼 있으면 그 값으로 시작하고, 여기서 바꾸면 상단도 바뀐다
-  onBorn((y) => {
-    if (y != null && numOf(birth) !== y) {
-      birth.value = String(y);
-      run();
-    }
+  // ---------------------------------------------------------------- 내 정보 저장·불러오기 (상단 '내 정보'와 같은 값)
+  const kidsIn = $("f-kids");
+  const parseKids = (t: string) => [...new Set((t.match(/\d{4}/g) ?? []).map(Number).filter((y) => y >= BORN_MIN && y <= thisYear))].sort();
+  const setSex = (v: string) => {
+    sex = v;
+    sexSeg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String((x as HTMLElement).dataset.v === sex)));
+  };
+  let filling = false;
+  const fill = (P: Profile, first: boolean) => {
+    filling = true;
+    const empty = Object.keys(P).length === 0;
+    // 저장된 정보가 하나라도 있으면 평균 예시값 대신 내 값만 보여 준다
+    const put = (el: HTMLInputElement | HTMLSelectElement, v: number | string | undefined) => {
+      if (v != null) el.value = String(v);
+      else if (!empty || !first) el.value = "";
+    };
+    put(birth, P.born);
+    put(salary, P.salary);
+    put(hinc, P.hinc);
+    put(net, P.net);
+    put(size, P.size);
+    region.value = P.region?.id ?? (empty && first ? region.value : "");
+    if (P.sex || !empty || !first) setSex(P.sex ?? "");
+    kidsIn.value = (P.kids ?? []).join(", ");
+    filling = false;
+  };
+  const save = () => {
+    if (filling) return;
+    const num = (el: HTMLInputElement) => (el.value.trim() === "" ? null : Number(el.value));
+    const by = num(birth);
+    const reg = cfg.regions.find((r: any) => r.id === region.value);
+    setProfile({
+      born: by != null && Number.isInteger(by) && by >= BORN_MIN && by <= thisYear ? by : null,
+      sex: (sex as Sex) || null,
+      region: reg ? { id: reg.id, name: reg.name, sido: reg.sido, sidoCode: reg.id.slice(0, 2) } : null,
+      salary: num(salary),
+      hinc: num(hinc),
+      net: num(net),
+      size: size.value ? Number(size.value) : null,
+      kids: parseKids(kidsIn.value),
+    });
+  };
+  [birth, salary, hinc, net, kidsIn].forEach((el) => el.addEventListener("change", save));
+  [region, size].forEach((el) => el.addEventListener("change", save));
+  sexSeg.querySelectorAll("button").forEach((b) => b.addEventListener("click", save));
+  kidsIn.addEventListener("input", () => renderSum(getProfile()));
+  onProfile((P) => {
+    if (!filling) fill(P, false);
+    run();
+    renderSum(P);
   }, false);
-  const saved = getBorn();
-  if (saved != null) birth.value = String(saved);
-  birth.addEventListener("change", () => {
-    const v = numOf(birth);
-    if (v != null && Number.isInteger(v) && v >= BORN_MIN && v <= thisYear && v !== getBorn()) setBorn(v);
-  });
+  fill(getProfile(), true);
+  renderSum(getProfile());
+
+  // ---------------------------------------------------------------- 내 기준 한눈에 (저장된 값만 쓴다)
+  function renderSum(P: Profile) {
+    const S = cfg.sum;
+    const B = cfg.base;
+    const now = thisYear;
+    const f = (v: number, d = 0) => `${v > 0 ? "+" : ""}${(v * 100).toFixed(d)}%`;
+    const man = (v: number) => `${Math.round(v).toLocaleString("ko-KR")}만원`;
+    const eok = (v: number) => `${(v / 1e4).toFixed(1)}억`;
+    type C = { href: string; svc: string; v: string; n: string };
+    const cs: C[] = [];
+    const rg = P.region, sc = rg?.sidoCode;
+    const b = P.born;
+    // 우리 가족 나이 (자녀가 있을 때): 지금과 2050년
+    const kidsAll = P.kids ?? [];
+    if (kidsAll.length) {
+      const ages = (y: number) => [...(b ? [`나 ${y - b}세`] : []), ...kidsAll.map((k) => `${k}년생 ${Math.max(0, y - k)}세`)].join(" · ");
+      cs.push({ href: "korea/", svc: "우리 가족, 2050년에는", v: ages(2050), n: `지금 ${ages(now)} · 피라미드에서 함께 보기` });
+    }
+    // 대한민국
+    if (b || sc) {
+      const ch = sc && S.korea[sc] != null ? S.korea[sc] : S.koreaNat;
+      cs.push({ href: "korea/", svc: "대한민국의 미래", v: b ? `2050년 ${2050 - b}세` : `${rg!.sido} ${f(ch)}`, n: `${sc && S.korea[sc] != null ? rg!.sido : "전국"} 인구 2050년까지 ${f(ch)}` });
+    }
+    // 우리 동네
+    if (rg) {
+      const r = cfg.regions.find((x: any) => x.id === rg.id);
+      if (r) cs.push({ href: `dongne/${rg.id}/`, svc: "우리 동네의 미래", v: `${r.ch > 0 ? "+" : ""}${Math.round(r.ch * 100)}%`, n: `${rg.name} 인구 ${cfg.end}년까지 · 지속가능성 ${r.rank}위` });
+      const m = S.move[rg.id];
+      if (m != null) cs.push({ href: "move/", svc: "누가, 어디로 이사 가나?", v: `${m > 0 ? "+" : ""}${m}명`, n: `${rg.name} 1년 순이동 (주민 1천 명당)` });
+      const c = S.commerce[rg.id];
+      if (c) cs.push({ href: `commerce/${rg.id}/`, svc: "상권 활력", v: `${S.commerceCls[c[1]] ?? c[1]} ${c[0]}`, n: `${rg.name} 상권 활력 지수 (50 = 평균)` });
+      const ca = S.care[rg.id];
+      if (ca) cs.push({ href: "care/", svc: "우리 동네 의료·돌봄", v: `75세+ ${f(ca[0])}`, n: `${rg.name} 2035년까지 · 의료 수요 2045년 ${f(ca[1])}` });
+    }
+    // 학교 · 대학: 자녀가 있으면 자녀 기준
+    const kids = P.kids ?? [];
+    if (kids.length) {
+      for (const k of kids.slice(0, 2)) {
+        const y = k + 7, ent = S.schoolEnt[y];
+        if (y >= now - 5) cs.push({ href: rg && S.school[rg.id] ? `school/${rg.id}/` : "school/", svc: `${k}년생 아이 · 초등학교`, v: `${y}년 입학`, n: ent ? `그해 전국 입학생 ${(ent / 1e4).toFixed(1)}만명` : "" });
+        const u = k + S.univLag, fl = S.univFill[u];
+        cs.push({ href: "univ/", svc: `${k}년생 아이 · 대학`, v: `${u}년 입학`, n: fl != null ? `입학 자리 채움률 ${Math.round(fl * 100)}% (지금 규모 기준)` : u <= 2026 ? "이미 입학 연령" : "추계 범위 밖" });
+      }
+    } else if (rg) {
+      const s2 = S.school[rg.id];
+      if (s2) cs.push({ href: `school/${rg.id}/`, svc: "학교는 얼마나 남을까?", v: f(s2[1]), n: `${rg.name} 초등학생 2035년까지` });
+      if (sc && S.univ[sc] != null) cs.push({ href: "univ/", svc: "대학은 얼마나 남을까?", v: `${Math.round(S.univ[sc] * 100)}%`, n: `${rg.sido} 대학 입학 자리 채움률 (2040년)` });
+    }
+    // 실질 월급
+    if (P.salary) {
+      const mon = (P.salary * 1e4) / 12;
+      const col = (m: number) => S.wageTax[String(m)]?.[S.wageLast];
+      const grid = Object.keys(S.wageTax).map(Number).sort((x, y) => x - y);
+      const g = mon / 1e4;
+      let ratio = col(grid[0]) / (grid[0] * 1e4);
+      for (let i = 0; i < grid.length - 1; i++) if (g >= grid[i] && g <= grid[i + 1]) {
+        const t = (g - grid[i]) / (grid[i + 1] - grid[i]);
+        ratio = (col(grid[i]) / (grid[i] * 1e4)) * (1 - t) + (col(grid[i + 1]) / (grid[i + 1] * 1e4)) * t;
+      }
+      if (g > grid.at(-1)!) ratio = col(grid.at(-1)!) / (grid.at(-1)! * 1e4);
+      const ref = (P.salary * S.wageCpi.ref) / S.wageCpi.now;
+      cs.push({ href: "wage/#calc", svc: "내 월급의 실질 가치", v: `세후 월 ${man((mon * ratio) / 1e4)}`, n: `10년 전(${S.wageLast - 10}) 물가로는 연봉 ${man(ref)}` });
+    }
+    // 집값
+    if (sc && S.house[sc]) {
+      const [p84, pir, nm] = S.house[sc];
+      cs.push({ href: "housing/", svc: "집값을 감당할 수 있을까?", v: P.hinc ? `${(p84 / P.hinc).toFixed(1)}년치` : `${eok(p84)}`, n: P.hinc ? `${nm} 84㎡ ${eok(p84)} ÷ 우리 집 연소득 (지역 평균 ${pir}년)` : `${nm} 84㎡ 평균 · 가구 연소득 ${pir}년치` });
+    }
+    // 은퇴
+    if (b) {
+      const y65 = b + 65;
+      const np = b <= 1952 ? 60 : b <= 1956 ? 61 : b <= 1960 ? 62 : b <= 1964 ? 63 : b <= 1968 ? 64 : 65;
+      const t = S.life[P.sex ?? "female"] as Record<string, number>;
+      const ks = Object.keys(t).map(Number);
+      const k = ks.reduce((p, x) => (Math.abs(x - y65) < Math.abs(p - y65) ? x : p), ks[0]);
+      const e = P.sex ? t[k] : (S.life.male[k] + S.life.female[k]) / 2;
+      cs.push({ href: "retire/", svc: "은퇴 후 대한민국", v: y65 > now ? `${y65}년 65세` : `국민연금 ${np}세부터`, n: y65 > now ? `국민연금 ${np}세부터 · 그때 65세 기대여명 ${e.toFixed(1)}년${P.sex ? "" : " (남녀 평균)"}` : `${b + np}년부터 수급` });
+    }
+    const host = $("me-sum-grid");
+    $("me-sum").hidden = cs.length === 0;
+    host.innerHTML = cs.map((c) => `<a class="me-sum-card" href="${B}${c.href}"><span class="k">${esc(c.svc)}</span><span class="v">${esc(c.v)}</span><span class="n">${esc(c.n)}</span></a>`).join("");
+  }
   run();
 </script>

@@ -61,7 +61,7 @@ const leSpec = {
   yFormat: "dec1" as const,
   height: 260,
   projStart: d.meta.lifeYear,
-  me: { add: 65, label: "내가 65세" },
+  me: { add: 65, label: "{who} 65세" },
   series: [
     { name: "65세 기대여명 · 여자", color: "var(--series-2)", data: pts(d.lifeHistory["65"].female, 1990) },
     { name: "여자 (장래생명표 중위, 65~69세)", color: "var(--series-2)", data: pts(d.lifeFuture["65"].female, 2025, 2072), dash: true, label: true },
@@ -112,7 +112,7 @@ const depSpec = dep && {
     },
   ],
   hLines: [{ y: 1, label: "1명이 1명을 부양" }],
-  me: { add: 65, label: "내가 65세" },
+  me: { add: 65, label: "{who} 65세" },
 };
 const depYears = [2015, 2020, 2025, 2030, 2035, 2040, 2045, 2050];
 const depTable = dep && {
@@ -446,7 +446,7 @@ const depAreaSpec = dep && {
 <script>
   import { mount } from "../../lib/charts";
   import { won } from "../../lib/format";
-  import { getBorn, onBorn } from "../../lib/born";
+  import { getBorn, onBorn, onProfile } from "../../lib/profile";
   const thisYearR = new Date().getFullYear();
 
   const cfg = JSON.parse(document.getElementById("calc-data")!.textContent || "{}");
@@ -554,11 +554,18 @@ const depAreaSpec = dep && {
     }),
   );
   onBorn(() => run(), false);
+  // 저장된 성별로 계산기를 맞춘다
+  onProfile((P) => {
+    if (!P.sex || sex.value === P.sex) return;
+    sex.value = P.sex;
+    sexSeg.querySelectorAll<HTMLButtonElement>("button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === P.sex)));
+    run();
+  });
   run();
 </script>
 
 <script>
-  import { meBox, pageJson } from "../../lib/born";
+  import { meBox, pageJson } from "../../lib/profile";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 은퇴(65세)까지 남은 해, 국민연금 개시 나이, 그해 기대여명·부양 비율
   const D = pageJson("me-data");
@@ -575,7 +582,8 @@ const depAreaSpec = dep && {
     const [y0, y1] = [ks[i - 1], ks[i]];
     return t[y0] + ((t[y1] - t[y0]) * (y - y0)) / (y1 - y0);
   };
-  meBox(document.getElementById("me-box"), (b) => {
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const sx = P.sex;
     const age = now - b;
     if (age < 15) return null;
     const y65 = b + 65;
@@ -588,16 +596,23 @@ const depAreaSpec = dep && {
     if (y65 > D.lifeYear) {
       const m = fut("male", y65),
         f = fut("female", y65);
-      tiles.push({ k: `${y65}년 65세 기대여명`, v: `남 ${m.toFixed(1)} · 여 ${f.toFixed(1)}년`, n: `장래생명표 중위 · 지금보다 약 ${((m + f) / 2 - (D.future.male[2025] + D.future.female[2025]) / 2).toFixed(1)}년 길다` });
-      lead = `${b}년생은 <strong>${y65}년</strong>에 65세가 됩니다. 국민연금은 ${np}세(${b + np}년)부터 받고, 그때 65세의 기대여명은 남자 ${m.toFixed(1)}년, 여자 ${f.toFixed(1)}년입니다(통계청 장래생명표 중위). 노후를 그만큼 준비해야 한다는 뜻입니다.`;
+      if (sx) {
+        const e = sx === "male" ? m : f;
+        const e0 = D.future[sx][2025];
+        tiles.push({ k: `${y65}년 65세 ${sx === "male" ? "남자" : "여자"} 기대여명`, v: `${e.toFixed(1)}년`, n: `약 ${Math.round(65 + e)}세까지 · 지금보다 ${(e - e0).toFixed(1)}년 길다 (장래생명표 중위)` });
+        lead = `${b}년생 ${sx === "male" ? "남자" : "여자"}는 <strong>${y65}년</strong>에 65세가 됩니다. 국민연금은 ${np}세(${b + np}년)부터 받고, 그때 65세의 기대여명은 <strong>${e.toFixed(1)}년</strong>, 평균 약 ${Math.round(65 + e)}세까지입니다(통계청 장래생명표 중위). 노후를 그만큼 준비해야 한다는 뜻입니다.`;
+      } else {
+        tiles.push({ k: `${y65}년 65세 기대여명`, v: `남 ${m.toFixed(1)} · 여 ${f.toFixed(1)}년`, n: `장래생명표 중위 · 지금보다 약 ${((m + f) / 2 - (D.future.male[2025] + D.future.female[2025]) / 2).toFixed(1)}년 길다 · 성별을 넣으면 내 기준` });
+        lead = `${b}년생은 <strong>${y65}년</strong>에 65세가 됩니다. 국민연금은 ${np}세(${b + np}년)부터 받고, 그때 65세의 기대여명은 남자 ${m.toFixed(1)}년, 여자 ${f.toFixed(1)}년입니다(통계청 장래생명표 중위). 노후를 그만큼 준비해야 한다는 뜻입니다.`;
+      }
     } else {
       const a = Math.min(100, Math.max(age, D.lt.ageFrom));
-      const e = D.lt.all[a - D.lt.ageFrom] as number;
-      tiles.push({ k: `지금 ${age}세의 기대여명`, v: `${e.toFixed(1)}년`, n: `${D.lifeYear}년 생명표 남녀 전체${age < D.lt.ageFrom ? "" : ` · 약 ${Math.round(age + e)}세까지`}` });
+      const e = D.lt[sx ?? "all"][a - D.lt.ageFrom] as number;
+      tiles.push({ k: `지금 ${age}세의 기대여명`, v: `${e.toFixed(1)}년`, n: `${D.lifeYear}년 생명표 ${sx === "male" ? "남자" : sx === "female" ? "여자" : "남녀 전체"}${age < D.lt.ageFrom ? "" : ` · 약 ${Math.round(age + e)}세까지`}` });
       lead = `${b}년생은 올해 ${age}세입니다. ${D.lifeYear}년 생명표로는 앞으로 평균 <strong>${e.toFixed(1)}년</strong>, 약 ${Math.round(age + e)}세까지 삽니다.`;
     }
     const r65 = D.dep[y65];
     if (r65 != null) tiles.push({ k: `${y65}년 부양 구조`, v: `${fmt(r65, "dec1")}명`, n: `고령자 1명당 20~64세 (지금 ${fmt(D.dep[2025], "dec1")}명)` });
-    return { lead, tiles, foot: "아래 계산기의 은퇴 나이 옆에 그 해가 함께 표시됩니다. 기대여명·부양 그림의 보라색 선은 내가 65세가 되는 해입니다." };
-  });
+    return { lead, tiles, foot: `아래 계산기의 은퇴 나이 옆에 그 해가 함께 표시됩니다${sx ? "(성별도 맞춰집니다)" : ""}. 기대여명·부양 그림의 보라색 선은 내가 65세가 되는 해입니다.` };
+  }, { uses: ["born", "sex"] });
 </script>

@@ -45,7 +45,7 @@ const demandSpec = {
   bands: [{ name: `수요 범위 (18세 1명당 ${ratioLow}~${ratioHigh}명)`, color: "var(--series-1)", lower: pts(n.demand.low), upper: pts(n.demand.high) }],
   hLines: [{ y: h.cap, label: `지금 입학 규모 ${compact(h.cap)}` }],
   markers: [{ x: bornCutoff, label: `${bornCutoff}년 입학생까지 이미 태어남` }],
-  me: { add: LAG, label: "내 입학 {x}" },
+  me: { add: LAG, label: "{who} 입학 {x}" },
 };
 const seatSpec = {
   type: "line" as const, yFormat: "dec2" as const, height: 360, projStart: L, zeroBased: false,
@@ -124,6 +124,7 @@ const meJson = JSON.stringify({
   L, LAG, cap: h.cap, nowYear: B.meta.year, flowFrom: bornYears[0],
   births: { ...B.annual.births, [B.meta.year]: B.headline.births },
   entrants: n.entrantsTotal, demand: n.demand.mid, fill: n.fill, age18: age18,
+  sido: Object.fromEntries(sidos.map((x) => [x.id, [x.name, x.fill2035, x.fill2040, x.localRatio]])),
 });
 // 그림 출처 (KOSIS 표 ID · 작성기관)
 const SRC = {
@@ -251,16 +252,35 @@ const ratioNote = `입학 수요 = 18세 인구(전년 말) × 18세 1명당 입
 </Base>
 
 <script>
-  import { meBox, pageJson } from "../../lib/born";
+  import { meBox, pageJson, getProfile, type Profile } from "../../lib/profile";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 내가 대학에 들어간(갈) 해의 입학 규모, 지금 태어나는 아이 세대와 비교
   const D = pageJson("me-data");
   const at = (o: Record<string, number>, y: number) => o[String(y)] as number | undefined;
-  meBox(document.getElementById("me-box"), (b) => {
+  // 자녀·내 시도 칸 (출생연도 칸 앞에 붙인다)
+  const extra = (P: Profile) => {
+    const tiles: { k: string; v: string; n?: string }[] = [];
+    let lead = "";
+    for (const k of (P.kids ?? []).slice(0, 3)) {
+      const Y = k + D.LAG, f = at(D.fill, Y), dem = at(D.demand, Y);
+      tiles.push({ k: `${k}년생 아이 대학 입학`, v: `${Y}년`, n: f != null ? `자리 채움률 ${fmt(f, "pct")} · 수요 ${fmt(dem!, "man")}명` : Y <= D.L ? "이미 입학 연령" : "추계 범위 밖" });
+      if (!lead && f != null) lead = `${k}년생 아이가 대학에 갈 <strong>${Y}년</strong>에는 지금 입학 규모의 ${fmt(f, "pct")}만 채워집니다(기준 시나리오). ${f < 0.8 ? "들어가기보다 학교가 남아 있을지가 더 큰 문제가 됩니다." : ""}`;
+    }
+    const sd = P.region ? D.sido[P.region.sidoCode] : null;
+    if (sd) tiles.push({ k: `${sd[0]} 대학 채움률`, v: `${fmt(sd[2], "pct")}`, n: `2040년 · 2035년 ${fmt(sd[1], "pct")} · 지역 18세 1명당 자리 ${fmt(sd[3], "dec1")}` });
+    return { tiles, lead };
+  };
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const ex = extra(P);
+    if (b == null) return ex.tiles.length ? { lead: ex.lead, tiles: ex.tiles } : null;
+    const r0 = mine(b);
+    return { lead: ex.lead || r0.lead, tiles: [...ex.tiles, ...r0.tiles], foot: r0.foot };
+  }, { need: ["born", "kids", "region"], uses: ["born", "region"] });
+  function mine(b: number) {
     const Y = b + D.LAG;
     const myBirths = at(D.births, b);
     const nowBirths = at(D.births, D.nowYear)!;
-    const tiles = [];
+    const tiles: { k: string; v: string; n?: string }[] = [];
     let lead = "";
     if (Y <= D.L) {
       const ent = at(D.entrants, Y);
@@ -279,7 +299,7 @@ const ratioNote = `입학 수요 = 18세 인구(전년 말) × 18세 1명당 입
     if (myBirths) tiles.push({ k: `${b}년 출생아`, v: `${fmt(myBirths, "man")}명`, n: `올해(${D.nowYear}) 추정 ${fmt(nowBirths, "man")}명의 ${(myBirths / nowBirths).toFixed(1)}배` });
     const kidY = D.nowYear + D.LAG;
     const age = D.nowYear - b;
-    if (age >= 25 && age <= 55 && at(D.fill, kidY) != null) tiles.push({ k: "올해 태어난 아이의 입학", v: `${kidY}년`, n: `자리 채움률 ${fmt(at(D.fill, kidY)!, "pct")} (기준)` });
+    if (!getProfile().kids?.length && age >= 25 && age <= 55 && at(D.fill, kidY) != null) tiles.push({ k: "올해 태어난 아이의 입학", v: `${kidY}년`, n: `자리 채움률 ${fmt(at(D.fill, kidY)!, "pct")} (기준)` });
     return { lead, tiles, foot: b >= D.flowFrom && b <= D.nowYear + 1 ? `아래 '출생 → 입학' 그림에서 보라색 막대가 ${b}년생입니다.` : `'대학 입학 수요와 18세 인구' 그림의 보라색 선이 내 입학 연도입니다.` };
-  });
+  }
 </script>

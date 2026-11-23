@@ -39,7 +39,7 @@ const natSpec = {
     { name: "초등 저위~고위", color: "var(--series-1)", lower: pts(lv("ele").proj.low), upper: pts(lv("ele").proj.high) },
   ],
   height: 340,
-  me: { add: 7, label: "내 초등 입학 {x}" },
+  me: { add: 7, label: "{who} 초등 입학 {x}" },
 };
 const years = [2000, 2010, 2020, 2026, 2030, 2035, 2040, 2045];
 const natTable = {
@@ -64,7 +64,10 @@ const entrSpec = {
 };
 
 // 내 출생연도 상자
-const meJson = JSON.stringify({ last, ele: { ...lv("ele").actual, ...lv("ele").proj.mid }, entrants: entr, now: s.current });
+const meJson = JSON.stringify({
+  last, ele: { ...lv("ele").actual, ...lv("ele").proj.mid }, entrants: entr, now: s.current,
+  sgg: Object.fromEntries(sggs.map((r) => [r.id, [r.summary.current, r.summary.y2035, r.summary.change2035, r.summary.halfYear ?? null, r.summary.classes2026, r.summary.classes2035]])),
+});
 const sidoBars = sidos
   .map((r) => ({ name: r.short, value: r.summary.change2035, href: `${base}school/${r.id}/` }))
   .sort((a, b) => a.value - b.value);
@@ -273,29 +276,55 @@ const mapMetrics = [
   </div>
 </Base>
 <script>
-  import { meBox, pageJson } from "../../lib/born";
+  import { meBox, pageJson } from "../../lib/profile";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 내가 초등학교에 들어간(갈) 해의 학생·입학생 수, 올해 태어난 아이 세대와 비교
   const D = pageJson("me-data");
   const now = new Date().getFullYear();
-  meBox(document.getElementById("me-box"), (b) => {
-    const Y = b + 7; // 만 6세가 된 다음 해 3월 입학
-    const ele = D.ele[Y] as number | undefined;
-    const ent = D.entrants[Y] as number | undefined;
-    const tiles = [];
-    tiles.push({ k: "내 초등학교 입학", v: `${Y}년`, n: Y > D.last ? "추계" : Y > now ? "" : `${b + 13}년 졸업` });
-    if (ele) tiles.push({ k: `${Y}년 전국 초등학생`, v: `${fmt(ele, "man")}명`, n: `${D.last}년 ${fmt(D.now, "man")}명 (${fmt(D.now / ele - 1, "pctS")})` });
-    if (ent) tiles.push({ k: `${Y}년 초등 입학생`, v: `${fmt(ent, "man")}명`, n: Y > D.last ? "6세 인구 기반 추정" : "실측" });
-    const age = now - b;
-    const kidY = now + 7;
-    if (age >= 25 && age <= 55 && D.entrants[kidY]) tiles.push({ k: "올해 태어난 아이의 입학", v: `${kidY}년`, n: `입학생 ${fmt(D.entrants[kidY], "man")}명 (추계)` });
-    const lead = ele
-      ? Y <= D.last
-        ? `${b}년생이 초등학교에 들어간 ${Y}년, 전국 초등학생은 <strong>${fmt(ele, "man")}명</strong>이었습니다. 지금은 ${fmt(D.now, "man")}명으로 ${fmt(Math.abs(1 - D.now / ele), "pct")} ${D.now < ele ? "줄었습니다" : "늘었습니다"}.`
-        : `${b}년생은 <strong>${Y}년</strong>에 초등학교에 들어갑니다. 그해 전국 초등학생은 ${fmt(ele, "man")}명으로 지금보다 ${fmt(Math.abs(ele / D.now - 1), "pct")} ${ele < D.now ? "적을" : "많을"} 전망입니다(중위).`
-      : `${b}년생의 초등 입학(${Y}년)은 이 자료(1999년~)보다 이전입니다.`;
-    return { lead, tiles, foot: Y >= 2000 && Y <= 2045 ? "전국 학생 수 그림의 보라색 선이 내가 초등학교에 입학한(할) 해입니다." : "" };
-  });
+  const base = import.meta.env.BASE_URL;
+  meBox(
+    document.getElementById("me-box"),
+    (b, P) => {
+      const tiles: { k: string; v: string; n?: string; href?: string }[] = [];
+      const leads: string[] = [];
+      // 내 동네 초등학교
+      const r = P.region ? D.sgg[P.region.id] : null;
+      if (P.region && r) {
+        const [cur, y35, ch, half] = r;
+        tiles.push({ k: `${P.region.name} 초등학생`, v: `${fmt(cur, "man")} → ${fmt(y35, "man")}`, n: `${D.last} → 2035 (${fmt(ch, "pctS")})${half ? ` · 절반: ${half}년` : ""}`, href: `${base}school/${P.region.id}/` });
+        leads.push(`내 동네 <strong>${P.region.name}</strong>의 초등학생은 2035년까지 ${fmt(Math.abs(ch), "pct")} ${ch < 0 ? "줄어듭니다" : "늘어납니다"}(중위).`);
+      }
+      // 자녀
+      for (const k of (P.kids ?? []).slice(0, 3)) {
+        const y = k + 7;
+        const e = D.entrants[y] as number | undefined;
+        const el = D.ele[y + 3] as number | undefined;
+        tiles.push({ k: `${k}년생 아이 입학`, v: `${y}년`, n: e ? `그해 전국 입학생 ${fmt(e, "man")}명${y > D.last ? " (추정)" : ""}` : el ? `전국 초등학생 ${fmt(el, "man")}명 (${y + 3}년)` : y < D.last ? "이미 입학" : "" });
+      }
+      if (P.kids?.length) {
+        const k = P.kids[0], y = k + 7, e = D.entrants[y];
+        if (e && y > D.last) leads.push(`${k}년생 아이는 <strong>${y}년</strong>에 초등학교에 들어갑니다. 그해 전국 입학생은 ${fmt(e, "man")}명으로 지금(${fmt(D.entrants[D.last], "man")}명)보다 ${fmt(Math.abs(e / D.entrants[D.last] - 1), "pct")} ${e < D.entrants[D.last] ? "적습니다" : "많습니다"}.`);
+      }
+      // 나
+      if (b != null) {
+        const Y = b + 7;
+        const ele = D.ele[Y] as number | undefined;
+        if (ele && Y <= D.last) {
+          tiles.push({ k: `내가 입학한 ${Y}년 초등학생`, v: `${fmt(ele, "man")}명`, n: `지금 ${fmt(D.now, "man")}명 (${fmt(D.now / ele - 1, "pctS")})` });
+          if (!leads.length) leads.push(`${b}년생이 초등학교에 들어간 ${Y}년, 전국 초등학생은 <strong>${fmt(ele, "man")}명</strong>이었습니다. 지금은 ${fmt(D.now, "man")}명입니다.`);
+        } else if (ele && Y > D.last) {
+          tiles.push({ k: "내 초등학교 입학", v: `${Y}년`, n: `그해 전국 초등학생 ${fmt(ele, "man")}명 (추계)` });
+        }
+        const age = new Date().getFullYear() - b;
+        const kidY = new Date().getFullYear() + 7;
+        if (!P.kids?.length && age >= 25 && age <= 55 && D.entrants[kidY]) tiles.push({ k: "올해 태어난 아이의 입학", v: `${kidY}년`, n: `입학생 ${fmt(D.entrants[kidY], "man")}명 (추계) · 자녀 출생연도를 넣으면 내 아이 기준` });
+      }
+      if (!tiles.length) return null;
+      const Yb = b != null ? b + 7 : 0;
+      return { lead: leads.join(" "), tiles, foot: Yb >= 2000 && Yb <= 2045 ? "전국 학생 수 그림의 보라색 선이 내가 초등학교에 입학한(할) 해입니다." : "" };
+    },
+    { need: ["born", "region", "kids"], uses: ["born", "region"] },
+  );
 </script>
 <script>
   const table = document.getElementById("sgg-table") as HTMLTableElement;

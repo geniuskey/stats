@@ -51,7 +51,7 @@ const demandSpec = {
   ],
   hLines: [{ y: 1, label: `${by} = 1` }],
   projStart: by,
-  me: { add: 75, label: "내가 75세" },
+  me: { add: 75, label: "{who} 75세" },
 };
 const costSpec = {
   type: "column" as const, yFormat: "won" as const, height: 240,
@@ -60,7 +60,9 @@ const costSpec = {
   me: { ages: m.costLabels.map((_: string, i: number) => [i * 10, i === 8 ? 200 : i * 10 + 9]) as [number, number][], refYear: m.costYear },
 };
 // 내 출생연도 상자
-const meJson = JSON.stringify({ by, costYear: m.costYear, cost: m.costWeights, labels: m.costLabels, old75: nat.old75, beds: h.beds, bedsPer100: h.bedsPer100 });
+const meJson = JSON.stringify({
+  sgg: Object.fromEntries(sggs.map((r) => [r.id, [r.old75[String(by)], r.old75["2035"], r.demandIdx["2045"], r.bedsGap2035, r.ped, r.docsPer1000]])),
+  by, costYear: m.costYear, cost: m.costWeights, labels: m.costLabels, old75: nat.old75, beds: h.beds, bedsPer100: h.bedsPer100 });
 const demandTable = {
   headers: ["연도", "총인구", "75세 이상", "0~9세", "의료 수요 지수"],
   rows: years.map((y) => [String(y), int(nat.pop[String(y)]), int(nat.old75[String(y)]), int(nat.kids[String(y)]), (val(nat.demandIdx, y) ?? 0).toFixed(3)]),
@@ -257,12 +259,28 @@ const demBars = (key: "top" | "bottom") => {
   </div>
 </Base>
 <script>
-  import { meBox, pageJson } from "../../lib/born";
+  import { meBox, pageJson, type Profile } from "../../lib/profile";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 내 나이대 1인당 진료비, 80세 이후와 비교, 내가 75세가 되는 해의 75세 이상 인구
   const D = pageJson("me-data");
   const now = new Date().getFullYear();
-  meBox(document.getElementById("me-box"), (b) => {
+  const regionTiles = (P: Profile) => {
+    const r = P.region ? D.sgg[P.region.id] : null;
+    if (!P.region || !r) return [];
+    const [o25, o35, dem45, gap35, ped, docs] = r;
+    return [
+      { k: `${P.region.name} 75세 이상`, v: `${fmt(o25, "man")} → ${fmt(o35, "man")}`, n: `${D.by} → 2035 (${fmt(o35 / o25 - 1, "pctS")})` },
+      { k: `${P.region.name} 의료 수요`, v: fmt(dem45 - 1, "pctS"), n: `2045년, ${D.by}년 대비` },
+      { k: "더 필요한 요양 정원", v: `+${fmt(gap35, "int")}명`, n: `2035년까지 · 소아과 의원 ${ped}곳 · 의사 ${fmt(docs, "dec1")}명/천 명` },
+    ];
+  };
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const rt = regionTiles(P);
+    if (b == null) return rt.length ? { lead: `내 동네 <strong>${P.region!.name}</strong>의 75세 이상 인구와 의료 수요 전망입니다. 지도에서 점선 테두리가 내 동네입니다.`, tiles: rt } : null;
+    const r0 = mine(b);
+    return { ...r0, tiles: [...rt, ...r0.tiles] };
+  }, { need: ["born", "region"], uses: ["born", "region"] });
+  function mine(b: number) {
     const age = now - b;
     const band = (a: number) => Math.min(8, Math.floor(Math.max(0, a) / 10));
     const mine = D.cost[band(age)] as number,
@@ -279,7 +297,7 @@ const demBars = (key: "top" | "bottom") => {
         ? `${b}년생의 나이대는 지금 1인당 연 <strong>${fmt(mine / 1e4, "int")}만원</strong>을 진료비로 씁니다. 80세를 넘기면 같은 가격 기준으로 ${(old / mine).toFixed(1)}배가 됩니다.${o ? ` 내가 75세가 되는 ${y75}년에는 75세 이상이 ${fmt(o, "man")}명으로 지금의 ${(o / D.old75[D.by]).toFixed(1)}배라 요양 자리 경쟁도 그만큼 커집니다.` : ""}`
         : `${b}년생은 80세 이상으로 1인당 진료비가 가장 많은 나이대(연 ${fmt(old / 1e4, "int")}만원)입니다.`;
     return { lead, tiles, foot: "진료비 그림의 보라색 막대가 내 나이대, 수요 그림의 보라색 선이 내가 75세가 되는 해입니다." };
-  });
+  }
 </script>
 <script>
   const table = document.getElementById("sgg-table") as HTMLTableElement;

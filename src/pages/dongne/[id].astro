@@ -86,7 +86,7 @@ const peers = d.regions.filter((x: any) => x.sidoCode === r.sidoCode);
 const peerMetrics = dongneMetrics({ regions: peers, keys: ["ch", "old", "idx"] });
 const pyrSpec = { type: "pyramid" as const, groups: labels, left: [], right: [], leftName: "남자", rightName: "여자", height: 400, frames: r.pyramid, refYear: by, start: end, speed: 300, me: true };
 // 내 출생연도 상자: 1세별 인구(시작·끝 연도)와 해마다 65세 이상 비중
-const meJson = JSON.stringify({ by, end, name: `${r.sido} ${r.name}`, a0: r.ages2025, a1: r.ages2045, old: Object.fromEntries(Object.entries(S.mid).map(([y, v]: any) => [y, v.oldShare])) });
+const meJson = JSON.stringify({ id: r.id, by, end, name: `${r.sido} ${r.name}`, a0: r.ages2025, a1: r.ages2045, old: Object.fromEntries(Object.entries(S.mid).map(([y, v]: any) => [y, v.oldShare])) });
 const pyrTable = { headers: ["연령", `남 ${by}`, `여 ${by}`, `남 ${end}`, `여 ${end}`], rows: labels.map((l, i) => { const a = r.pyramid.years.indexOf(by), b = r.pyramid.years.indexOf(end); return [l, int(r.pyramid.m[a][i]), int(r.pyramid.f[a][i]), int(r.pyramid.m[b][i]), int(r.pyramid.f[b][i])]; }) };
 const yrs = Object.keys(S.mid).map(Number);
 const ageArea = { type: "area" as const, percent: true, projStart: by, height: 260,
@@ -147,16 +147,43 @@ const lastVac = c.vacancyRate ? Object.entries(c.vacancyRate).at(-1) : null;
 </Base>
 
 <script>
-  import { meBox, pageJson } from "../../lib/born";
+  import { meBox, pageJson, type Profile, type MeContent } from "../../lib/profile";
   import { olderShare } from "../../lib/me";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 이 동네의 내 동갑(5세 또래), 나보다 나이 많은 주민 비율, 내가 65세 되는 해의 고령자 비중
   const D = pageJson("me-data");
-  meBox(document.getElementById("me-box"), (b) => {
+  const peer = (arr: number[], a: number) => arr.slice(Math.max(0, a - 2), Math.min(100, a + 3)).reduce((x, y) => x + y, 0);
+  // 자녀 또래(앞뒤 2살): 지금 → 끝 연도
+  const kidTiles = (P: Profile) =>
+    (P.kids ?? []).map((k) => {
+      const a0 = D.by - k,
+        a1 = D.end - k;
+      const p0 = a0 >= 0 ? peer(D.a0, a0) : NaN,
+        p1 = a1 >= 0 && a1 <= 99 ? peer(D.a1, a1) : NaN;
+      return {
+        k: `${k}년생 아이 또래`,
+        v: isFinite(p0) ? `${fmt(p0, "int")}명` : `${D.end}년 ${fmt(p1, "int")}명`,
+        n: isFinite(p0) && isFinite(p1) ? `${D.end}년 ${a1}세 ${fmt(p1, "int")}명 (${fmt(p1 / p0 - 1, "pctS")})` : `${D.end}년 ${a1}세`,
+      };
+    });
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const kt = kidTiles(P);
+    const r = core(b, P);
+    if (!r) return kt.length ? { tiles: kt, foot: "피라미드에서 초록색 막대가 아이 나이대입니다." } : null;
+    if (!kt.length) return r;
+    const k0 = P.kids![0];
+    const q0 = D.by - k0 >= 0 ? peer(D.a0, D.by - k0) : NaN,
+      q1 = D.end - k0 <= 99 ? peer(D.a1, D.end - k0) : NaN;
+    const kidLead = isFinite(q0) && isFinite(q1) ? ` ${k0}년생 아이 또래는 ${fmt(q0, "int")}명에서 ${D.end}년 ${fmt(q1, "int")}명으로 ${q1 < q0 ? `${fmt(1 - q1 / q0, "pct")} 줄어듭니다` : `${fmt(q1 / q0 - 1, "pct")} 늘어납니다`}.` : "";
+    return { ...r, lead: (r.lead ?? "") + kidLead, tiles: [...(r.tiles ?? []), ...kt], foot: (r.foot ?? "") + " 초록색은 아이 나이대입니다." };
+  }, { need: ["born", "region", "kids"], uses: ["born"] });
+  function core(b: number | null, P: Profile): MeContent | null {
+    const mine = P.region?.id === D.id;
+    const other = P.region && !mine ? `<a href="${import.meta.env.BASE_URL}dongne/${P.region.id}/">내 동네(${P.region.name}) 보기 →</a> ` : "";
+    if (b == null) return mine ? { lead: "<strong>내 동네입니다.</strong> 출생연도를 넣으면 이 동네의 내 또래 인구와 고령화를 내 나이 기준으로 보여 드립니다." } : P.region ? { lead: "출생연도를 넣으면 이 동네의 내 또래 인구를 보여 드립니다.", foot: other } : null;
     const a0 = D.by - b,
       a1 = D.end - b;
     if (a0 < 0 || a0 > 99) return null;
-    const peer = (arr: number[], a: number) => arr.slice(Math.max(0, a - 2), Math.min(100, a + 3)).reduce((x, y) => x + y, 0);
     const p0 = peer(D.a0, a0),
       p1 = a1 <= 99 ? peer(D.a1, a1) : NaN;
     const o0 = olderShare(D.a0, 1, a0),
@@ -170,6 +197,6 @@ const lastVac = c.vacancyRate ? Object.entries(c.vacancyRate).at(-1) : null;
     const lead = isFinite(p1)
       ? `${D.name}에 사는 ${b}년생 또래(앞뒤 2살)는 ${D.by}년 말 <strong>${fmt(p0, "int")}명</strong>, ${D.end}년에는 ${fmt(p1, "int")}명으로 ${p1 < p0 ? `${fmt(1 - p1 / p0, "pct")} 줄어듭니다` : `${fmt(p1 / p0 - 1, "pct")} 늘어납니다`}. 사망과 이사(전입·전출)를 합한 결과입니다.`
       : `${D.name}에 사는 ${b}년생 또래(앞뒤 2살)는 ${D.by}년 말 ${fmt(p0, "int")}명입니다.`;
-    return { lead, tiles, foot: "피라미드에서 보라색 막대가 연도별 내 나이대입니다." };
-  });
+    return { lead: (mine ? "<strong>내 동네입니다.</strong> " : "") + lead, tiles, foot: other + "피라미드에서 보라색 막대가 연도별 내 나이대입니다." };
+  }
 </script>

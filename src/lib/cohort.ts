@@ -5,7 +5,7 @@
 import { fmt, tick } from "./format";
 import { el, legend, makeTooltip, ttRow, placeTooltip } from "./charts";
 import { makePlayer } from "./player";
-import { getBorn } from "./born";
+import { people } from "./profile";
 
 export interface CohortSpec {
   type: "cohort";
@@ -39,7 +39,8 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
     { name: "여자", color: "var(--series-2)", kind: "rect" },
   ];
   if (refIdx >= 0) items.push({ name: `${spec.refYear}년`, color: "var(--text-primary)", kind: "line" });
-  if (spec.me && getBorn() != null) items.push({ name: `나 (${getBorn()}년생)`, color: "var(--me)", kind: "rect" });
+  const ppl = spec.me ? people() : [];
+  for (const pp of ppl) items.push({ name: pp.kid ? `${pp.who} 아이` : `나 (${pp.born}년생)`, color: pp.color, kind: "rect" });
   legend(host, items);
   const box = document.createElement("div");
   box.style.position = "relative";
@@ -75,8 +76,7 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
   const dimR = el("path", { fill: "var(--series-2)", "fill-opacity": gens.length ? 0.42 : 1 }, g);
   const hiL = el("path", { fill: "var(--series-1)" }, g);
   const hiR = el("path", { fill: "var(--series-2)" }, g);
-  const born = spec.me ? getBorn() : null;
-  const meP = el("path", { fill: "var(--me)" }, g);
+  const meP = ppl.map((pp) => el("path", { fill: pp.color }, g));
 
   // 나이 눈금 (가운데)
   for (let a = 0; a <= 100; a += narrow ? 20 : 10) {
@@ -113,9 +113,13 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
     return { gn, gg, line, name, age };
   });
 
-  const meTxt = el("text", { x: 4, class: "label-strong halo" }, svg);
-  meTxt.style.fill = "var(--me)";
-  const meLine = el("line", { stroke: "var(--me)", "stroke-width": 1, "stroke-dasharray": "2 2" }, svg);
+  // 나·자녀 줄: 왼쪽 끝 나이 라벨 + 줄까지 점선
+  const meMarks = ppl.map((pp) => {
+    const t = el("text", { x: 4, class: "label-strong halo" }, svg);
+    t.style.fill = pp.color;
+    const ln = el("line", { stroke: pp.color, "stroke-width": 1, "stroke-dasharray": "2 2" }, svg);
+    return { pp, t, ln };
+  });
   const inGen = (born: number) => gens.some((gn) => born >= gn.from && born <= gn.to);
   const bar = (x: number, w: number, pos: number) => {
     if (w <= 0.05) return "";
@@ -162,14 +166,15 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
     let dL = "",
       dR = "",
       hL = "",
-      hR = "",
-      mP = "";
+      hR = "";
+    const mP = ppl.map(() => "");
     const put = (b: number | null, pos: number, vm: number, vf: number) => {
       const lw = S(vm),
         rw = S(vf);
       const l = bar(mid - gap - lw, lw, pos),
         r = bar(mid + gap, rw, pos);
-      if (b != null && b === born) mP += l + r;
+      const pi = b == null ? -1 : ppl.findIndex((pp) => pp.born === b);
+      if (pi >= 0) mP[pi] += l + r;
       else if (b != null && inGen(b)) (hL += l), (hR += r);
       else (dL += l), (dR += r);
     };
@@ -187,25 +192,30 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
     dimR.setAttribute("d", dR);
     hiL.setAttribute("d", hL);
     hiR.setAttribute("d", hR);
-    meP.setAttribute("d", mP);
-    // 내 줄: 왼쪽 끝에 나이 라벨, 줄까지 점선
-    const myPos = born != null ? years[i] + k - born : -1;
-    if (born != null && myPos >= -0.5 && myPos < NA - 1) {
-      const yc = Y(Math.max(0, myPos) + 0.5);
-      const ag = Math.max(0, years[i] - born);
-      meTxt.textContent = narrow ? `나 ${ag}세` : `나 ${ag}세 (${born}년생)`;
-      meTxt.setAttribute("y", (yc + 4).toFixed(1));
-      meTxt.removeAttribute("visibility");
-      const tw = (meTxt as SVGTextElement).getComputedTextLength?.() || 60;
-      const lx = mid - gap - S(M[i][Math.min(NA - 1, Math.max(0, Math.round(myPos)))]);
-      meLine.setAttribute("x1", (4 + tw + 4).toFixed(1));
-      meLine.setAttribute("x2", Math.max(4 + tw + 4, lx - 2).toFixed(1));
-      meLine.setAttribute("y1", yc.toFixed(1));
-      meLine.setAttribute("y2", yc.toFixed(1));
-      meLine.setAttribute("visibility", lx - 2 > 4 + tw + 8 ? "visible" : "hidden");
-    } else {
-      meTxt.setAttribute("visibility", "hidden");
-      meLine.setAttribute("visibility", "hidden");
+    meP.forEach((pth, j) => pth.setAttribute("d", mP[j]));
+    let prevY = -99;
+    for (const { pp, t, ln } of meMarks) {
+      const pos = years[i] + k - pp.born;
+      if (pos < -0.5 || pos >= NA - 1) {
+        t.setAttribute("visibility", "hidden");
+        ln.setAttribute("visibility", "hidden");
+        continue;
+      }
+      const yc = Y(Math.max(0, pos) + 0.5);
+      const ty = Math.abs(yc - prevY) < 12 ? prevY + 12 : yc; // 붙어 있는 줄은 라벨만 비켜 쓴다
+      prevY = ty;
+      const ag = Math.max(0, years[i] - pp.born);
+      const who = pp.kid ? pp.who : "나";
+      t.textContent = narrow || pp.kid ? `${who} ${ag}세` : `나 ${ag}세 (${pp.born}년생)`;
+      t.setAttribute("y", (ty + 4).toFixed(1));
+      t.removeAttribute("visibility");
+      const tw = (t as SVGTextElement).getComputedTextLength?.() || 60;
+      const lx = mid - gap - S(M[i][Math.min(NA - 1, Math.max(0, Math.round(pos)))]);
+      ln.setAttribute("x1", (4 + tw + 4).toFixed(1));
+      ln.setAttribute("x2", Math.max(4 + tw + 4, lx - 2).toFixed(1));
+      ln.setAttribute("y1", ty.toFixed(1));
+      ln.setAttribute("y2", yc.toFixed(1));
+      ln.setAttribute("visibility", lx - 2 > 4 + tw + 8 ? "visible" : "hidden");
     }
 
     const now = years[i] + k; // 연속 시각

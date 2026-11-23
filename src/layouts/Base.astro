@@ -109,28 +109,50 @@ const ld = title === "홈"
           <span id="menu-label">메뉴</span>
         </button>
         <div class="born" id="born">
-          <button class="born-btn" type="button" id="born-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="born-pop" title="내 출생연도: 페이지마다 내 나이에 맞춘 숫자를 함께 보여 줍니다">
+          <button class="born-btn" type="button" id="born-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="born-pop" title="내 정보: 페이지마다 내 나이·동네에 맞춘 숫자를 함께 보여 줍니다">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3.6"></circle><path d="M4.5 20.5c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"></path></svg>
-            <span class="born-label" id="born-label" data-born-text="출생연도"></span>
+            <span class="born-label" id="born-label" data-born-text="내 정보"></span><span class="born-region" id="born-region" data-born-text=""></span>
           </button>
           <script is:inline>
+            // 깜빡임 없이 칩 글자를 먼저 채운다 (자세한 검사는 lib/profile.ts)
             try {
-              const v = Number(localStorage.getItem("born"));
-              if (v >= 1920 && v <= new Date().getFullYear()) {
-                document.getElementById("born-label").dataset.bornText = v + "년생";
-                document.getElementById("born").classList.add("is-set");
-              }
+              let p = JSON.parse(localStorage.getItem("profile") || "null");
+              if (!p) { const b = Number(localStorage.getItem("born")); p = b ? { born: b } : {}; }
+              const lb = document.getElementById("born-label");
+              if (p.born >= 1920 && p.born <= new Date().getFullYear()) lb.dataset.bornText = p.born + "년생";
+              else if (p.region && p.region.name) lb.dataset.bornText = "내 정보";
+              if (p.region && p.region.name) document.getElementById("born-region").dataset.bornText = p.region.name;
+              if (p.born || p.region) document.getElementById("born").classList.add("is-set");
             } catch (e) {}
           </script>
+          <div class="born-hint" id="born-hint" role="status" hidden>
+            <p><strong>내 정보를 알려 주세요</strong>출생연도와 사는 곳을 넣으면 모든 페이지의 통계를 내 나이·내 동네 기준으로 보여 드립니다. 이 브라우저에만 저장됩니다.</p>
+            <div class="born-hint-act">
+              <button type="button" class="born-save" id="born-hint-yes">입력하기</button>
+              <button type="button" class="born-clear" id="born-hint-no">괜찮아요</button>
+            </div>
+          </div>
           <div class="born-pop" id="born-pop" role="dialog" aria-labelledby="born-pop-title" hidden>
             <form id="born-form" autocomplete="off">
-              <label class="born-title" id="born-pop-title" for="born-input">내 출생연도</label>
-              <div class="born-row">
+              <p class="born-title" id="born-pop-title">내 정보</p>
+              <label class="born-field">출생연도
                 <input id="born-input" type="number" inputmode="numeric" min="1920" max={String(new Date().getFullYear())} step="1" placeholder="예: 1990" />
-                <button type="submit" class="born-save">적용</button>
+              </label>
+              <div class="born-field">성별
+                <div class="seg seg-sm" id="born-sex" role="group" aria-label="성별">
+                  <button type="button" data-v="male" aria-pressed="false">남자</button>
+                  <button type="button" data-v="female" aria-pressed="false">여자</button>
+                </div>
               </div>
-              <p class="born-note">페이지마다 내 나이에 맞춘 숫자가 함께 나옵니다. 이 브라우저에만 저장되며 서버나 분석 도구로 보내지 않습니다.</p>
-              <button type="button" class="born-clear" id="born-clear">지우기</button>
+              <label class="born-field">사는 곳
+                <select id="born-region-sel"><option value="">선택 안 함</option></select>
+              </label>
+              <div class="born-row">
+                <button type="submit" class="born-save">적용</button>
+                <a class="born-more" href={`${base}me/#me-form`}>연봉·가구·자녀 더 입력 →</a>
+              </div>
+              <p class="born-note">이 브라우저에만 저장되며 서버나 분석 도구로 보내지 않습니다.</p>
+              <button type="button" class="born-clear" id="born-clear">내 정보 모두 지우기</button>
             </form>
           </div>
         </div>
@@ -158,7 +180,7 @@ const ld = title === "홈"
       import { initMotion } from "../lib/anim";
       import { initFigures } from "../lib/figure";
       import { initToc } from "../lib/toc";
-      import { getBorn, setBorn, onBorn, BORN_MIN, bornMax } from "../lib/born";
+      import { getProfile, setProfile, clearProfile, onProfile, BORN_MIN, bornMax, type Sex } from "../lib/profile";
       initFigures();
       initToc();
       // 같은 제목의 그림이 한 페이지에 둘 이상이면 앵커가 겹치지 않게 -2, -3을 붙인다
@@ -211,46 +233,120 @@ const ld = title === "홈"
           setMenu(false);
         }
       });
-      // 내 출생연도 칩
+      // 내 정보 칩
       const bornBox = document.getElementById("born")!;
       const bornBtn = document.getElementById("born-btn")!;
       const bornPop = document.getElementById("born-pop")!;
       const bornInput = document.getElementById("born-input") as HTMLInputElement;
       const bornLabel = document.getElementById("born-label")!;
+      const bornRegion = document.getElementById("born-region")!;
+      const regionSel = document.getElementById("born-region-sel") as HTMLSelectElement;
+      const sexSeg = document.getElementById("born-sex")!;
+      let sexPick: Sex | "" = "";
+      const paintSex = () => sexSeg.querySelectorAll<HTMLButtonElement>("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === sexPick)));
+      sexSeg.querySelectorAll<HTMLButtonElement>("button").forEach((b) =>
+        b.addEventListener("click", () => {
+          sexPick = sexPick === b.dataset.v ? "" : (b.dataset.v as Sex);
+          paintSex();
+        }),
+      );
+      // 시군구 목록은 창을 처음 열 때 받아 온다
+      let regionsLoaded: Promise<void> | null = null;
+      const loadRegions = () =>
+        (regionsLoaded ??= fetch(`${import.meta.env.BASE_URL}regions.json`)
+          .then((r) => r.json())
+          .then((list: [string, string, string][]) => {
+            const groups = new Map<string, HTMLOptGroupElement>();
+            for (const [id, name, sido] of list) {
+              if (!groups.has(sido)) {
+                const g = document.createElement("optgroup");
+                g.label = sido;
+                groups.set(sido, g);
+                regionSel.appendChild(g);
+              }
+              const o = document.createElement("option");
+              o.value = id;
+              o.textContent = `${sido} ${name}`;
+              o.dataset.name = name;
+              o.dataset.sido = sido;
+              groups.get(sido)!.appendChild(o);
+            }
+          })
+          .catch(() => {
+            regionsLoaded = null;
+          }));
+      const fillForm = () => {
+        const p = getProfile();
+        bornInput.value = p.born?.toString() ?? "";
+        sexPick = p.sex ?? "";
+        paintSex();
+        loadRegions()?.then(() => (regionSel.value = p.region?.id ?? ""));
+      };
       const setPop = (on: boolean) => {
         bornPop.hidden = !on;
         bornBtn.setAttribute("aria-expanded", String(on));
         if (on) {
+          hideHint(true);
           closeGroups();
           if (header.classList.contains("menu-open")) setMenu(false);
-          bornInput.value = getBorn()?.toString() ?? "";
+          fillForm();
           setTimeout(() => bornInput.focus(), 0);
         }
       };
-      onBorn((y) => {
-        bornLabel.dataset.bornText = y ? `${y}년생` : "출생연도";
-        bornBox.classList.toggle("is-set", y != null);
+      // 첫 방문 안내: 내 정보가 없고 아직 닫은 적이 없으면 칩 아래에 한 번 띄운다
+      const hint = document.getElementById("born-hint")!;
+      const HINT_KEY = "born-hint";
+      const hideHint = (remember: boolean) => {
+        hint.hidden = true;
+        if (remember) {
+          try {
+            localStorage.setItem(HINT_KEY, "1");
+          } catch (e) {}
+        }
+      };
+      const isEmpty = () => Object.keys(getProfile()).length === 0;
+      try {
+        if (isEmpty() && !localStorage.getItem(HINT_KEY)) setTimeout(() => isEmpty() && bornPop.hidden && (hint.hidden = false), 1200);
+      } catch (e) {}
+      document.getElementById("born-hint-yes")!.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hideHint(true);
+        setPop(true);
+      });
+      document.getElementById("born-hint-no")!.addEventListener("click", () => hideHint(true));
+      onProfile((p) => {
+        if (!isEmpty()) hideHint(true);
+        bornLabel.dataset.bornText = p.born ? `${p.born}년생` : "내 정보";
+        bornRegion.dataset.bornText = p.region?.name ?? "";
+        bornBox.classList.toggle("is-set", p.born != null || p.region != null);
       });
       bornBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         setPop(bornPop.hidden);
       });
-      // 본문의 '출생연도 설정' 버튼: 같은 클릭이 바깥 클릭으로 닫지 않게 다음 틱에 연다 (헤더는 sticky라 늘 보인다)
+      // 본문의 '내 정보 입력' 버튼: 같은 클릭이 바깥 클릭으로 닫지 않게 다음 틱에 연다 (헤더는 sticky라 늘 보인다)
       window.addEventListener("born:open", () => setTimeout(() => setPop(true), 0));
       document.getElementById("born-form")!.addEventListener("submit", (e) => {
         e.preventDefault();
-        const v = Number(bornInput.value);
-        if (!Number.isInteger(v) || v < BORN_MIN || v > bornMax()) {
+        const raw = bornInput.value.trim();
+        const v = Number(raw);
+        if (raw && (!Number.isInteger(v) || v < BORN_MIN || v > bornMax())) {
           bornInput.setCustomValidity(`${BORN_MIN}~${bornMax()} 사이의 연도를 넣어 주세요`);
           bornInput.reportValidity();
           return;
         }
-        setBorn(v);
+        const o = regionSel.selectedOptions[0];
+        setProfile({
+          born: raw ? v : null,
+          sex: sexPick || null,
+          region: o && o.value ? { id: o.value, name: o.dataset.name!, sido: o.dataset.sido!, sidoCode: o.value.slice(0, 2) } : null,
+        });
         setPop(false);
       });
       bornInput.addEventListener("input", () => bornInput.setCustomValidity(""));
       document.getElementById("born-clear")!.addEventListener("click", () => {
-        setBorn(null);
+        if (!confirm("이 브라우저에 저장된 내 정보(출생연도·사는 곳·연봉 등)를 모두 지울까요?")) return;
+        clearProfile();
         setPop(false);
       });
       document.addEventListener("click", (e) => {

@@ -124,7 +124,7 @@ const scenTable = {
 };
 const scenNetGap = S.target.path[2030].net - S.recent5.path[2030].net;
 
-const calcJson = JSON.stringify({ c: d.calculator, last: LAST, base: BASE }).replace(/</g, "\\u003c");
+const calcJson = JSON.stringify({ c: d.calculator, last: LAST, base: BASE, sido: Object.fromEntries((d.regions as any[]).map((r) => [r.code, [r.name, r.realChange, r.realChange5, r.nominal2025]])) }).replace(/</g, "\\u003c");
 const h1 = `월급은 ${pct(H.nominalChange2015, 0)} 올랐지만, 손에 쥐는 구매력은 ${pct(H.netRealChange2015, 0)} 늘었습니다`;
 // ---- 시각화 확장
 // 지수: 실질 월급 전년 대비 증감 (막대)
@@ -395,11 +395,12 @@ const simJson = JSON.stringify({
 
 <script>
   import { mount } from "../../lib/charts";
-  import { meBox, onBorn } from "../../lib/born";
+  import { meBox, onBorn, type Profile } from "../../lib/profile";
   type Calc = {
     c: { cpi: Record<string, number>; living: Record<string, number>; wage: Record<string, number>; taxTable: Record<string, Record<string, number>> };
     last: number;
     base: number;
+    sido?: Record<string, [string, number, number, number]>;
   };
   const D: Calc = JSON.parse(document.getElementById("calc-data")!.textContent || "{}");
   const C = D.c;
@@ -512,7 +513,33 @@ const simJson = JSON.stringify({
   });
   yearSel.addEventListener("change", () => meBtns.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.textContent!.endsWith(yearSel.value)))));
   // 내 출생연도 상자: 태어난 해·20세 이후 물가와 평균 월급이 몇 배가 됐나
-  meBox(document.getElementById("me-box"), (b) => {
+  // 내 연봉·내 시도 칸
+  const payPart = (P: Profile) => {
+    const tiles: { k: string; v: string; n?: string }[] = [];
+    let lead = "";
+    if (P.salary) {
+      const mon = (P.salary * 1e4) / 12;
+      const netM = netMonthly(mon, LAST);
+      const ago = String(D.last - 10);
+      const then = C.cpi[ago] ? (P.salary * C.cpi[ago]) / C.cpi[LAST] : null;
+      if (netM) tiles.push({ k: "내 연봉의 세후 월급", v: man(netM), n: `세금·4대보험 ${(100 - (netM / mon) * 100).toFixed(1)}% (1인 근로자 간이 계산)` });
+      if (then) tiles.push({ k: `10년 전(${ago}) 물가로`, v: `연봉 ${nf.format(Math.round(then))}만원`, n: "같은 구매력 기준" });
+      const w = C.wage[ago] ? (P.salary * C.wage[ago]) / C.wage[LAST] : null;
+      if (w) tiles.push({ k: `${ago}년 평균 임금 대비 같은 위치`, v: `${nf.format(Math.round(w))}만원`, n: "평균 월급 상승만큼 깎은 값" });
+      if (netM) lead = `연봉 ${nf.format(P.salary)}만원은 세후 월 <strong>${man(netM)}</strong>입니다.${then ? ` 10년 전 물가로 치면 연봉 ${nf.format(Math.round(then))}만원과 같은 구매력입니다.` : ""}`;
+    }
+    const sd = P.region ? D.sido?.[P.region.sidoCode] : null;
+    if (sd) tiles.push({ k: `${sd[0]} 실질 상용임금`, v: `${sd[1] > 0 ? "+" : ""}${(sd[1] * 100).toFixed(1)}%`, n: `${D.base - 10}→${D.base} · 최근 5년 ${sd[2] > 0 ? "+" : ""}${(sd[2] * 100).toFixed(1)}%` });
+    return { tiles, lead };
+  };
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const pp = payPart(P);
+    if (b == null) return pp.tiles.length ? pp : null;
+    const r0 = byBorn(b);
+    if (!r0) return pp.tiles.length ? pp : null;
+    return { lead: [pp.lead, r0.lead].filter(Boolean).join(" "), tiles: [...pp.tiles, ...r0.tiles], foot: r0.foot };
+  }, { need: ["born", "salary", "region"], uses: ["born", "region"] });
+  function byBorn(b: number) {
     const r = (o: Record<string, number>, y: number) => (o[y] ? o[LAST] / o[y] : null);
     const tiles = [];
     const born = r(C.cpi, b),
@@ -527,7 +554,7 @@ const simJson = JSON.stringify({
       ? `${b}년에 1만원이던 물건은 지금 평균 <strong>${born.toFixed(1)}만원</strong>입니다(소비자물가 기준).${w20 && y20 ? ` 20세였던 ${b + 20}년과 비교하면 물가는 ${y20.toFixed(2)}배, 평균 월급은 ${w20.toFixed(2)}배로 ${w20 > y20 ? "월급이 조금 더 올랐습니다" : "물가가 더 올랐습니다"}.` : ""}`
       : `${b + 20}년 이후 물가는 ${y20!.toFixed(2)}배가 됐습니다.`;
     return { lead, tiles, foot: "아래 '그때 그 연봉' 계산기에서 내 연도 버튼으로 바로 계산해 볼 수 있습니다." };
-  });
+  }
   yearSel.addEventListener("change", update);
   payIn.addEventListener("input", update);
 

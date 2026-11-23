@@ -44,7 +44,7 @@ const popTable = {
 };
 
 const ageSpec = {
-  type: "line" as const, yFormat: "pct" as const, projStart: by, height: 300, me: { add: 65, label: "내가 65세" },
+  type: "line" as const, yFormat: "pct" as const, projStart: by, height: 300, me: { add: 65, label: "{who} 65세" },
   series: [
     { name: "65세 이상", color: "var(--series-2)", data: field("mid", "oldShare"), label: true },
     { name: "15~64세", color: "var(--series-1)", data: field("mid", "workShare"), label: true },
@@ -62,7 +62,7 @@ const supportSpec = {
   bands: [{ name: "저위~고위", color: "var(--series-1)", lower: projOnly("low", "workPerOld"), upper: projOnly("high", "workPerOld") }],
   hLines: [{ y: 2, label: "2명" }, { y: 1, label: "1명" }],
   zeroBased: true,
-  me: { add: 65, label: "내가 65세" },
+  me: { add: 65, label: "{who} 65세" },
 };
 
 const B = d.births;
@@ -144,7 +144,7 @@ const sidoMetrics = [
     frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(d.sidos.map((s: any) => [s.id, s.series[y].medianAge]))), start: mapYears.indexOf(2050), projFrom: mapYears.indexOf(by + 1) } },
 ];
 // 내 출생연도 상자: 해마다 연령 구조 지표 (피라미드 1세 자료는 그림 spec에서 읽는다)
-const meJson = JSON.stringify({ by, end, nat: Object.fromEntries(yrs.map((y) => [y, { oldShare: nat.mid[y].oldShare, workPerOld: nat.mid[y].workPerOld, medianAge: nat.mid[y].medianAge }])) });
+const meJson = JSON.stringify({ sido: Object.fromEntries(d.sidos.map((x: any) => [x.id, [x.full, x.series[end].total / x.series[by].total - 1, x.series[by].oldShare, x.series[end].oldShare]])), by, end, nat: Object.fromEntries(yrs.map((y) => [y, { oldShare: nat.mid[y].oldShare, workPerOld: nat.mid[y].workPerOld, medianAge: nat.mid[y].medianAge }])) });
 const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((y) => y >= by).map((y) => [y, nat.mid[y].total])), groups: P.labels }).replace(/</g, "\\u003c");
 
 ---
@@ -276,13 +276,52 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
 </Base>
 
 <script>
-  import { meBox, pageSpec, pageJson, ageAt } from "../../lib/born";
+  import { meBox, pageSpec, pageJson, ageAt, type Profile } from "../../lib/profile";
   import { olderShare } from "../../lib/me";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 지금·2050년의 내 나이와 나보다 나이 많은 사람 비율, 동갑 인구, 내가 65세가 되는 해
   const MD = pageJson("me-data");
   const C = pageSpec("cohort");
-  meBox(document.getElementById("me-box"), (b) => {
+  const sidoTile = (P: Profile) => {
+    const r = P.region ? MD.sido[P.region.sidoCode] : null;
+    return r ? [{ k: `${r[0]} 인구 ${MD.by}→${MD.end}`, v: fmt(r[1], "pctS"), n: `65세 이상 ${fmt(r[2], "pct")} → ${fmt(r[3], "pct")}` }] : [];
+  };
+  // 자녀: 지금·2050년 나이, 동갑 인구, 2050년에 나이순으로 어디쯤
+  const kidTiles = (P: Profile) => {
+    if (!C) return [];
+    const tot = (y: number) => {
+      const i = C.years.indexOf(y);
+      return C.m[i].map((v: number, a: number) => v + C.f[i][a]);
+    };
+    return (P.kids ?? []).map((k) => {
+      const a0 = MD.by - k,
+        a1 = MD.end - k;
+      const peers = a1 >= 0 && a1 <= 99 ? tot(MD.end)[a1] : NaN;
+      const older = olderShare(tot(MD.end), 1, a1);
+      return {
+        k: `${k}년생 아이`,
+        v: a0 >= 0 ? `${a0}세 → ${a1}세` : `${MD.end}년 ${a1}세`,
+        n: `${MD.end}년 동갑 ${isFinite(peers) ? fmt(peers, "man") + "명" : "–"} · 아이보다 나이 많은 사람 ${fmt(older, "pct")}`,
+      };
+    });
+  };
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const kt = kidTiles(P);
+    if (b == null) {
+      const t = [...kt, ...sidoTile(P)];
+      return t.length ? { lead: P.region ? `내 시도의 ${MD.end}년 전망입니다. 지도에서 점선 테두리가 내 시도입니다.` : "", tiles: t, foot: kt.length ? "피라미드에서 초록색 줄이 아이입니다." : "" } : null;
+    }
+    const r0 = mine(b);
+    if (!r0) return null;
+    const k0 = P.kids?.[0];
+    const kidLead = k0 != null ? ` ${k0}년생 아이는 ${MD.end}년 ${MD.end - k0}세로, 그해 국민의 ${fmt(1 - olderShare(tot2(MD.end), 1, MD.end - k0), "pct")}만이 아이보다 어립니다.` : "";
+    return { ...r0, lead: r0.lead + kidLead, tiles: [...r0.tiles, ...kt, ...sidoTile(P)], foot: r0.foot + (kt.length ? " 초록색 줄은 아이입니다." : "") };
+  }, { need: ["born", "region", "kids"], uses: ["born", "region"] });
+  function tot2(y: number) {
+    const i = C.years.indexOf(y);
+    return C.m[i].map((v: number, a: number) => v + C.f[i][a]);
+  }
+  function mine(b: number) {
     if (!C) return null;
     const yi = (y: number) => C.years.indexOf(y);
     const tot = (y: number) => C.m[yi(y)].map((v: number, a: number) => v + C.f[yi(y)][a]);
@@ -311,7 +350,7 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
         ? `${b}년생은 ${MD.by}년 말 <strong>${aNow}세</strong>, 국민을 나이순으로 세우면 ${olderNow > 0.5 ? "젊은 쪽 절반" : "나이 많은 쪽 절반"}에 있습니다. ${MD.end}년 ${aEnd}세가 되면 나보다 나이 많은 사람은 <strong>${fmt(olderEnd, "pct")}</strong>로 ${olderEnd > olderNow ? "오히려 늘어납니다. 내 아래로 들어오는 세대가 적기 때문입니다" : "줄어듭니다"}. 그해 중위연령은 ${mid}세입니다.`
         : `${b}년생은 ${MD.by}년 말 ${aNow}세입니다.`;
     return { lead, tiles, foot: `피라미드에서 보라색 줄이 ${b}년생입니다. ▶를 누르면 내 줄이 해마다 한 칸씩 올라갑니다. ${MD.by + 1}년부터 자체 추계 중위.` };
-  });
+  }
 </script>
 
 <script>

@@ -44,7 +44,7 @@ const ages = Array.from({ length: meta.maxAge + 1 }, (_, i) => i);
 const ageSpec = {
   type: "line" as const, yFormat: "int" as const, height: 300, legend: true, xUnit: "세",
   hLines: [{ y: 0, label: "" }],
-  me: { axis: "age" as const, refYear: +meta.period[1].slice(0, 4), label: "나 {age}세" },
+  me: { axis: "age" as const, refYear: +meta.period[1].slice(0, 4), label: "{who} {age}세" },
   series: [
     { name: "서울 (다른 시도와 주고받은 결과)", color: "var(--series-1)", data: ages.map((a) => [a, D.seoulAge[a]] as [number, number]), label: true },
     { name: "수도권 (비수도권과 주고받은 결과)", color: "var(--series-2)", data: ages.map((a) => [a, D.capAge[a]] as [number, number]), label: true },
@@ -55,7 +55,9 @@ const ageTable = {
   rows: ages.filter((a) => a % 5 === 0).map((a) => [`${a}${a === meta.maxAge ? "세 이상" : "세"}`, sgn(D.seoulAge[a]), sgn(D.capAge[a])]),
 };
 // 내 출생연도 상자
-const meJson = JSON.stringify({ ref: +meta.period[1].slice(0, 4), maxAge: meta.maxAge, period: periodLabel, seoul: D.seoulAge, cap: D.capAge });
+const meJson = JSON.stringify({
+  sgg: Object.fromEntries(Object.entries(R).map(([id, r]) => [id, [r.net, r.rate, r.youthRate, r.gainFrom[0] ? short(r.gainFrom[0][0]) : null, r.gainFrom[0]?.[1] ?? 0, r.loseTo[0] ? short(r.loseTo[0][0]) : null, r.loseTo[0]?.[1] ?? 0]])),
+  ref: +meta.period[1].slice(0, 4), maxAge: meta.maxAge, period: periodLabel, seoul: D.seoulAge, cap: D.capAge });
 const seoulPeak = ages.reduce((b, a) => (D.seoulAge[a] > D.seoulAge[b] ? a : b), 0);
 const seoulTurn = ages.find((a) => a > seoulPeak && D.seoulAge[a] < 0) ?? 0;
 const seoulYouth = ages.filter((a) => a >= 20 && a <= 34).reduce((s, a) => s + D.seoulAge[a], 0);
@@ -307,11 +309,56 @@ const defaultId = "11680";
 </Base>
 
 <script>
-  import { meBox, pageJson } from "../../lib/born";
+  import { meBox, pageJson, josa, type Profile } from "../../lib/profile";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 내 나이에서 서울·수도권으로 몇 명이 순유입(유출)했나
   const D = pageJson("me-data");
-  meBox(document.getElementById("me-box"), (b) => {
+  const regionPart = (P: Profile) => {
+    const r = P.region ? D.sgg[P.region.id] : null;
+    if (!P.region || !r) return null;
+    const [net, rate, yr, gName, gN, lName, lN] = r;
+    const sg = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(Math.abs(v), "int");
+    return {
+      lead: `내 동네 <strong>${josa(P.region.name, "은", "는")}</strong> ${D.period} 다른 시군구와 주고받아 <strong>${sg(net)}명</strong>${net >= 0 ? "을 얻었습니다" : "을 잃었습니다"}(주민 1천 명당 ${fmt(rate, "dec1")}명).${gName ? ` 가장 많이 들어온 곳은 ${gName}(+${fmt(gN, "int")}),` : ""}${lName ? ` 가장 많이 나간 곳은 ${lName}(−${fmt(lN, "int")})입니다.` : ""}`,
+      tiles: [
+        { k: `${P.region.name} 순이동`, v: `${sg(net)}명`, n: `1천 명당 ${fmt(rate, "dec1")}명 · 20~34세 ${fmt(yr, "dec1")}` },
+        ...(gName ? [{ k: "가장 많이 들어온 곳", v: gName, n: `+${fmt(gN, "int")}명` }] : []),
+        ...(lName ? [{ k: "가장 많이 나간 곳", v: lName, n: `−${fmt(lN, "int")}명` }] : []),
+      ],
+    };
+  };
+  // 자녀 나이에서의 순이동: 아이는 혼자 이사하지 않으니 같은 또래 아이를 둔 가족의 흐름
+  const kidTiles = (P: Profile) =>
+    (P.kids ?? [])
+      .map((k) => {
+        const a = D.ref - k;
+        if (a < 0 || a > D.maxAge) return null;
+        const sg = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(Math.abs(v), "int");
+        return { k: `${k}년생 아이 (${a}세)`, v: `서울 ${sg(D.seoul[a])}명`, n: `수도권 ${sg(D.cap[a])}명 · 같은 나이 아이를 둔 가족의 이동` };
+      })
+      .filter((t): t is { k: string; v: string; n: string } => t != null);
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const base0 = withRegion(b, P);
+    const kt = kidTiles(P);
+    if (!kt.length) return base0;
+    const k0 = P.kids![0], a0 = D.ref - k0;
+    const sv = a0 >= 0 && a0 <= D.maxAge ? (D.seoul[a0] as number) : 0;
+    const kidLead =
+      a0 >= 0 && a0 <= 14
+        ? Math.abs(sv) < 200
+          ? ` ${a0}세 아이 나이대는 서울에서 들고 나는 수가 거의 같습니다(${sv < 0 ? "−" : "+"}${fmt(Math.abs(sv), "int")}명).`
+          : ` ${a0}세 아이 나이대는 서울에서 ${sv < 0 ? "빠져나가는" : "들어오는"} 쪽입니다(${sv < 0 ? "−" : "+"}${fmt(Math.abs(sv), "int")}명). 아이를 키우는 가족이 어디로 가는지 보여 줍니다.`
+        : "";
+    return base0 ? { ...base0, lead: (base0.lead ?? "") + kidLead, tiles: [...(base0.tiles ?? []), ...kt] } : { lead: kidLead.trim(), tiles: kt, foot: "나이별 순이동 그림의 초록색 선이 아이 나이입니다." };
+  }, { need: ["born", "region", "kids"], uses: ["born", "region"] });
+  function withRegion(b: number | null, P: Profile) {
+    const rp = regionPart(P);
+    if (b == null) return rp;
+    const r0 = mine(b);
+    if (!r0) return rp;
+    return rp ? { lead: rp.lead + " " + r0.lead, tiles: [...rp.tiles, ...r0.tiles], foot: r0.foot } : r0;
+  }
+  function mine(b: number) {
     const a = Math.min(D.maxAge, D.ref - b);
     if (a < 0) return null;
     const se = D.seoul[a] as number,
@@ -325,8 +372,8 @@ const defaultId = "11680";
       { k: "수도권 순유입이 가장 큰 나이", v: `${peak}세`, n: `${sg(D.cap[peak])}명` },
     ];
     const lead = `${D.period} ${a}세${a === D.maxAge ? " 이상" : ""} 가운데 서울은 <strong>${sg(se)}명</strong>, 수도권 전체는 <strong>${sg(ca)}명</strong>을 ${se >= 0 && ca >= 0 ? "얻었습니다" : se < 0 && ca < 0 ? "잃었습니다" : "주고받았습니다"}. ${Math.abs(a - peak) <= 3 ? "수도권으로 가장 많이 몰리는 나이 한가운데에 있습니다." : a < peak ? `수도권 쏠림은 ${peak}세 무렵 가장 큽니다.` : se < 0 ? "이 나이에는 서울을 떠나 경기·인천으로 가는 흐름이 큽니다." : ""}`;
-    return { lead, tiles, foot: "나이별 순이동 그림의 보라색 선이 내 나이입니다." };
-  });
+    return { lead, tiles, foot: "나이별 순이동 그림의 보라색 선이 내 나이, 지도의 점선 테두리가 내 동네입니다." };
+  }
 </script>
 
 <script>

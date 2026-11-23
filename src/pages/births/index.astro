@@ -54,7 +54,7 @@ const yoySpec = {
 // 2) 연간 출생아 + 올해·내년
 const ann = d.annual.births;
 const annualSpec = {
-  type: "line" as const, yFormat: "man" as const, height: 340, projStart: LA, me: { label: "{born}년생" },
+  type: "line" as const, yFormat: "man" as const, height: 340, projStart: LA, me: { label: "{name}" },
   series: [
     { name: "출생아 (확정)", color: "var(--series-1)", data: pts(ann, 1990), label: false },
     { name: "나우캐스트·예측", color: "var(--series-1)", data: [[LA, ann[String(LA)]], [year, h.births], [nextYear, h.next]] as [number, number][], dash: true, label: true },
@@ -63,7 +63,7 @@ const annualSpec = {
 };
 const tfr = d.annual.tfr;
 const tfrSpec = {
-  type: "line" as const, yFormat: "dec2" as const, height: 340, projStart: LA, zeroBased: false, me: { label: "{born}년생" },
+  type: "line" as const, yFormat: "dec2" as const, height: 340, projStart: LA, zeroBased: false, me: { label: "{name}" },
   series: [
     { name: "합계출산율 (확정)", color: "var(--series-3)", data: pts(tfr, 1990), label: false },
     { name: `${year} 나우캐스트`, color: "var(--series-3)", data: [[LA, tfr[String(LA)]], [year, h.tfr]] as [number, number][], dash: true, label: true },
@@ -72,7 +72,7 @@ const tfrSpec = {
   hLines: [{ y: 2.1, label: "인구 유지 수준 2.1" }],
 };
 // 내 출생연도 상자
-const meJson = JSON.stringify({ year, LA, ann, tfr, mar: d.annual.marriages, births: h.births, tfrNow: h.tfr });
+const meJson = JSON.stringify({ sido: Object.fromEntries((d.sidos as any[]).map((x) => [x.id, [x.name, x.est, x.estChange, x.tfrPrev, x.hist]])), year, LA, ann, tfr, mar: d.annual.marriages, births: h.births, tfrNow: h.tfr });
 const annYears = [2000, 2010, 2015, 2020, 2023, 2024, LA];
 const annualTable = {
   headers: ["연도", "출생아", "합계출산율", "혼인"],
@@ -255,11 +255,40 @@ const log = d.log as any[];
 </Base>
 
 <script>
-  import { meBox, pageJson } from "../../lib/born";
+  import { meBox, pageJson, type Profile, type MeContent } from "../../lib/profile";
   import { fmt } from "../../lib/format";
   // 내 출생연도: 내가 태어난 해의 출생아·합계출산율을 올해와 비교
   const D = pageJson("me-data");
-  meBox(document.getElementById("me-box"), (b) => {
+  const sidoPart = (P: Profile, b: number | null) => {
+    const r = P.region ? D.sido[P.region.sidoCode] : null;
+    if (!r) return [];
+    const [nm, est, ch, tfr, hist] = r;
+    const t = [{ k: `${nm} 올해 출생아 (추정)`, v: `${fmt(est, "man")}명`, n: `작년보다 ${fmt(ch, "pct1S")} · ${D.LA}년 합계출산율 ${tfr}` }];
+    if (b && hist[b]) t.push({ k: `${b}년 ${nm} 출생아`, v: `${fmt(hist[b], "man")}명`, n: `올해 추정의 ${(hist[b] / est).toFixed(1)}배` });
+    return t;
+  };
+  // 자녀가 태어난 해: 출생아·합계출산율, 내 해와 비교
+  const kidTiles = (P: Profile, b: number | null) =>
+    (P.kids ?? [])
+      .map((k) => {
+        const n = (D.ann[k] ?? (k === D.year ? D.births : undefined)) as number | undefined;
+        if (!n) return null;
+        const mineN = b ? (D.ann[b] as number | undefined) : undefined;
+        return { k: `아이가 태어난 ${k}년`, v: `${fmt(n, "man")}명`, n: (mineN ? `내 해(${b})의 ${(n / mineN).toFixed(2)}배` : "") + (D.tfr[k] != null ? `${mineN ? " · " : ""}합계출산율 ${D.tfr[k].toFixed(2)}` : "") };
+      })
+      .filter((t): t is { k: string; v: string; n: string } => t != null);
+  meBox(document.getElementById("me-box"), (b, P) => {
+    const kt = kidTiles(P, b);
+    if (b == null) {
+      const t = [...kt, ...sidoPart(P, null)];
+      return t.length ? { lead: P.region ? "내 시도의 올해 출생아 추정입니다. 지도에서 점선 테두리가 내 시도입니다." : "", tiles: t } : null;
+    }
+    const r0 = mine(b);
+    const k0 = P.kids?.[0];
+    const kidLead = k0 != null && D.ann[k0] && D.ann[b] ? ` 아이가 태어난 ${k0}년에는 ${fmt(D.ann[k0], "man")}명으로, 내가 태어난 해의 ${fmt(D.ann[k0] / D.ann[b], "pct")} 수준이었습니다.` : "";
+    return { ...r0, lead: (r0.lead ?? "") + kidLead, tiles: [...(r0.tiles ?? []), ...kt, ...sidoPart(P, b)], foot: (r0.foot ?? "") + (kt.length ? " 초록색 선은 아이가 태어난 해입니다." : "") };
+  }, { need: ["born", "region", "kids"], uses: ["born", "region"] });
+  function mine(b: number): MeContent {
     const mine = D.ann[b] as number | undefined;
     const years = Object.keys(D.ann).map(Number);
     if (!mine) return { lead: `출생아 연간 자료는 ${years[0]}년부터라 ${b}년은 비교할 수 없습니다. ${years[0]}년 출생아는 ${fmt(D.ann[years[0]], "man")}명, 올해 추정은 ${fmt(D.births, "man")}명입니다.` };
@@ -278,5 +307,5 @@ const log = d.log as any[];
           ? `${b}년에는 아이가 <strong>${fmt(mine, "man")}명</strong> 태어났습니다. 올해 추정(${fmt(D.births, "man")}명)보다 적은 해입니다.`
           : `${b}년에는 아이가 <strong>${fmt(mine, "man")}명</strong> 태어나 올해 추정과 비슷합니다.`;
     return { lead, tiles, foot: "연간 출생아·합계출산율 그림의 보라색 선이 내가 태어난 해입니다." };
-  });
+  }
 </script>

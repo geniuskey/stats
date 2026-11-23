@@ -5,7 +5,7 @@ import { onVisible, reduced, tween } from "./anim";
 import { makePlayer } from "./player";
 import { renderCohort, type CohortSpec } from "./cohort";
 import { renderBirthFlow, type BirthFlowSpec } from "./birthflow";
-import { getBorn } from "./born";
+import { people, type Person } from "./profile";
 import { renderArea, renderScatter, renderStack, renderRace, renderWaffle, type AreaSpec, type ScatterSpec, type StackSpec, type RaceSpec, type WaffleSpec } from "./charts-extra";
 
 export type Pt = [number, number | null];
@@ -13,7 +13,8 @@ export type Pt = [number, number | null];
  * 내 출생연도 표시. 출생연도를 설정한 사람에게만 보인다.
  * axis "year"(기본): x = 출생연도 + add (예: add 65 → 내가 65세가 되는 해)
  * axis "age": x = refYear − 출생연도 (가로축이 나이인 그림)
- * label 안의 {born}·{age}·{x}는 출생연도·나이·x값으로 바뀐다.
+ * label 안의 {who}·{name}·{born}·{age}·{x}는 사람 이름(나 / 2018년생)·이름(출생연도)·출생연도·나이·x값으로 바뀐다.
+ * 출생연도를 넣은 나와, 자녀 출생연도를 넣었으면 자녀도 함께 표시한다.
  */
 export interface MeMark {
   axis?: "year" | "age";
@@ -24,10 +25,15 @@ export interface MeMark {
 export function meX(me: MeMark, born: number) {
   return me.axis === "age" ? (me.refYear ?? new Date().getFullYear()) - born : born + (me.add ?? 0);
 }
-export function meLabel(me: MeMark, born: number, fallback: string) {
-  const x = meX(me, born);
+export function meLabel(me: MeMark, person: Person, fallback: string) {
+  const x = meX(me, person.born);
   const age = me.axis === "age" ? x : (me.add ?? 0);
-  return (me.label ?? fallback).replace(/\{born\}/g, String(born)).replace(/\{age\}/g, String(age)).replace(/\{x\}/g, String(x));
+  return (me.label ?? fallback)
+    .replace(/\{name\}/g, person.kid ? `${person.born}년생` : `나(${person.born})`)
+    .replace(/\{who\}/g, person.who)
+    .replace(/\{born\}/g, String(person.born))
+    .replace(/\{age\}/g, String(age))
+    .replace(/\{x\}/g, String(x));
 }
 export interface LineSeries {
   name: string;
@@ -340,21 +346,24 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
     const t = el("text", { x: X(mk.x), y: m.t + ph - 6, "text-anchor": "middle", class: "label" }, svg);
     t.textContent = mk.label;
   }
-  // 내 출생연도 세로선
-  const born = getBorn();
-  if (spec.me && born != null) {
+  // 나·자녀 출생연도 세로선
+  const ppl = spec.me ? people() : [];
+  if (spec.me && ppl.length) {
     const list = Array.isArray(spec.me) ? spec.me : [spec.me];
-    list.forEach((me, j) => {
-      const x = meX(me, born);
-      if (x < x0 || x > x1) return;
-      const px = X(x);
-      el("line", { x1: px, x2: px, y1: m.t, y2: m.t + ph, stroke: "var(--me)", "stroke-width": 1.5, "stroke-dasharray": "2 3" }, svg);
-      el("circle", { cx: px, cy: m.t + 3, r: 3.5, fill: "var(--me)" }, svg);
-      const right = px > m.l + pw * 0.75;
-      const t = el("text", { x: px + (right ? -6 : 6), y: m.t + 7 + j * 15, "text-anchor": right ? "end" : "start", class: "label-strong halo" }, svg);
-      t.style.fill = "var(--me)";
-      t.textContent = meLabel(me, born, me.axis === "age" ? "나 {age}세" : "{born}년생");
-    });
+    let row = 0;
+    for (const me of list)
+      for (const pp of ppl) {
+        const x = meX(me, pp.born);
+        if (x < x0 || x > x1) continue;
+        const px = X(x);
+        el("line", { x1: px, x2: px, y1: m.t, y2: m.t + ph, stroke: pp.color, "stroke-width": 1.5, "stroke-dasharray": "2 3" }, svg);
+        el("circle", { cx: px, cy: m.t + 3 + row * 15, r: 3.5, fill: pp.color }, svg);
+        const right = px > m.l + pw * 0.75;
+        const t = el("text", { x: px + (right ? -6 : 6), y: m.t + 7 + row * 15, "text-anchor": right ? "end" : "start", class: "label-strong halo" }, svg);
+        t.style.fill = pp.color;
+        t.textContent = meLabel(me, pp, me.axis === "age" ? "{who} {age}세" : "{born}년생");
+        row++;
+      }
   }
 
   // hover
@@ -429,7 +438,7 @@ export function renderPyramid(host: HTMLElement, spec: PyramidSpec) {
   ];
   const outlineName = fr ? (refIdx >= 0 ? `${spec.refYear}년` : undefined) : spec.outlineName;
   if (outlineName) items.push({ name: outlineName, color: "var(--text-primary)", kind: "line" });
-  if (spec.me && fr && getBorn() != null) items.push({ name: `내 나이대 (${getBorn()}년생)`, color: "var(--me)", kind: "rect" });
+  if (spec.me && fr) for (const pp of people()) items.push({ name: pp.kid ? `${pp.who} 아이 나이대` : `내 나이대 (${pp.born}년생)`, color: pp.color, kind: "rect" });
   legend(host, items);
   const box = document.createElement("div");
   box.style.position = "relative";
@@ -574,23 +583,34 @@ export function renderPyramid(host: HTMLElement, spec: PyramidSpec) {
       stats.appendChild(d);
     }
   };
-  // 내 나이 구간 (구간 폭 = 100 / (n-1), 마지막은 그 이상)
-  const meBorn = spec.me ? getBorn() : null;
+  // 나·자녀 나이 구간 (구간 폭 = 100 / (n-1), 마지막은 그 이상)
+  const ppl = spec.me ? people() : [];
   const step = 100 / Math.max(1, n - 1);
-  const meTxt = meBorn != null ? el("text", { x: 4, class: "label-strong halo" }, svg) : null;
-  if (meTxt) meTxt.style.fill = "var(--me)";
+  const meTxts = ppl.map((pp) => {
+    const t = el("text", { x: 4, class: "label-strong halo" }, svg);
+    t.style.fill = pp.color;
+    return t;
+  });
   const paintMe = (yr: number) => {
-    if (meBorn == null) return;
-    const age = yr - meBorn;
-    const gi = age < 0 ? -1 : Math.min(n - 1, Math.floor(age / step));
+    if (!ppl.length) return;
+    const color = new Map<number, string>();
+    const used = new Map<number, number>(); // 같은 구간 라벨은 아래로 비켜 쓴다
+    ppl.forEach((pp, j) => {
+      const age = yr - pp.born;
+      const gi = age < 0 ? -1 : Math.min(n - 1, Math.floor(age / step));
+      const t = meTxts[j];
+      if (gi < 0) return void t.setAttribute("visibility", "hidden");
+      if (!color.has(gi)) color.set(gi, pp.color);
+      const k = used.get(gi) ?? 0;
+      used.set(gi, k + 1);
+      t.removeAttribute("visibility");
+      t.setAttribute("y", String(m.t + (n - 1 - gi) * bh + bh / 2 + 4 + k * 13));
+      t.textContent = `${pp.kid ? pp.who : "나"} ${age}세`;
+    });
     for (let g = 0; g < n; g++) {
-      L[g].setAttribute("fill", g === gi ? "var(--me)" : "var(--series-1)");
-      R[g].setAttribute("fill", g === gi ? "var(--me)" : "var(--series-2)");
+      L[g].setAttribute("fill", color.get(g) ?? "var(--series-1)");
+      R[g].setAttribute("fill", color.get(g) ?? "var(--series-2)");
     }
-    if (gi < 0) return void meTxt!.setAttribute("visibility", "hidden");
-    meTxt!.removeAttribute("visibility");
-    meTxt!.setAttribute("y", String(m.t + (n - 1 - gi) * bh + bh / 2 + 4));
-    meTxt!.textContent = `나 ${age}세`;
   };
   const frame = (i: number, animate: boolean) => {
     paintMe(fr.years[i]);
@@ -655,9 +675,18 @@ export function renderColumn(host: HTMLElement, spec: ColumnSpec) {
   const bw = Math.min(24, slot - 2);
   const tt = makeTooltip(box);
   const every = Math.ceil(n / Math.max(2, Math.floor(pw / 48)));
-  const born = spec.me ? getBorn() : null;
-  const myAge = born != null ? (spec.me!.refYear ?? new Date().getFullYear()) - born : null;
-  const meIdx = myAge != null ? spec.me!.ages.findIndex(([a, b]) => myAge >= a && myAge <= b) : -1;
+  // 나·자녀 나이가 든 막대: 막대 색은 먼저 온 사람(나), 라벨은 모두 쌓는다
+  const ref = spec.me?.refYear ?? new Date().getFullYear();
+  const marks = new Map<number, { color: string; labels: string[] }>();
+  if (spec.me)
+    for (const pp of people()) {
+      const age = ref - pp.born;
+      const i = spec.me.ages.findIndex(([a, b]) => age >= a && age <= b);
+      if (i < 0) continue;
+      const mk = marks.get(i) ?? { color: pp.color, labels: [] };
+      mk.labels.push((spec.me.label ?? "{who} {age}세").replace("{who}", pp.kid ? pp.who : "나").replace("{age}", String(age)));
+      marks.set(i, mk);
+    }
   spec.categories.forEach((c, i) => {
     const v = spec.values[i];
     const cx = m.l + slot * i + slot / 2;
@@ -666,12 +695,13 @@ export function renderColumn(host: HTMLElement, spec: ColumnSpec) {
         y1 = Y(v);
       const top = Math.min(y0, y1),
         h = Math.max(Math.abs(y0 - y1), 1);
-      const color = i === meIdx ? "var(--me)" : spec.colors?.[i] ?? (spec.highlight && !spec.highlight.includes(i) ? "var(--neutral-series)" : "var(--series-1)");
-      if (i === meIdx) {
-        const t = el("text", { x: cx, y: top - 5, "text-anchor": "middle", class: "label-strong halo" }, svg);
-        t.style.fill = "var(--me)";
-        t.textContent = (spec.me!.label ?? "나 {age}세").replace("{age}", String(myAge));
-      }
+      const mk = marks.get(i);
+      const color = mk ? mk.color : spec.colors?.[i] ?? (spec.highlight && !spec.highlight.includes(i) ? "var(--neutral-series)" : "var(--series-1)");
+      mk?.labels.forEach((lb, k) => {
+        const t = el("text", { x: cx, y: top - 5 - (mk.labels.length - 1 - k) * 14, "text-anchor": "middle", class: "label-strong halo" }, svg);
+        t.style.fill = mk.color;
+        t.textContent = lb;
+      });
       const r = Math.min(4, h, bw / 2);
       const x = cx - bw / 2;
       const d =
@@ -734,9 +764,9 @@ if (typeof window !== "undefined") {
   });
 }
 
-/** 출생연도가 바뀌면 그것을 쓰는 그림(me 표시가 있는 spec)만 다시 그린다 */
+/** 나·자녀 출생연도가 바뀌면 그것을 쓰는 그림(me 표시가 있는 spec)만 다시 그린다 */
 if (typeof window !== "undefined") {
-  window.addEventListener("born:change", () =>
+  window.addEventListener("people:change", () =>
     registry.forEach((s, h) => (!h.isConnected ? registry.delete(h) : "me" in s && (s as any).me ? render(h, s) : null)),
   );
 }

@@ -1,4 +1,5 @@
 // KoreaMap 클라이언트: 색 칠하기, 지표 토글, 연도 재생, 시도 확대, 툴팁, 순위 목록 연동.
+import { onProfile } from "./profile";
 import { makeBins, binOf, NO_DATA, type Bin } from "./scale";
 import { fmt } from "./format";
 import { makePlayer, type Player } from "./player";
@@ -54,6 +55,19 @@ export function mountMap(root: HTMLElement) {
   const desc = root.querySelector<HTMLElement>(".kmap-desc")!;
   const paths = new Map<string, SVGPathElement>();
   root.querySelectorAll<SVGPathElement>(".kmap-regions path").forEach((p) => paths.set(p.dataset.id!, p));
+  // 내 동네(시군구 지도) 또는 내 시도(시도 지도) 테두리
+  const meG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  meG.setAttribute("class", "kmap-me");
+  meG.setAttribute("aria-hidden", "true");
+  hlG.after(meG);
+  onProfile((p) => {
+    meG.innerHTML = "";
+    const id = p.region ? [p.region.id, p.region.sidoCode].find((k) => paths.has(k)) : undefined;
+    if (!id) return;
+    const me = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    me.setAttribute("d", paths.get(id)!.getAttribute("d")!);
+    meG.appendChild(me);
+  });
 
   let mi = 0;
   let fi = 0;
