@@ -39,7 +39,12 @@ const natSpec = {
     { name: "초등 저위~고위", color: "var(--series-1)", lower: pts(lv("ele").proj.low), upper: pts(lv("ele").proj.high) },
   ],
   height: 340,
-  me: { add: 7, label: "{who} 초등 입학 {x}" },
+  // 나는 초등 입학만, 자녀는 초·중·고 입학 (만 6세 다음 해 3월 초등 → 6년 뒤 중학 → 3년 뒤 고등). 자녀 표시는 학교 단계 선 색을 따른다
+  me: [
+    { add: 7, label: "{who} 초등 입학 {x}", kidColor: "var(--series-1)" },
+    { add: 13, label: "{who} 중학 입학 {x}", only: "kids" as const, kidColor: "var(--series-2)" },
+    { add: 16, label: "{who} 고등 입학 {x}", only: "kids" as const, kidColor: "var(--series-3)" },
+  ],
 };
 const years = [2000, 2010, 2020, 2026, 2030, 2035, 2040, 2045];
 const natTable = {
@@ -299,7 +304,7 @@ const mapMetrics = [
         const y = k + 7;
         const e = D.entrants[y] as number | undefined;
         const el = D.ele[y + 3] as number | undefined;
-        tiles.push({ k: `${k}년생 아이 입학`, v: `${y}년`, n: e ? `그해 전국 입학생 ${fmt(e, "man")}명${y > D.last ? " (추정)" : ""}` : el ? `전국 초등학생 ${fmt(el, "man")}명 (${y + 3}년)` : y < D.last ? "이미 입학" : "" });
+        tiles.push({ k: `${k}년생 초등 입학`, v: `${y}년`, n: `중학 ${k + 13} · 고등 ${k + 16} · ` + (e ? `그해 전국 입학생 ${fmt(e, "man")}명${y > D.last ? " (추정)" : ""}` : el ? `전국 초등학생 ${fmt(el, "man")}명 (${y + 3}년)` : y < D.last ? "이미 입학" : "") });
       }
       if (P.kids?.length) {
         const k = P.kids[0], y = k + 7, e = D.entrants[y];
@@ -321,7 +326,7 @@ const mapMetrics = [
       }
       if (!tiles.length) return null;
       const Yb = b != null ? b + 7 : 0;
-      return { lead: leads.join(" "), tiles, foot: Yb >= 2000 && Yb <= 2045 ? "전국 학생 수 그림의 보라색 선이 내가 초등학교에 입학한(할) 해입니다." : "" };
+      return { lead: leads.join(" "), tiles, foot: [Yb >= 2000 && Yb <= 2045 ? "전국 학생 수 그림의 보라색 선이 내가 초등학교에 입학한(할) 해입니다." : "", P.kids?.length ? "아이의 초등·중학·고등 입학 연도는 각 학교 선과 같은 색(파랑·주황·초록)으로 표시합니다." : ""].filter(Boolean).join(" ") };
     },
     { need: ["born", "region", "kids"], uses: ["born", "region"] },
   );

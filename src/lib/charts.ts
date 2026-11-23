@@ -17,6 +17,8 @@ export type Pt = [number, number | null];
  * 출생연도를 넣은 나와, 자녀 출생연도를 넣었으면 자녀도 함께 표시한다.
  */
 export interface MeMark {
+  only?: "me" | "kids"; // 이 표시를 나에게만 / 자녀에게만 (기본: 둘 다)
+  kidColor?: string; // 자녀 표시 색을 바꾼다 (예: 학교 단계별 계열 색)
   axis?: "year" | "age";
   add?: number;
   refYear?: number;
@@ -353,14 +355,16 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
     let row = 0;
     for (const me of list)
       for (const pp of ppl) {
+        if ((me.only === "me" && pp.kid) || (me.only === "kids" && !pp.kid)) continue;
         const x = meX(me, pp.born);
         if (x < x0 || x > x1) continue;
         const px = X(x);
-        el("line", { x1: px, x2: px, y1: m.t, y2: m.t + ph, stroke: pp.color, "stroke-width": 1.5, "stroke-dasharray": "2 3" }, svg);
-        el("circle", { cx: px, cy: m.t + 3 + row * 15, r: 3.5, fill: pp.color }, svg);
+        const color = pp.kid && me.kidColor ? me.kidColor : pp.color;
+        el("line", { x1: px, x2: px, y1: m.t, y2: m.t + ph, stroke: color, "stroke-width": 1.5, "stroke-dasharray": "2 3" }, svg);
+        el("circle", { cx: px, cy: m.t + 3 + row * 15, r: 3.5, fill: color }, svg);
         const right = px > m.l + pw * 0.75;
         const t = el("text", { x: px + (right ? -6 : 6), y: m.t + 7 + row * 15, "text-anchor": right ? "end" : "start", class: "label-strong halo" }, svg);
-        t.style.fill = pp.color;
+        t.style.fill = color;
         t.textContent = meLabel(me, pp, me.axis === "age" ? "{who} {age}세" : "{born}년생");
         row++;
       }
