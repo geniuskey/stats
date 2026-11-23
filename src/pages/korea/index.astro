@@ -1,4 +1,5 @@
 ---
+import Formula from "../../components/Formula.astro";
 import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
@@ -255,8 +256,7 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
       <h3>무엇을 결합했나</h3>
       <p>행정안전부 주민등록인구(1세별, 시군구, 2015~2025년 말), 통계청 인구동향 출생아·합계출산율, 통계청 장래인구추계(2022년 기준)의 시나리오별 출생아·가임여성 인구를 결합했습니다. 공식 추계는 2022년 인구에서 출발하지만, 그 뒤 3년의 실제 출생과 이동이 반영된 2025년 주민등록 인구에서 다시 출발한 것이 차이입니다.</p>
       <h3>추계 방법</h3>
-      <pre class="formula">인구(a세, t+1) = 인구(a−1세, t) × 코호트 변화율(a)      ← 사망 + 국내외 이동
-0세(t)       = 20~44세 여성(t) × 아동비 × 출산율 지수(시나리오, t)</pre>
+      <Formula tex={[String.raw`인구(a세,\ t+1) = 인구(a-1세,\ t) \times 코호트 변화율(a)`, String.raw`0세(t) = 20∼44세 여성(t) \times 아동비 \times 출산율 지수(시나리오,\ t)`]} where={[`코호트 변화율: 사망과 국내외 이동을 함께 담은 한 살 더 먹을 때의 인구 비율`]} />
       <p>코호트 변화율은 최근 3년 평균입니다. 시군구 229곳을 각각 추계한 뒤 더해 전국과 시도 값을 만들었습니다. 출산율 지수는 공식 추계 시나리오의 "가임여성 1명당 출생아" 변화율을 {by}년 = 1로 둔 것입니다. 2050년 피라미드의 남녀 구분은 같은 출생 코호트의 {by}년 성비를 적용했습니다.</p>
       <h3>한계</h3>
       <ul>

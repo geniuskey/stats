@@ -1,4 +1,5 @@
 ---
+import Formula from "../../components/Formula.astro";
 import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
@@ -368,11 +369,11 @@ const simJson = JSON.stringify({
       <h2>방법론</h2>
       <h3>1. 실질임금</h3>
       <p>고용노동부 사업체노동력조사의 1인 이상 사업체 전체 근로자 월평균 임금총액({M.firstYear}년~)을 물가지수로 나눠 {BASE}년 원화 가치로 환산했습니다. 물가 잣대는 소비자물가지수(CPI), 자주 사는 품목만 모은 생활물가지수, 자가 거주자의 주거비까지 넣은 자가주거비포함지수 세 가지입니다.</p>
-      <pre class="formula">실질 월급(t) = 명목 월급(t) × 물가지수({BASE}) ÷ 물가지수(t)</pre>
+      <Formula tex={[String.raw`실질 월급(t) = 명목 월급(t) \times \dfrac{물가지수(${BASE})}{물가지수(t)}`]} />
       <h3>2. 세후 월급 (간이 계산)</h3>
       <p>연도별 소득세법(근로소득공제·세율 구간·근로소득세액공제·표준세액공제)과 국민연금·건강보험·장기요양·고용보험 근로자 부담 요율을 코드로 구현했습니다. {M.assumptions} 실제 원천징수액은 부양가족, 비과세 수당, 각종 공제에 따라 달라집니다.</p>
       <h3>3. 품목별 구매력</h3>
-      <pre class="formula">구매력 지수(t) = [임금(t) ÷ 임금({REF})] ÷ [품목 가격지수(t) ÷ 품목 가격지수({REF})] × 100</pre>
+      <Formula tex={[String.raw`구매력 지수(t) = \dfrac{임금(t) \,/\, 임금(${REF})}{품목 가격지수(t) \,/\, 품목 가격지수(${REF})} \times 100`]} />
       <p>산업별은 상용근로자 임금총액을 전국 소비자물가로, 시도별은 e-지방지표 시도별 상용 월평균 임금을 각 시도 소비자물가로 나눴습니다.</p>
       <h3>4. 2030 시나리오와 {LAST}년 잠정치</h3>
       <p>명목 임금은 {BASE - 5}~{BASE}년 연평균 증가율을 유지한다고 두고, 물가는 한국은행 목표 2%, 최근 10년 평균({pct(H.cpiCagr10, 1)}), 최근 5년 평균({pct(H.cpiCagr5, 1)}) 세 가지로 가정했습니다. 세후는 {LAST}년 세법·요율을 고정해 명목소득이 오를수록 세 부담이 커지는 효과가 반영됩니다. {estNote}이며, 전년 같은 달 대비 증가율을 {BASE}년 연간값에 적용했습니다.</p>

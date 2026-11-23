@@ -1,4 +1,5 @@
 ---
+import Formula from "../../components/Formula.astro";
 import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
@@ -307,15 +308,10 @@ const simJson = JSON.stringify({
       <h3>1. 3축 성장 점수</h3>
       <p>{M.trendFrom}→{M.trendTo}년 취업자, 실질 부가가치(한국은행, 2020년 연쇄가격), 수출액(수출 기업의 산업 기준)의 연평균 증가율을 구합니다. 각 축이 경제 전체보다 1%p 이상 높으면 +1, 낮으면 −1, 그 사이면 0입니다. 평균 점수가 +0.5 이상이면서 취업자와 부가가치가 모두 늘면 '성장', −0.5 이하이면서 둘 중 하나가 줄면 '쇠퇴', 나머지는 '정체'로 분류합니다.</p>
       <h3>2. 은퇴 대체 수요</h3>
-      <pre class="formula">10년 내 은퇴 연령 도달
-  = 60세 이상 취업자 + 50대 취업자 × 0.5</pre>
+      <Formula tex={[String.raw`10년 내 은퇴 연령 도달 = 60세 이상 취업자 + 0.5 \times 50대 취업자`]} />
       <p>50대는 나이가 고르게 분포한다고 보고 절반을 55~59세로 근사합니다. 은퇴 연령은 65세로 둡니다.</p>
       <h3>3. 노동공급과 과부족</h3>
-      <pre class="formula">공급(t) = Σ 고용률(연령, {base})
-        × 인구추계(연령, t) × 보정계수
-산업 공급(t) = Σ 연령대 공급(t)
-        × 산업의 연령대 점유율({base})
-과부족 = 산업 공급 − 산업 수요</pre>
+      <Formula tex={[String.raw`공급(t) = \sum_{연령} 고용률(연령,\ ${base}) \times 인구추계(연령,\ t) \times 보정계수`, String.raw`산업 공급(t) = \sum_{연령대} 연령대 공급(t) \times 산업의 연령대 점유율(${base})`, String.raw`과부족 = 산업 공급 - 산업 수요`]} />
       <p>인구추계는 이 사이트의 주민등록 기반 코호트 추계(통계청 출산율 중위 시나리오)입니다. 보정계수는 {base}년 공급이 실제 취업자와 같아지도록 맞춘 값입니다. 공급 시나리오: {M.scenarios.supply.base} / {M.scenarios.supply.older}. 수요 시나리오: 현 수준 유지({M.scenarios.demand.hold}), 추세 연장({M.scenarios.demand.trend}), 인구 연동({M.scenarios.demand.demo}).</p>
       <h3>한계</h3>
       <ul>

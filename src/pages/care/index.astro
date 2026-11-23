@@ -1,4 +1,5 @@
 ---
+import Formula from "../../components/Formula.astro";
 import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
@@ -135,8 +136,7 @@ const demBars = (key: "top" | "bottom") => {
       <div class="card">
         <h3 class="card-title">의료 수요 지수란</h3>
         <p class="small">80세 이상 1명은 연간 진료비가 10대의 약 {Math.round(m.costWeights[8] / m.costWeights[1])}배입니다. 그래서 같은 인구라도 나이 구성이 바뀌면 병원이 감당할 일의 양이 달라집니다.</p>
-        <pre class="formula">의료 수요(t) = Σ 연령대 1인당 진료비 × 연령대 인구(t)
-지수(t) = 의료 수요(t) ÷ 의료 수요({by})</pre>
+        <Formula tex={[String.raw`의료 수요(t) = \sum_{연령대} 1인당 진료비 \times 연령대 인구(t)`, String.raw`지수(t) = \dfrac{의료 수요(t)}{의료 수요(${by})}`]} />
         <p class="small">진료비 단가는 {m.costYear}년 값으로 고정했으므로 물가·의료기술 변화가 아니라 <strong>인구 구조 변화만의 효과</strong>입니다. 전국 의료 수요는 2035년 {pct(h.demand2035 - 1, 0, true)}, 2045년 {pct(h.demand2045 - 1, 0, true)}입니다. 같은 기간 시군구 {h.popDown2045}곳은 인구가 줄지만, 그중 많은 곳에서 의료 수요는 오히려 늘어납니다.</p>
       </div>
     </section>
@@ -234,12 +234,10 @@ const demBars = (key: "top" | "bottom") => {
       <h3>1. 미래 연령별 인구</h3>
       <p>이 사이트의 시군구 인구 추계(중위, 코호트 변화율법)를 씁니다. 75세 이상·0~9세·20~44세 여성(기준연도 여성 비중 고정)을 연도별로 뽑았습니다.</p>
       <h3>2. 의료 수요 지수</h3>
-      <pre class="formula">1인당 진료비(연령대) = 전국 건강보험 진료비(연령대, {m.costYear}) ÷ 주민등록 인구(연령대)
-의료 수요 지수(지역, t) = Σ 1인당 진료비 × 인구(지역, 연령대, t) ÷ 같은 값({by})</pre>
+      <Formula tex={[String.raw`1인당 진료비(연령대) = \dfrac{전국 건강보험 진료비(연령대,\ ${m.costYear})}{주민등록 인구(연령대)}`, String.raw`의료 수요 지수(지역,\ t) = \dfrac{\sum_{연령대} 1인당 진료비 \times 인구(지역,\ 연령대,\ t)}{같은 값(${by})}`]} />
       <p>지역별 진료 행태 차이(예: 같은 나이라도 지역마다 병원 이용이 다름)는 넣지 않고 전국 단가를 썼습니다. 인구 구조 변화만의 효과를 비교하기 위해서입니다.</p>
       <h3>3. 요양·의료 자원</h3>
-      <pre class="formula">요양 정원 공백(t) = 75세 이상(t) × [지금 정원 ÷ 지금 75세 이상] − 지금 정원
-소아과 1곳당 아동(t) = 0~9세(t) ÷ 지금 소아청소년과 의원 수</pre>
+      <Formula tex={[String.raw`요양 정원 공백(t) = 75세 이상(t) \times \dfrac{지금 정원}{지금 75세 이상} - 지금 정원`, String.raw`소아과 1곳당 아동(t) = \dfrac{0∼9세(t)}{지금 소아청소년과 의원 수}`]} />
       <p>각 기관 통계의 시군구 이름(옛 마산·진해시, 일반구, 붙여 쓴 "수원시장안구" 등)을 2025년 말 시·군·자치구 229곳으로 맞췄습니다. 시군구 합계는 시도 합계와 일치함을 확인했습니다.</p>
       <h3>한계</h3>
       <ul>

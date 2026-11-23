@@ -1,6 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro";
 import PageMeta from "../../components/PageMeta.astro";
+import Formula from "../../components/Formula.astro";
 import { GLOSSARY } from "../../data/glossary";
 
 const base = import.meta.env.BASE_URL;
@@ -42,7 +43,7 @@ const href = (l: { slug: string; hash?: string }) => `${base}${l.slug}/${l.hash 
                 {t.en && <p class="gl-en">{t.en}</p>}
               </header>
               <p class="gl-def">{t.def}</p>
-              {t.formula && <pre class="formula">{t.formula}</pre>}
+              {t.tex ? <Formula tex={t.tex} where={t.where} /> : t.formula && <pre class="formula">{t.formula}</pre>}
               {t.diff && (
                 <div class="gl-diff">
                   <span class="gl-k">공식 정의와의 차이 · 주의</span>

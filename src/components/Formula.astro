@@ -1,0 +1,15 @@
+---
+// 수식 블록: 한 줄에 식 하나, 아래에 기호 설명(where). 식 문법은 lib/tex.ts 참고.
+import "katex/dist/katex.min.css";
+import { tex } from "../lib/tex";
+interface Props {
+  tex: string | string[];
+  where?: string[];
+}
+const { tex: src, where } = Astro.props;
+const lines = (Array.isArray(src) ? src : [src]).map((l) => tex(l));
+---
+<div class="formula-math">
+  {lines.map((html) => <div class="fm-line" set:html={html} />)}
+  {where && where.length > 0 && <ul class="fm-where">{where.map((w) => <li>{w}</li>)}</ul>}
+</div>

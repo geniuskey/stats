@@ -1,4 +1,5 @@
 ---
+import Formula from "../../components/Formula.astro";
 import Base from "../../layouts/Base.astro";
 import { SERVICES } from "../../lib/nav";
 const docs = import.meta.glob("../../../docs/modules/*.md", { eager: true }) as Record<string, any>;
@@ -25,10 +26,7 @@ const html = Object.fromEntries(await Promise.all(Object.entries(bySlug).map(asy
         <li><strong>검증:</strong> 가능한 경우 과거 시점의 데이터만으로 같은 방법을 적용해 실제와 비교한 오차를 공개합니다(예: 학교 추계 1년 후 평균 오차 약 1%, 6년 후 약 8%). 모든 검증과, 갱신 때마다 적어 두었다가 실측이 나오면 채점하는 실시간 장부는 <a href={`${base}track/`}>예측 성적표</a>에 모았습니다.</li>
       </ul>
       <h3>공통 인구 추계 엔진</h3>
-      <pre class="formula">인구(a세, t+1) = 인구(a−1세, t) × 코호트 변화율(a)
-  · 코호트 변화율: 최근 3년(2022→2025) 평균, 작은 지역은 시도 값으로 수축 보정
-  · 지역 고유 순이동 효과: 연 ±8% 상한, 매년 15%씩 전국 평균으로 감쇠
-0세(t) = 20~44세 여성(t) × 아동비(최근 3년) × 출산율 지수(시나리오, t)</pre>
+      <Formula tex={[String.raw`인구(a세,\ t+1) = 인구(a-1세,\ t) \times 코호트 변화율(a)`, String.raw`0세(t) = 20∼44세 여성(t) \times 아동비 \times 출산율 지수(시나리오,\ t)`]} where={[`코호트 변화율: 최근 3년(2022→2025) 평균, 작은 지역은 시도 값으로 수축 보정`, `지역 고유 순이동 효과: 연 ±8% 상한, 매년 15%씩 전국 평균으로 감쇠`, `아동비: 최근 3년 평균`]} />
     </section>
     {SERVICES.map((s) => bySlug[s.slug] && (
       <section class="section card method" id={s.slug}>

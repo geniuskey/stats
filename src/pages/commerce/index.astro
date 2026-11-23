@@ -1,4 +1,5 @@
 ---
+import Formula from "../../components/Formula.astro";
 import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
@@ -320,7 +321,7 @@ const sidoMetrics = [
         <li>소비인구(20~64세) 2025→2030 변화 (이 사이트의 소지역 인구추계 중위) — {meta.weights.consumers2030 * 100}%</li>
         <li>20~39세 순이동률 (최근 3년, 인구 1천 명당) — {meta.weights.youngMigration * 100}%</li>
       </ul>
-      <pre class="formula">활력 지수 = 50 + 15 × Σ(가중치 × z)   (0~100으로 제한, 50 = 전국 평균)</pre>
+      <Formula tex={[String.raw`활력 지수 = 50 + 15 \times \sum_k w_k\, z_k`]} where={[`w: 가중치, z: 시군구 분포에서 표준화한 값`, `0~100으로 제한, 50 = 전국 평균`]} />
       <h3>2. 상태 분류와 조기 신호</h3>
       <ul>{order.map((c) => <li>{meta.classes[c]}</li>)}<li>{meta.oversupply}</li></ul>
       <p>소멸위험은 지수와 상관없이 먼저 적용합니다. '1천 명당 점포 → 2035'는 점포 수가 {y1}년 그대로일 때 2035년 소비인구 1천 명당 점포 수로, 점포 1곳이 나눠 갖는 손님이 얼마나 줄어드는지 보여 줍니다. 미래 값은 인구추계에 따른 시나리오이며 예측이 아닙니다.</p>

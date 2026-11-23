@@ -1,4 +1,5 @@
 ---
+import Formula from "../../components/Formula.astro";
 import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
@@ -437,10 +438,7 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
       <h2>방법론</h2>
       <h3>1. 주택구입 부담률</h3>
       <p>한국부동산원 아파트 매매 실거래 ㎡당 평균가격에 전용 {A.area}㎡를 곱해 '국민평형' 가격을 구합니다. 그 {A.ltv * 100}%를 한국은행 주택담보대출 평균금리(신규취급액)로 {A.termYears}년 원리금균등 상환할 때의 월 상환액을 계산하고, 가계금융복지조사의 지역별 가구 월소득으로 나눕니다.</p>
-      <pre class="formula">월 상환액 = 대출금 × r ÷ (1 − (1 + r)^−n),  r = 연금리 ÷ 12, n = {A.termYears * 12}
-주택구입 부담률 = 월 상환액 ÷ (가구 연소득 ÷ 12)
-PIR = {A.area}㎡ 가격 ÷ 가구 연소득
-1년치 소득 면적(평) = 가구 연소득 ÷ ㎡당 가격 ÷ {A.pyeong}</pre>
+      <Formula tex={[String.raw`월 상환액 = 대출금 \times \dfrac{r}{1 - (1 + r)^{-n}}, \qquad r = \dfrac{연금리}{12},\quad n = ${A.termYears * 12}`, String.raw`주택구입 부담률 = \dfrac{월 상환액}{가구 연소득 \div 12}`, String.raw`\mathrm{PIR} = \dfrac{${A.area}㎡ 가격}{가구 연소득}`, String.raw`1년치 소득 면적(평) = \dfrac{가구 연소득}{㎡당 가격} \div ${A.pyeong}`]} />
       <h3>2. 시점 맞추기</h3>
       <p>실거래 평균가격은 그달 어떤 단지·면적이 거래됐는지에 따라 크게 흔들리므로 12개월 평균을 씁니다. 가계금융복지조사의 소득은 조사 전년도 소득이라 1년 앞당겨 맞췄고, 아직 발표되지 않은 {meta.lastIncomeYear + 1}년 이후 소득은 지역별 최근 3년 연평균 증가율로 연장한 추정치입니다. 금리는 전국 단일 값을 모든 지역에 적용합니다.</p>
       <h3>3. {outlookEnd}년 시나리오</h3>

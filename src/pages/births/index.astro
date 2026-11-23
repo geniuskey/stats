@@ -1,4 +1,6 @@
 ---
+import Formula from "../../components/Formula.astro";
+import { signed } from "../../lib/tex";
 import { pageTitle, svcName } from "../../lib/nav";
 import Base from "../../layouts/Base.astro";
 import Chart from "../../components/Chart.astro";
@@ -168,7 +170,7 @@ const log = d.log as any[];
       <div class="card">
         <h3 class="card-title">{nextYear}년 출생아 예측 모형</h3>
         <p class="card-sub">혼인 후 첫째 출산까지 보통 1~2년이 걸립니다. 그래서 출생아 증가율을 전년·전전년 혼인 증가율로 설명합니다(1996~{LA}년, 최소제곱).</p>
-        <pre class="formula">출생 증가율(t) = {d.model.lagCoef[0]} + {d.model.lagCoef[1]} × 혼인 증가율(t−1) + {d.model.lagCoef[2]} × 혼인 증가율(t−2)</pre>
+        <Formula tex={[String.raw`출생 증가율(t) = ${d.model.lagCoef[0]} ${signed(d.model.lagCoef[1])} \times 혼인 증가율(t-1) ${signed(d.model.lagCoef[2])} \times 혼인 증가율(t-2)`]} />
         <p class="small">{year}년 혼인은 약 {man(h.marriages)}건({pct(h.marriagesChange, 1, true)})으로 추정되고, 이를 넣으면 {nextYear}년 출생아는 {pct(h.nextChange, 1, true)} 변한 <strong>약 {man(h.next)}명</strong>입니다.</p>
         <p class="small muted">1년 앞 예측의 과거 평균 오차는 {pct(d.backtest.lagMae, 1)}로, "작년과 같다"고 볼 때({pct(d.backtest.naiveMae, 1)})보다 조금 낫습니다. 혼인 외에도 30대 초반 여성 인구, 정책, 경기 같은 요인이 있어 범위가 넓습니다.</p>
       </div>
@@ -230,12 +232,10 @@ const log = d.log as any[];
     <section class="section card method" id="method">
       <h2>방법론</h2>
       <h3>1. 올해 출생아: 누계 + 남은 달</h3>
-      <pre class="formula">계절 비중법: 연간 = 1~M월 누계 ÷ (최근 5년 1~M월이 연간에서 차지한 비중의 평균)
-추세법:     연간 = 1~M월 누계 + 작년 (M+1)~12월 × (최근 3개월 ÷ 작년 같은 3개월)</pre>
+      <Formula tex={[String.raw`계절 비중법:\quad 연간 = \dfrac{1{∼}M월 누계}{최근 5년 1{∼}M월이 연간에서 차지한 비중의 평균}`, String.raw`추세법:\quad 연간 = 1{∼}M월 누계 + 작년\ (M+1){∼}12월 \times \dfrac{최근 3개월}{작년 같은 3개월}`]} />
       <p>두 방법을 1995년 이후 매년, 매월 기준으로 다시 계산해 최근 15년 오차가 작은 쪽을 고릅니다. 연초(1~3월)에는 계절 비중법이, 4월 이후에는 올해 흐름을 반영하는 추세법이 더 정확했습니다. 범위는 최근 20년 오차의 10~90% 구간입니다.</p>
       <h3>2. 합계출산율</h3>
-      <pre class="formula">합계출산율(올해) = 출생아(올해 추정) ÷ D(올해),  D = 출생아 ÷ 합계출산율
-D(올해) = D(작년) × 최근 3년 평균 변화율</pre>
+      <Formula tex={[String.raw`합계출산율(올해) = \dfrac{출생아(올해 추정)}{D(올해)}, \qquad D = \dfrac{출생아}{합계출산율}`, String.raw`D(올해) = D(작년) \times 최근 3년 평균 변화율`]} />
       <h3>3. 내년 출생아</h3>
       <p>연간 확정치(1996~{LA}년)로 출생 증가율을 전년·전전년 혼인 증가율에 회귀했습니다. 올해 혼인 건수도 출생과 같은 방법으로 추정해 넣습니다. 1년 앞 예측 오차는 해마다 그 전년까지 자료로만 모형을 다시 적합해 계산했습니다(2008~{LA}년).</p>
       <h3>한계</h3>

@@ -889,14 +889,51 @@ details.table-view .table-wrap {
 pre.formula {
   margin: 0 0 1em;
 }
-.formula {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+/* 수식 (KaTeX, 빌드 때 조판) */
+.formula-math {
+  margin: 0 0 1em;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  color: var(--text-primary);
+}
+.formula-math .fm-line {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+  /* 넘치면 오른쪽 끝에 그림자: 밀어서 더 볼 수 있다는 신호 (표와 같은 방식) */
+  background:
+    linear-gradient(to left, var(--surface-2) 30%, transparent) right center / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 100% 50%, #00000024, transparent) right center / 12px 100% no-repeat scroll;
+}
+.formula-math .katex-display { margin: 0.35em 0; text-align: left; }
+.formula-math .katex-display > .katex { text-align: left; }
+.formula-math .katex { font-size: 1.08em; }
+@media (max-width: 480px) {
+  .formula-math { padding: 10px 12px; }
+  .formula-math .katex { font-size: 0.94em; }
+}
+/* 한글은 KaTeX 글꼴에 없으므로 본문 글꼴로 (명조로 떨어지지 않게) */
+.formula-math .katex .text, .formula-math .katex .text * { font-family: var(--font); }
+.formula-math .fm-where {
+  margin: 8px 0 2px;
+  padding: 8px 0 0 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
   font-size: 13px;
+  color: var(--text-secondary);
+}
+.formula-math .fm-where li { margin: 2px 0; }
+.formula-math .fm-where li::before { content: "· "; }
+/* 식이 아닌 규칙 나열 */
+.formula {
+  font-family: var(--font);
+  font-size: 13.5px;
   background: var(--surface-2);
   padding: 10px 14px;
   border-radius: 8px;
   overflow-x: auto;
-  white-space: pre;
+  white-space: pre-line;
   color: var(--text-primary);
 }
 
