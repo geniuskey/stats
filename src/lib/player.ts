@@ -12,6 +12,8 @@ export interface PlayerOpts {
   /** 있으면 ▶ 재생이 프레임 사이도 같은 속력으로 끊김 없이 이어 그린다: t는 소수 프레임(2.4 = 2와 3 사이 40%).
    *  가감속 없이 speed ms마다 한 프레임씩 나아간다. 슬라이더를 끌면 기존처럼 onFrame(i)으로 간다. */
   smooth?: (t: number) => void;
+  /** 슬라이더 동그라미 위에 지금 연도 말풍선을 띄운다 (오른쪽 큰 연도 대신) */
+  bubble?: boolean;
 }
 export interface Player {
   el: HTMLElement;
@@ -71,6 +73,13 @@ export function makePlayer(host: HTMLElement, labels: (string | number)[], onFra
     track.appendChild(pz);
   }
   track.append(range, ticks);
+  const bubble = opts.bubble ? document.createElement("span") : null;
+  if (bubble) {
+    bubble.className = "player-bubble";
+    bubble.setAttribute("aria-hidden", "true");
+    track.appendChild(bubble);
+    wrap.classList.add("has-bubble");
+  }
   if (few) {
     btn.hidden = true;
     wrap.classList.add("few");
@@ -88,6 +97,18 @@ export function makePlayer(host: HTMLElement, labels: (string | number)[], onFra
     out.textContent = lab(idx);
     out.classList.toggle("is-proj", opts.projFrom != null && idx >= opts.projFrom);
     range.setAttribute("aria-valuetext", lab(idx));
+    if (bubble) {
+      // 동그라미(지름 18px) 가운데: 트랙 양 끝 9px 안쪽
+      bubble.textContent = lab(idx);
+      // 양 끝에서는 말풍선이 트랙 밖으로 나가지 않게 밀어 넣는다 (꼬리는 동그라미를 계속 가리킨다)
+      const tw = track.clientWidth, bw = bubble.offsetWidth;
+      const cx = 9 + (tw - 18) * (idx / Math.max(1, n - 1));
+      const shift = tw && bw ? Math.max(bw / 2, Math.min(tw - bw / 2, cx)) - cx : 0;
+      bubble.style.left = `calc(9px + (100% - 18px) * ${idx / Math.max(1, n - 1)})`;
+      bubble.style.transform = `translateX(calc(-50% + ${shift.toFixed(1)}px))`;
+      bubble.style.setProperty("--tail", `${(-shift).toFixed(1)}px`);
+      bubble.classList.toggle("is-proj", opts.projFrom != null && idx >= opts.projFrom);
+    }
   };
   const set = (i: number, animate = true) => {
     idx = Math.max(0, Math.min(n - 1, i));
