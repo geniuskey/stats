@@ -108,6 +108,32 @@ const ld = title === "홈"
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
           <span id="menu-label">메뉴</span>
         </button>
+        <div class="born" id="born">
+          <button class="born-btn" type="button" id="born-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="born-pop" title="내 출생연도: 페이지마다 내 나이에 맞춘 숫자를 함께 보여 줍니다">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3.6"></circle><path d="M4.5 20.5c1.2-3.8 4-5.6 7.5-5.6s6.3 1.8 7.5 5.6"></path></svg>
+            <span class="born-label" id="born-label" data-born-text="출생연도"></span>
+          </button>
+          <script is:inline>
+            try {
+              const v = Number(localStorage.getItem("born"));
+              if (v >= 1920 && v <= new Date().getFullYear()) {
+                document.getElementById("born-label").dataset.bornText = v + "년생";
+                document.getElementById("born").classList.add("is-set");
+              }
+            } catch (e) {}
+          </script>
+          <div class="born-pop" id="born-pop" role="dialog" aria-labelledby="born-pop-title" hidden>
+            <form id="born-form" autocomplete="off">
+              <label class="born-title" id="born-pop-title" for="born-input">내 출생연도</label>
+              <div class="born-row">
+                <input id="born-input" type="number" inputmode="numeric" min="1920" max={String(new Date().getFullYear())} step="1" placeholder="예: 1990" />
+                <button type="submit" class="born-save">적용</button>
+              </div>
+              <p class="born-note">페이지마다 내 나이에 맞춘 숫자가 함께 나옵니다. 이 브라우저에만 저장되며 서버나 분석 도구로 보내지 않습니다.</p>
+              <button type="button" class="born-clear" id="born-clear">지우기</button>
+            </form>
+          </div>
+        </div>
         <button class="theme-btn" type="button" aria-label="다크 모드 전환" id="theme-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
         </button>
@@ -132,6 +158,7 @@ const ld = title === "홈"
       import { initMotion } from "../lib/anim";
       import { initFigures } from "../lib/figure";
       import { initToc } from "../lib/toc";
+      import { getBorn, setBorn, onBorn, BORN_MIN, bornMax } from "../lib/born";
       initFigures();
       initToc();
       // 같은 제목의 그림이 한 페이지에 둘 이상이면 앵커가 겹치지 않게 -2, -3을 붙인다
@@ -182,6 +209,57 @@ const ld = title === "홈"
         if (e.key === "Escape") {
           closeGroups();
           setMenu(false);
+        }
+      });
+      // 내 출생연도 칩
+      const bornBox = document.getElementById("born")!;
+      const bornBtn = document.getElementById("born-btn")!;
+      const bornPop = document.getElementById("born-pop")!;
+      const bornInput = document.getElementById("born-input") as HTMLInputElement;
+      const bornLabel = document.getElementById("born-label")!;
+      const setPop = (on: boolean) => {
+        bornPop.hidden = !on;
+        bornBtn.setAttribute("aria-expanded", String(on));
+        if (on) {
+          closeGroups();
+          if (header.classList.contains("menu-open")) setMenu(false);
+          bornInput.value = getBorn()?.toString() ?? "";
+          setTimeout(() => bornInput.focus(), 0);
+        }
+      };
+      onBorn((y) => {
+        bornLabel.dataset.bornText = y ? `${y}년생` : "출생연도";
+        bornBox.classList.toggle("is-set", y != null);
+      });
+      bornBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setPop(bornPop.hidden);
+      });
+      // 본문의 '출생연도 설정' 버튼: 같은 클릭이 바깥 클릭으로 닫지 않게 다음 틱에 연다 (헤더는 sticky라 늘 보인다)
+      window.addEventListener("born:open", () => setTimeout(() => setPop(true), 0));
+      document.getElementById("born-form")!.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const v = Number(bornInput.value);
+        if (!Number.isInteger(v) || v < BORN_MIN || v > bornMax()) {
+          bornInput.setCustomValidity(`${BORN_MIN}~${bornMax()} 사이의 연도를 넣어 주세요`);
+          bornInput.reportValidity();
+          return;
+        }
+        setBorn(v);
+        setPop(false);
+      });
+      bornInput.addEventListener("input", () => bornInput.setCustomValidity(""));
+      document.getElementById("born-clear")!.addEventListener("click", () => {
+        setBorn(null);
+        setPop(false);
+      });
+      document.addEventListener("click", (e) => {
+        if (!bornPop.hidden && !bornBox.contains(e.target as Node)) setPop(false);
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !bornPop.hidden) {
+          setPop(false);
+          bornBtn.focus();
         }
       });
       autoMount();

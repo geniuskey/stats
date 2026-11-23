@@ -4,6 +4,7 @@
 import { fmt, tick } from "./format";
 import { el, legend, makeTooltip, ttRow, placeTooltip, niceTicks } from "./charts";
 import { makePlayer } from "./player";
+import { getBorn } from "./born";
 
 export interface BirthFlowSpec {
   type: "birthflow";
@@ -18,6 +19,7 @@ export interface BirthFlowSpec {
   marks?: number[]; // 이름표를 달고 따라갈 출생연도
   speed?: number; // 1년 이동에 걸리는 ms
   height?: number;
+  me?: boolean; // 내 출생연도 막대를 따로 칠하고 이름표를 단다
 }
 
 export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
@@ -27,10 +29,13 @@ export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
   const W = Math.max(host.clientWidth, 280);
   const H = spec.height ?? 340;
   const narrow = W < 520;
+  const me = spec.me ? getBorn() : null;
+  const meIdx = me != null ? born.indexOf(me) : -1;
   legend(host, [
     { name: "출생아 → 입학자", color: "var(--series-1)", kind: "rect" },
     { name: `${spec.capLabel ?? "지금 입학 규모"} ${tick(cap, "man")}`, color: "var(--text-primary)", kind: "dash" },
     { name: "빈 자리", color: "var(--critical)", kind: "dash" },
+    ...(meIdx >= 0 ? [{ name: `나 (${me}년생)`, color: "var(--me)", kind: "rect" as const }] : []),
   ]);
   const box = document.createElement("div");
   box.style.position = "relative";
@@ -76,7 +81,7 @@ export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
 
   const gGap = el("g", {}, svg);
   const gBar = el("g", {}, svg);
-  const bars = born.map((b) => el("rect", { width: bw, rx: Math.min(2, bw / 3), fill: "var(--series-1)", "fill-opacity": spec.estFrom != null && b >= spec.estFrom ? 0.5 : 1 }, gBar));
+  const bars = born.map((b) => el("rect", { width: bw, rx: Math.min(2, bw / 3), fill: b === me ? "var(--me)" : "var(--series-1)", "fill-opacity": spec.estFrom != null && b >= spec.estFrom ? 0.5 : 1 }, gBar));
   const gaps = born.map(() => el("rect", { width: bw, fill: "none", stroke: "var(--critical)", "stroke-width": 1, "stroke-dasharray": "3 2" }, gGap));
 
   // 지금 입학 규모 선: 입학 연도 범위에만
@@ -84,11 +89,14 @@ export function renderBirthFlow(host: HTMLElement, spec: BirthFlowSpec) {
   el("line", { x1: X(born[0] + lag - 0.5), x2: m.l + pw, y1: capY, y2: capY, stroke: "var(--text-primary)", "stroke-width": 1.5, "stroke-dasharray": "5 3" }, svg);
 
   // 따라가는 이름표
-  const marks = (spec.marks ?? []).map((b) => {
+  // 내 출생연도 이름표를 더한다. 가까운(3년 이내) 기본 이름표는 겹치지 않게 뺀다
+  const markYears = meIdx >= 0 ? [...(spec.marks ?? []).filter((b) => Math.abs(b - me!) > 3), me!] : (spec.marks ?? []);
+  const marks = markYears.map((b) => {
     const i = born.indexOf(b);
     const g = el("g", {}, svg);
-    const ln = el("line", { stroke: "var(--text-secondary)", "stroke-width": 1 }, g);
+    const ln = el("line", { stroke: b === me ? "var(--me)" : "var(--text-secondary)", "stroke-width": 1 }, g);
     const t = el("text", { "text-anchor": "middle", class: "coh-gen-name halo" }, g);
+    if (b === me) t.style.fill = "var(--me)";
     return { i, g, ln, t };
   }).filter((mk) => mk.i >= 0);
 

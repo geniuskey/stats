@@ -5,6 +5,7 @@
 import { fmt, tick } from "./format";
 import { el, legend, makeTooltip, ttRow, placeTooltip } from "./charts";
 import { makePlayer } from "./player";
+import { getBorn } from "./born";
 
 export interface CohortSpec {
   type: "cohort";
@@ -18,6 +19,7 @@ export interface CohortSpec {
   start?: number; // 시작 연도
   speed?: number; // 1년에 걸리는 ms
   height?: number;
+  me?: boolean; // 내 출생연도 줄을 따로 칠하고 나이를 따라 붙인다
 }
 
 export function renderCohort(host: HTMLElement, spec: CohortSpec) {
@@ -37,6 +39,7 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
     { name: "여자", color: "var(--series-2)", kind: "rect" },
   ];
   if (refIdx >= 0) items.push({ name: `${spec.refYear}년`, color: "var(--text-primary)", kind: "line" });
+  if (spec.me && getBorn() != null) items.push({ name: `나 (${getBorn()}년생)`, color: "var(--me)", kind: "rect" });
   legend(host, items);
   const box = document.createElement("div");
   box.style.position = "relative";
@@ -72,6 +75,8 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
   const dimR = el("path", { fill: "var(--series-2)", "fill-opacity": gens.length ? 0.42 : 1 }, g);
   const hiL = el("path", { fill: "var(--series-1)" }, g);
   const hiR = el("path", { fill: "var(--series-2)" }, g);
+  const born = spec.me ? getBorn() : null;
+  const meP = el("path", { fill: "var(--me)" }, g);
 
   // 나이 눈금 (가운데)
   for (let a = 0; a <= 100; a += narrow ? 20 : 10) {
@@ -108,6 +113,9 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
     return { gn, gg, line, name, age };
   });
 
+  const meTxt = el("text", { x: 4, class: "label-strong halo" }, svg);
+  meTxt.style.fill = "var(--me)";
+  const meLine = el("line", { stroke: "var(--me)", "stroke-width": 1, "stroke-dasharray": "2 2" }, svg);
   const inGen = (born: number) => gens.some((gn) => born >= gn.from && born <= gn.to);
   const bar = (x: number, w: number, pos: number) => {
     if (w <= 0.05) return "";
@@ -154,13 +162,15 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
     let dL = "",
       dR = "",
       hL = "",
-      hR = "";
-    const put = (born: number | null, pos: number, vm: number, vf: number) => {
+      hR = "",
+      mP = "";
+    const put = (b: number | null, pos: number, vm: number, vf: number) => {
       const lw = S(vm),
         rw = S(vf);
       const l = bar(mid - gap - lw, lw, pos),
         r = bar(mid + gap, rw, pos);
-      if (born != null && inGen(born)) (hL += l), (hR += r);
+      if (b != null && b === born) mP += l + r;
+      else if (b != null && inGen(b)) (hL += l), (hR += r);
       else (dL += l), (dR += r);
     };
     // 100세 이상: 제자리에서 폭만 바뀐다
@@ -177,6 +187,26 @@ export function renderCohort(host: HTMLElement, spec: CohortSpec) {
     dimR.setAttribute("d", dR);
     hiL.setAttribute("d", hL);
     hiR.setAttribute("d", hR);
+    meP.setAttribute("d", mP);
+    // 내 줄: 왼쪽 끝에 나이 라벨, 줄까지 점선
+    const myPos = born != null ? years[i] + k - born : -1;
+    if (born != null && myPos >= -0.5 && myPos < NA - 1) {
+      const yc = Y(Math.max(0, myPos) + 0.5);
+      const ag = Math.max(0, years[i] - born);
+      meTxt.textContent = narrow ? `나 ${ag}세` : `나 ${ag}세 (${born}년생)`;
+      meTxt.setAttribute("y", (yc + 4).toFixed(1));
+      meTxt.removeAttribute("visibility");
+      const tw = (meTxt as SVGTextElement).getComputedTextLength?.() || 60;
+      const lx = mid - gap - S(M[i][Math.min(NA - 1, Math.max(0, Math.round(myPos)))]);
+      meLine.setAttribute("x1", (4 + tw + 4).toFixed(1));
+      meLine.setAttribute("x2", Math.max(4 + tw + 4, lx - 2).toFixed(1));
+      meLine.setAttribute("y1", yc.toFixed(1));
+      meLine.setAttribute("y2", yc.toFixed(1));
+      meLine.setAttribute("visibility", lx - 2 > 4 + tw + 8 ? "visible" : "hidden");
+    } else {
+      meTxt.setAttribute("visibility", "hidden");
+      meLine.setAttribute("visibility", "hidden");
+    }
 
     const now = years[i] + k; // 연속 시각
     for (const { gn, gg, line, name, age } of genEls) {

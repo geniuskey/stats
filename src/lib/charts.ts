@@ -5,9 +5,30 @@ import { onVisible, reduced, tween } from "./anim";
 import { makePlayer } from "./player";
 import { renderCohort, type CohortSpec } from "./cohort";
 import { renderBirthFlow, type BirthFlowSpec } from "./birthflow";
+import { getBorn } from "./born";
 import { renderArea, renderScatter, renderStack, renderRace, renderWaffle, type AreaSpec, type ScatterSpec, type StackSpec, type RaceSpec, type WaffleSpec } from "./charts-extra";
 
 export type Pt = [number, number | null];
+/**
+ * 내 출생연도 표시. 출생연도를 설정한 사람에게만 보인다.
+ * axis "year"(기본): x = 출생연도 + add (예: add 65 → 내가 65세가 되는 해)
+ * axis "age": x = refYear − 출생연도 (가로축이 나이인 그림)
+ * label 안의 {born}·{age}·{x}는 출생연도·나이·x값으로 바뀐다.
+ */
+export interface MeMark {
+  axis?: "year" | "age";
+  add?: number;
+  refYear?: number;
+  label?: string;
+}
+export function meX(me: MeMark, born: number) {
+  return me.axis === "age" ? (me.refYear ?? new Date().getFullYear()) - born : born + (me.add ?? 0);
+}
+export function meLabel(me: MeMark, born: number, fallback: string) {
+  const x = meX(me, born);
+  const age = me.axis === "age" ? x : (me.add ?? 0);
+  return (me.label ?? fallback).replace(/\{born\}/g, String(born)).replace(/\{age\}/g, String(age)).replace(/\{x\}/g, String(x));
+}
 export interface LineSeries {
   name: string;
   color: string; // CSS 색 또는 var(--series-n)
@@ -42,6 +63,7 @@ export interface LineSpec {
   legend?: boolean;
   xUnit?: string; // 툴팁 x 단위 (기본 "년")
   animate?: boolean;
+  me?: MeMark | MeMark[];
 }
 export interface PyramidSpec {
   type: "pyramid";
@@ -60,6 +82,7 @@ export interface PyramidSpec {
   refYear?: number; // 외곽선으로 고정해 둘 비교 연도
   autoplay?: boolean;
   speed?: number;
+  me?: boolean; // 연도 프레임에서 내 나이가 든 구간(5세 폭)을 보라색으로 칠한다
 }
 export interface ColumnSpec {
   type: "column";
@@ -70,6 +93,8 @@ export interface ColumnSpec {
   height?: number;
   highlight?: number[];
   animate?: boolean;
+  /** 가로축이 나이대일 때: 카테고리 i가 덮는 나이 [lo, hi]. 내 나이가 든 막대를 보라색으로 칠한다 */
+  me?: { ages: [number, number][]; refYear?: number; label?: string };
 }
 export type ChartSpec = LineSpec | PyramidSpec | ColumnSpec | AreaSpec | ScatterSpec | StackSpec | RaceSpec | WaffleSpec | CohortSpec | BirthFlowSpec;
 export type { CohortSpec, BirthFlowSpec, AreaSpec, ScatterSpec, StackSpec, RaceSpec, WaffleSpec };
@@ -315,6 +340,22 @@ export function renderLine(host: HTMLElement, spec: LineSpec) {
     const t = el("text", { x: X(mk.x), y: m.t + ph - 6, "text-anchor": "middle", class: "label" }, svg);
     t.textContent = mk.label;
   }
+  // 내 출생연도 세로선
+  const born = getBorn();
+  if (spec.me && born != null) {
+    const list = Array.isArray(spec.me) ? spec.me : [spec.me];
+    list.forEach((me, j) => {
+      const x = meX(me, born);
+      if (x < x0 || x > x1) return;
+      const px = X(x);
+      el("line", { x1: px, x2: px, y1: m.t, y2: m.t + ph, stroke: "var(--me)", "stroke-width": 1.5, "stroke-dasharray": "2 3" }, svg);
+      el("circle", { cx: px, cy: m.t + 3, r: 3.5, fill: "var(--me)" }, svg);
+      const right = px > m.l + pw * 0.75;
+      const t = el("text", { x: px + (right ? -6 : 6), y: m.t + 7 + j * 15, "text-anchor": right ? "end" : "start", class: "label-strong halo" }, svg);
+      t.style.fill = "var(--me)";
+      t.textContent = meLabel(me, born, me.axis === "age" ? "나 {age}세" : "{born}년생");
+    });
+  }
 
   // hover
   const cross = el("line", { x1: 0, x2: 0, y1: m.t, y2: m.t + ph, class: "crosshair", opacity: 0 }, svg);
@@ -388,6 +429,7 @@ export function renderPyramid(host: HTMLElement, spec: PyramidSpec) {
   ];
   const outlineName = fr ? (refIdx >= 0 ? `${spec.refYear}년` : undefined) : spec.outlineName;
   if (outlineName) items.push({ name: outlineName, color: "var(--text-primary)", kind: "line" });
+  if (spec.me && fr && getBorn() != null) items.push({ name: `내 나이대 (${getBorn()}년생)`, color: "var(--me)", kind: "rect" });
   legend(host, items);
   const box = document.createElement("div");
   box.style.position = "relative";
@@ -532,7 +574,26 @@ export function renderPyramid(host: HTMLElement, spec: PyramidSpec) {
       stats.appendChild(d);
     }
   };
+  // 내 나이 구간 (구간 폭 = 100 / (n-1), 마지막은 그 이상)
+  const meBorn = spec.me ? getBorn() : null;
+  const step = 100 / Math.max(1, n - 1);
+  const meTxt = meBorn != null ? el("text", { x: 4, class: "label-strong halo" }, svg) : null;
+  if (meTxt) meTxt.style.fill = "var(--me)";
+  const paintMe = (yr: number) => {
+    if (meBorn == null) return;
+    const age = yr - meBorn;
+    const gi = age < 0 ? -1 : Math.min(n - 1, Math.floor(age / step));
+    for (let g = 0; g < n; g++) {
+      L[g].setAttribute("fill", g === gi ? "var(--me)" : "var(--series-1)");
+      R[g].setAttribute("fill", g === gi ? "var(--me)" : "var(--series-2)");
+    }
+    if (gi < 0) return void meTxt!.setAttribute("visibility", "hidden");
+    meTxt!.removeAttribute("visibility");
+    meTxt!.setAttribute("y", String(m.t + (n - 1 - gi) * bh + bh / 2 + 4));
+    meTxt!.textContent = `나 ${age}세`;
+  };
   const frame = (i: number, animate: boolean) => {
+    paintMe(fr.years[i]);
     host.dataset.frame = String(fr.years[i]);
     label = `${fr.years[i]}년`;
     yearTxt!.textContent = String(fr.years[i]);
@@ -547,6 +608,7 @@ export function renderPyramid(host: HTMLElement, spec: PyramidSpec) {
   if (anim) {
     // 첫 등장: 0에서 시작 프레임까지 자라기
     const i = startIdx;
+    paintMe(fr.years[i]);
     host.dataset.frame = String(fr.years[i]);
     label = `${fr.years[i]}년`;
     yearTxt!.textContent = String(fr.years[i]);
@@ -593,6 +655,9 @@ export function renderColumn(host: HTMLElement, spec: ColumnSpec) {
   const bw = Math.min(24, slot - 2);
   const tt = makeTooltip(box);
   const every = Math.ceil(n / Math.max(2, Math.floor(pw / 48)));
+  const born = spec.me ? getBorn() : null;
+  const myAge = born != null ? (spec.me!.refYear ?? new Date().getFullYear()) - born : null;
+  const meIdx = myAge != null ? spec.me!.ages.findIndex(([a, b]) => myAge >= a && myAge <= b) : -1;
   spec.categories.forEach((c, i) => {
     const v = spec.values[i];
     const cx = m.l + slot * i + slot / 2;
@@ -601,7 +666,12 @@ export function renderColumn(host: HTMLElement, spec: ColumnSpec) {
         y1 = Y(v);
       const top = Math.min(y0, y1),
         h = Math.max(Math.abs(y0 - y1), 1);
-      const color = spec.colors?.[i] ?? (spec.highlight && !spec.highlight.includes(i) ? "var(--neutral-series)" : "var(--series-1)");
+      const color = i === meIdx ? "var(--me)" : spec.colors?.[i] ?? (spec.highlight && !spec.highlight.includes(i) ? "var(--neutral-series)" : "var(--series-1)");
+      if (i === meIdx) {
+        const t = el("text", { x: cx, y: top - 5, "text-anchor": "middle", class: "label-strong halo" }, svg);
+        t.style.fill = "var(--me)";
+        t.textContent = (spec.me!.label ?? "나 {age}세").replace("{age}", String(myAge));
+      }
       const r = Math.min(4, h, bw / 2);
       const x = cx - bw / 2;
       const d =
@@ -662,6 +732,13 @@ if (typeof window !== "undefined") {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => registry.forEach((s, h) => (!h.isConnected ? registry.delete(h) : NO_RERENDER.has(s.type) ? null : render(h, s))));
   });
+}
+
+/** 출생연도가 바뀌면 그것을 쓰는 그림(me 표시가 있는 spec)만 다시 그린다 */
+if (typeof window !== "undefined") {
+  window.addEventListener("born:change", () =>
+    registry.forEach((s, h) => (!h.isConnected ? registry.delete(h) : "me" in s && (s as any).me ? render(h, s) : null)),
+  );
 }
 
 /** 페이지의 [data-chart] 요소를 자동으로 그린다 */

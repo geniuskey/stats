@@ -225,6 +225,8 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
       <Stat label="서울 PIR (84㎡ 가격 ÷ 연소득)" value={d1(seoul.current.pir)} unit="년" note={`${fy}년 ${d1(seoulFirst.pir)}년 · 전국 ${d1(nat.current.pir)}년`} />
       <Stat label="서울, 1년치 소득으로 사는 면적" value={d1(seoul.current.pyeong)} unit="평" note={`${fy}년 ${d1(seoulFirst.pyeong)}평 · 전용면적 기준`} />
     </div>
+    <div class="me-box" id="me-box" hidden></div>
+    <script type="application/json" id="me-data" set:html={JSON.stringify({ cy, loans: D.loans.byAge, seoul: { hist: seoul.hist, cur: seoul.current }, nat: { hist: nat.hist, cur: nat.current } })} />
 
     <section class="section">
       <h2>{cy - fy}년 사이 무엇이 달라졌나</h2>
@@ -459,6 +461,41 @@ const pctTxt = (v: number | null | undefined, d = 0) => (v == null ? "–" : `${
     </section>
   </div>
 </Base>
+
+<script>
+  import { meBox, pageJson } from "../../lib/born";
+  import { fmt } from "../../lib/format";
+  // 내 출생연도: 30세였던 해의 집값·PIR과 지금 비교, 내 나이대 차주당 대출 잔액
+  const D = pageJson("me-data");
+  const eok = (man: number) => `${(man / 1e4).toFixed(1)}억`;
+  meBox(document.getElementById("me-box"), (b) => {
+    const age = D.cy - b;
+    if (age < 15) return null;
+    const y30 = b + 30;
+    const s30 = D.seoul.hist[y30],
+      n30 = D.nat.hist[y30];
+    const tiles = [];
+    let lead = "";
+    if (s30 && y30 < D.cy) {
+      tiles.push({ k: `30세였던 ${y30}년 서울 84㎡`, v: eok(s30.price84), n: `지금 ${eok(D.seoul.cur.price84)} (${fmt(D.seoul.cur.price84 / s30.price84 - 1, "pctS")})` });
+      tiles.push({ k: `${y30}년 서울 PIR`, v: `${fmt(s30.pir, "dec1")}년`, n: `지금 ${fmt(D.seoul.cur.pir, "dec1")}년 · 전국 ${fmt(n30.pir, "dec1")} → ${fmt(D.nat.cur.pir, "dec1")}년` });
+      lead = `${b}년생이 30세였던 ${y30}년, 서울 84㎡ 아파트는 평균 <strong>${eok(s30.price84)}</strong>, 가구 연소득 ${fmt(s30.pir, "dec1")}년치였습니다. 지금은 ${eok(D.seoul.cur.price84)}, ${fmt(D.seoul.cur.pir, "dec1")}년치입니다.`;
+    } else if (y30 >= D.cy) {
+      tiles.push({ k: "30세 되는 해", v: `${y30}년`, n: `${y30 - D.cy}년 남음` });
+      tiles.push({ k: "지금 서울 84㎡", v: eok(D.seoul.cur.price84), n: `가구 연소득 ${fmt(D.seoul.cur.pir, "dec1")}년치 · 전국 ${fmt(D.nat.cur.pir, "dec1")}년치` });
+      lead = `${b}년생은 ${y30}년에 30세가 됩니다. 지금 서울 84㎡ 아파트는 <strong>${eok(D.seoul.cur.price84)}</strong>, 가구 연소득 ${fmt(D.seoul.cur.pir, "dec1")}년치입니다. 첫 집을 살 무렵까지 소득이 집값보다 빨리 오를지가 관건입니다.`;
+    } else {
+      lead = `${b}년생이 30세였던 ${y30}년은 이 자료(2016년~)보다 이전입니다. 지금 서울 84㎡ 아파트는 ${eok(D.seoul.cur.price84)}, 가구 연소득 ${fmt(D.seoul.cur.pir, "dec1")}년치입니다.`;
+    }
+    const band = age >= 20 && age < 50 ? `${Math.floor(age / 10) * 10}대` : null;
+    const ln = band ? (D.loans[band] as Record<string, number>) : null;
+    if (ln) {
+      const ly = Object.keys(ln).at(-1)!;
+      tiles.push({ k: `${band} 차주당 가계대출`, v: `${eok(ln[ly])}원`, n: `${ly}년 · 전체 평균 ${eok(D.loans["전체"][ly])}원` });
+    }
+    return { lead, tiles, foot: "가구 연소득은 가계금융복지조사 지역 평균, 가격은 최근 12개월 실거래 평균입니다." };
+  });
+</script>
 
 <style>
   :global(.grid > *),

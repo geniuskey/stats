@@ -227,6 +227,7 @@ const simJson = JSON.stringify({
       <Stat label="세후 실질 월급" value={pct(H.netRealChange2015, 1, true)} note="세금·4대보험 근로자 부담분 차감 후" />
       <Stat label={`세금+보험료 비중 ${BASE}`} value={pct(H.burden2025, 1)} note={`${REF}년 ${pct(H.burden2015, 1)}에서 상승 (평균 월급 기준)`} tone="down" />
     </div>
+    <div class="me-box" id="me-box" hidden></div>
 
     <section class="section">
       <h2>같은 월급, 다른 잣대</h2>
@@ -268,6 +269,9 @@ const simJson = JSON.stringify({
         <label class="field">연도
           <select id="c-year"></select>
         </label>
+        <div class="field" id="c-me" hidden>내 연도
+          <div class="seg seg-sm" id="c-me-btns" role="group" aria-label="내 출생연도로 연도 고르기"></div>
+        </div>
         <label class="field">그해 연봉 (만원)
           <input id="c-pay" type="number" inputmode="numeric" min="100" max="100000" step="100" value="3000" />
         </label>
@@ -391,6 +395,7 @@ const simJson = JSON.stringify({
 
 <script>
   import { mount } from "../../lib/charts";
+  import { meBox, onBorn } from "../../lib/born";
   type Calc = {
     c: { cpi: Record<string, number>; living: Record<string, number>; wage: Record<string, number>; taxTable: Record<string, Record<string, number>> };
     last: number;
@@ -485,6 +490,44 @@ const simJson = JSON.stringify({
       pay,
     );
   }
+  // 내 출생연도로 연도 바로 고르기: 태어난 해 · 20세 · 27세(첫 직장 무렵)
+  const meWrap = document.getElementById("c-me")!;
+  const meBtns = document.getElementById("c-me-btns")!;
+  onBorn((b) => {
+    meBtns.innerHTML = "";
+    const picks = b == null ? [] : ([[b, "태어난 해"], [b + 20, "20세"], [b + 27, "27세"]] as [number, string][]).filter(([y]) => years.includes(y));
+    meWrap.hidden = !picks.length;
+    for (const [y, t] of picks) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = `${t} ${y}`;
+      btn.setAttribute("aria-pressed", String(yearSel.value === String(y)));
+      btn.addEventListener("click", () => {
+        yearSel.value = String(y);
+        meBtns.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === btn)));
+        update();
+      });
+      meBtns.appendChild(btn);
+    }
+  });
+  yearSel.addEventListener("change", () => meBtns.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x.textContent!.endsWith(yearSel.value)))));
+  // 내 출생연도 상자: 태어난 해·20세 이후 물가와 평균 월급이 몇 배가 됐나
+  meBox(document.getElementById("me-box"), (b) => {
+    const r = (o: Record<string, number>, y: number) => (o[y] ? o[LAST] / o[y] : null);
+    const tiles = [];
+    const born = r(C.cpi, b),
+      y20 = r(C.cpi, b + 20),
+      w20 = r(C.wage, b + 20);
+    if (born) tiles.push({ k: `태어난 ${b}년 이후 물가`, v: `${born.toFixed(1)}배`, n: `그때 1만원 = 지금 ${born.toFixed(1)}만원` });
+    if (y20 && b + 20 < D.last) tiles.push({ k: `20세였던 ${b + 20}년 이후 물가`, v: `${y20.toFixed(2)}배`, n: w20 ? `평균 월급은 ${w20.toFixed(2)}배` : "임금 통계는 2011년부터" });
+    const y27 = r(C.living, b + 27);
+    if (y27 && b + 27 < D.last) tiles.push({ k: `27세(${b + 27}년) 이후 장바구니 물가`, v: `${y27.toFixed(2)}배`, n: "생활물가지수 기준" });
+    if (!tiles.length) return null;
+    const lead = born
+      ? `${b}년에 1만원이던 물건은 지금 평균 <strong>${born.toFixed(1)}만원</strong>입니다(소비자물가 기준).${w20 && y20 ? ` 20세였던 ${b + 20}년과 비교하면 물가는 ${y20.toFixed(2)}배, 평균 월급은 ${w20.toFixed(2)}배로 ${w20 > y20 ? "월급이 조금 더 올랐습니다" : "물가가 더 올랐습니다"}.` : ""}`
+      : `${b + 20}년 이후 물가는 ${y20!.toFixed(2)}배가 됐습니다.`;
+    return { lead, tiles, foot: "아래 '그때 그 연봉' 계산기에서 내 연도 버튼으로 바로 계산해 볼 수 있습니다." };
+  });
   yearSel.addEventListener("change", update);
   payIn.addEventListener("input", update);
 

@@ -44,7 +44,7 @@ const popTable = {
 };
 
 const ageSpec = {
-  type: "line" as const, yFormat: "pct" as const, projStart: by, height: 300,
+  type: "line" as const, yFormat: "pct" as const, projStart: by, height: 300, me: { add: 65, label: "내가 65세" },
   series: [
     { name: "65세 이상", color: "var(--series-2)", data: field("mid", "oldShare"), label: true },
     { name: "15~64세", color: "var(--series-1)", data: field("mid", "workShare"), label: true },
@@ -62,6 +62,7 @@ const supportSpec = {
   bands: [{ name: "저위~고위", color: "var(--series-1)", lower: projOnly("low", "workPerOld"), upper: projOnly("high", "workPerOld") }],
   hLines: [{ y: 2, label: "2명" }, { y: 1, label: "1명" }],
   zeroBased: true,
+  me: { add: 65, label: "내가 65세" },
 };
 
 const B = d.births;
@@ -109,7 +110,7 @@ const ageStack = {
 };
 // 세대 이동 피라미드 (1세 단위, 중위): 이름 붙은 세대가 해마다 한 줄씩 올라간다
 const cohort = {
-  type: "cohort" as const, ...d.cohortFrames, refYear: by, start: 2015, speed: 520, height: 420,
+  type: "cohort" as const, ...d.cohortFrames, refYear: by, start: 2015, speed: 520, height: 420, me: true,
   generations: [
     { name: "1차 베이비붐", short: "1차 붐", from: 1955, to: 1963 },
     { name: "2차 베이비붐", short: "2차 붐", from: 1968, to: 1974 },
@@ -142,6 +143,8 @@ const sidoMetrics = [
   { key: "age", label: "중위연령", format: "age" as const, kind: "seq-warm" as const, breaks: [42, 45, 48, 51, 54, 57, 60], desc: "주민을 나이순으로 세웠을 때 한가운데 사람의 나이.",
     frames: { labels: mapYears, values: mapYears.map((y) => Object.fromEntries(d.sidos.map((s: any) => [s.id, s.series[y].medianAge]))), start: mapYears.indexOf(2050), projFrom: mapYears.indexOf(by + 1) } },
 ];
+// 내 출생연도 상자: 해마다 연령 구조 지표 (피라미드 1세 자료는 그림 spec에서 읽는다)
+const meJson = JSON.stringify({ by, end, nat: Object.fromEntries(yrs.map((y) => [y, { oldShare: nat.mid[y].oldShare, workPerOld: nat.mid[y].workPerOld, medianAge: nat.mid[y].medianAge }])) });
 const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((y) => y >= by).map((y) => [y, nat.mid[y].total])), groups: P.labels }).replace(/</g, "\\u003c");
 
 ---
@@ -163,6 +166,8 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
       <Stat label="중위연령" value={`${h.medianAge2025} → ${h.medianAge2050}`} unit="세" note="국민을 나이순으로 세웠을 때 한가운데" />
       <Stat label="85세 이상" value={`${compact(h.old85_2025)} → ${compact(h.old85_2050)}`} unit="명" note={`${(h.old85_2050 / h.old85_2025).toFixed(1)}배`} />
     </div>
+    <div class="me-box" id="me-box" hidden></div>
+    <script type="application/json" id="me-data" set:html={meJson} />
 
     <section class="section">
       <h2>실제 출생은 공식 추계의 '{scenName[closest]}' 시나리오를 따라가는 중</h2>
@@ -269,6 +274,45 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
     </section>
   </div>
 </Base>
+
+<script>
+  import { meBox, pageSpec, pageJson, ageAt } from "../../lib/born";
+  import { olderShare } from "../../lib/me";
+  import { fmt } from "../../lib/format";
+  // 내 출생연도: 지금·2050년의 내 나이와 나보다 나이 많은 사람 비율, 동갑 인구, 내가 65세가 되는 해
+  const MD = pageJson("me-data");
+  const C = pageSpec("cohort");
+  meBox(document.getElementById("me-box"), (b) => {
+    if (!C) return null;
+    const yi = (y: number) => C.years.indexOf(y);
+    const tot = (y: number) => C.m[yi(y)].map((v: number, a: number) => v + C.f[yi(y)][a]);
+    const aNow = ageAt(b, MD.by),
+      aEnd = ageAt(b, MD.end);
+    if (aNow < 0) return null;
+    const olderNow = olderShare(tot(MD.by), 1, aNow),
+      olderEnd = olderShare(tot(MD.end), 1, aEnd);
+    const peersNow = aNow <= 99 ? tot(MD.by)[aNow] : NaN;
+    const peersEnd = aEnd <= 99 ? tot(MD.end)[aEnd] : NaN;
+    const y65 = b + 65;
+    const r65 = MD.nat[y65];
+    const tiles = [
+      { k: `${MD.by}년 말 나이`, v: `${aNow}세`, n: `나보다 나이 많은 사람 ${fmt(olderNow, "pct")}` },
+      { k: `${MD.end}년 나이`, v: aEnd <= 100 ? `${aEnd}세` : "–", n: aEnd <= 100 ? `나보다 나이 많은 사람 ${fmt(olderEnd, "pct")}` : "" },
+      { k: `동갑(${b}년생) 인구`, v: isFinite(peersNow) ? `${fmt(peersNow, "man")}명` : "–", n: isFinite(peersEnd) ? `${MD.end}년 ${fmt(peersEnd, "man")}명 (${fmt(peersEnd / peersNow - 1, "pctS")})` : "" },
+      r65
+        ? { k: `내가 65세 되는 ${y65}년`, v: `고령자 ${fmt(r65.oldShare, "pct")}`, n: `고령자 1명당 20~64세 ${fmt(r65.workPerOld, "dec1")}명` }
+        : y65 < 2015
+          ? { k: "65세", v: `${y65}년에 지남`, n: `지금 고령자 비중 ${fmt(MD.nat[MD.by].oldShare, "pct")}` }
+          : { k: "65세 되는 해", v: `${y65}년`, n: `${MD.end}년 이후라 이 추계 밖입니다` },
+    ];
+    const mid = MD.nat[MD.end].medianAge;
+    const lead =
+      aEnd <= 100
+        ? `${b}년생은 ${MD.by}년 말 <strong>${aNow}세</strong>, 국민을 나이순으로 세우면 ${olderNow > 0.5 ? "젊은 쪽 절반" : "나이 많은 쪽 절반"}에 있습니다. ${MD.end}년 ${aEnd}세가 되면 나보다 나이 많은 사람은 <strong>${fmt(olderEnd, "pct")}</strong>로 ${olderEnd > olderNow ? "오히려 늘어납니다. 내 아래로 들어오는 세대가 적기 때문입니다" : "줄어듭니다"}. 그해 중위연령은 ${mid}세입니다.`
+        : `${b}년생은 ${MD.by}년 말 ${aNow}세입니다.`;
+    return { lead, tiles, foot: `피라미드에서 보라색 줄이 ${b}년생입니다. ▶를 누르면 내 줄이 해마다 한 칸씩 올라갑니다. ${MD.by + 1}년부터 자체 추계 중위.` };
+  });
+</script>
 
 <script>
   import { simulate } from "../../lib/popsim";

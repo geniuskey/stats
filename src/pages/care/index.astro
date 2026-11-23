@@ -51,12 +51,16 @@ const demandSpec = {
   ],
   hLines: [{ y: 1, label: `${by} = 1` }],
   projStart: by,
+  me: { add: 75, label: "내가 75세" },
 };
 const costSpec = {
   type: "column" as const, yFormat: "won" as const, height: 240,
   categories: m.costLabels, values: m.costWeights,
   colors: m.costLabels.map((_: string, i: number) => (i >= 7 ? "var(--series-2)" : "var(--series-1)")),
+  me: { ages: m.costLabels.map((_: string, i: number) => [i * 10, i === 8 ? 200 : i * 10 + 9]) as [number, number][], refYear: m.costYear },
 };
+// 내 출생연도 상자
+const meJson = JSON.stringify({ by, costYear: m.costYear, cost: m.costWeights, labels: m.costLabels, old75: nat.old75, beds: h.beds, bedsPer100: h.bedsPer100 });
 const demandTable = {
   headers: ["연도", "총인구", "75세 이상", "0~9세", "의료 수요 지수"],
   rows: years.map((y) => [String(y), int(nat.pop[String(y)]), int(nat.old75[String(y)]), int(nat.kids[String(y)]), (val(nat.demandIdx, y) ?? 0).toFixed(3)]),
@@ -130,6 +134,8 @@ const demBars = (key: "top" | "bottom") => {
       <Stat label="더 필요한 요양보호사 (2035)" value={`+${compact(h.carersGap2035)}`} unit="명" note={`지금 ${compact(h.carers)}명 (장기요양기관 종사)`} tone="down" />
       <Stat label="의료 수요 (2045)" value={pct(h.demand2045 - 1, 0, true)} note={`인구는 ${pct(h.pop2045, 0, true)} · 시군구 ${h.demandUp2045}곳에서 증가`} tone="up" />
     </div>
+    <div class="me-box" id="me-box" hidden></div>
+    <script type="application/json" id="me-data" set:html={meJson} />
 
     <section class="section grid grid-2">
       <Chart spec={costSpec} title="나이가 들수록 진료비는 가파르게 는다" sub={`연령대별 1인당 연간 건강보험 진료비 (${m.costYear}년, 전국)`} note="연령대별 진료비 ÷ 같은 연령대 주민등록 인구." source={[SRC.cost, SRC.pop]} />
@@ -250,6 +256,31 @@ const demBars = (key: "top" | "bottom") => {
     </section>
   </div>
 </Base>
+<script>
+  import { meBox, pageJson } from "../../lib/born";
+  import { fmt } from "../../lib/format";
+  // 내 출생연도: 내 나이대 1인당 진료비, 80세 이후와 비교, 내가 75세가 되는 해의 75세 이상 인구
+  const D = pageJson("me-data");
+  const now = new Date().getFullYear();
+  meBox(document.getElementById("me-box"), (b) => {
+    const age = now - b;
+    const band = (a: number) => Math.min(8, Math.floor(Math.max(0, a) / 10));
+    const mine = D.cost[band(age)] as number,
+      old = D.cost[8] as number;
+    const tiles = [{ k: `내 나이대(${D.labels[band(age)]}) 1인당 진료비`, v: `연 ${fmt(mine / 1e4, "int")}만원`, n: `${D.costYear}년 건강보험 기준` }];
+    if (band(age) < 8) tiles.push({ k: `80세 이상이 되는 ${b + 80}년`, v: `${(old / mine).toFixed(1)}배`, n: `80세 이상 1인당 연 ${fmt(old / 1e4, "int")}만원 (지금 가격)` });
+    const y75 = b + 75;
+    const o = D.old75[y75] as number | undefined;
+    if (o) tiles.push({ k: `내가 75세 되는 ${y75}년`, v: `75세+ ${fmt(o, "man")}명`, n: `지금(${D.by}) ${fmt(D.old75[D.by], "man")}명의 ${(o / D.old75[D.by]).toFixed(1)}배` });
+    else if (y75 > D.by) tiles.push({ k: "75세 되는 해", v: `${y75}년`, n: "이 추계(2045년까지) 밖입니다" });
+    else tiles.push({ k: "75세 이상 인구", v: `${fmt(D.old75[D.by], "man")}명`, n: `${D.by}년, 그중 한 명입니다` });
+    const lead =
+      band(age) < 8
+        ? `${b}년생의 나이대는 지금 1인당 연 <strong>${fmt(mine / 1e4, "int")}만원</strong>을 진료비로 씁니다. 80세를 넘기면 같은 가격 기준으로 ${(old / mine).toFixed(1)}배가 됩니다.${o ? ` 내가 75세가 되는 ${y75}년에는 75세 이상이 ${fmt(o, "man")}명으로 지금의 ${(o / D.old75[D.by]).toFixed(1)}배라 요양 자리 경쟁도 그만큼 커집니다.` : ""}`
+        : `${b}년생은 80세 이상으로 1인당 진료비가 가장 많은 나이대(연 ${fmt(old / 1e4, "int")}만원)입니다.`;
+    return { lead, tiles, foot: "진료비 그림의 보라색 막대가 내 나이대, 수요 그림의 보라색 선이 내가 75세가 되는 해입니다." };
+  });
+</script>
 <script>
   const table = document.getElementById("sgg-table") as HTMLTableElement;
   const tbody = table.tBodies[0];

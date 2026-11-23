@@ -54,7 +54,7 @@ const yoySpec = {
 // 2) 연간 출생아 + 올해·내년
 const ann = d.annual.births;
 const annualSpec = {
-  type: "line" as const, yFormat: "man" as const, height: 340, projStart: LA,
+  type: "line" as const, yFormat: "man" as const, height: 340, projStart: LA, me: { label: "{born}년생" },
   series: [
     { name: "출생아 (확정)", color: "var(--series-1)", data: pts(ann, 1990), label: false },
     { name: "나우캐스트·예측", color: "var(--series-1)", data: [[LA, ann[String(LA)]], [year, h.births], [nextYear, h.next]] as [number, number][], dash: true, label: true },
@@ -63,7 +63,7 @@ const annualSpec = {
 };
 const tfr = d.annual.tfr;
 const tfrSpec = {
-  type: "line" as const, yFormat: "dec2" as const, height: 340, projStart: LA, zeroBased: false,
+  type: "line" as const, yFormat: "dec2" as const, height: 340, projStart: LA, zeroBased: false, me: { label: "{born}년생" },
   series: [
     { name: "합계출산율 (확정)", color: "var(--series-3)", data: pts(tfr, 1990), label: false },
     { name: `${year} 나우캐스트`, color: "var(--series-3)", data: [[LA, tfr[String(LA)]], [year, h.tfr]] as [number, number][], dash: true, label: true },
@@ -71,6 +71,8 @@ const tfrSpec = {
   bands: [{ name: "추정 범위", color: "var(--series-3)", lower: [[LA, tfr[String(LA)]], [year, h.tfrLo]] as [number, number][], upper: [[LA, tfr[String(LA)]], [year, h.tfrHi]] as [number, number][] }],
   hLines: [{ y: 2.1, label: "인구 유지 수준 2.1" }],
 };
+// 내 출생연도 상자
+const meJson = JSON.stringify({ year, LA, ann, tfr, mar: d.annual.marriages, births: h.births, tfrNow: h.tfr });
 const annYears = [2000, 2010, 2015, 2020, 2023, 2024, LA];
 const annualTable = {
   headers: ["연도", "출생아", "합계출산율", "혼인"],
@@ -149,6 +151,8 @@ const log = d.log as any[];
       <Stat label={`1~${M}월 누계`} value={compact(h.ytd)} unit="명" note={`작년 같은 기간 ${compact(h.ytdPrev)}명 (${pct(h.ytd / h.ytdPrev - 1, 1, true)})`} />
       <Stat label={`${nextYear}년 출생아 (예측)`} value={man(h.next)} unit="명" note={`${pct(h.nextChange, 1, true)} · 범위 ${man(h.nextLo)}~${man(h.nextHi)}`} tone={h.nextChange >= 0 ? "up" : "down"} />
     </div>
+    <div class="me-box" id="me-box" hidden></div>
+    <script type="application/json" id="me-data" set:html={meJson} />
 
     <section class="section">
       <h2>{yoy.every((v) => v != null && v > 0) ? "올해는 매달 작년보다 많습니다" : "월별로 보면"}</h2>
@@ -249,3 +253,30 @@ const log = d.log as any[];
     </section>
   </div>
 </Base>
+
+<script>
+  import { meBox, pageJson } from "../../lib/born";
+  import { fmt } from "../../lib/format";
+  // 내 출생연도: 내가 태어난 해의 출생아·합계출산율을 올해와 비교
+  const D = pageJson("me-data");
+  meBox(document.getElementById("me-box"), (b) => {
+    const mine = D.ann[b] as number | undefined;
+    const years = Object.keys(D.ann).map(Number);
+    if (!mine) return { lead: `출생아 연간 자료는 ${years[0]}년부터라 ${b}년은 비교할 수 없습니다. ${years[0]}년 출생아는 ${fmt(D.ann[years[0]], "man")}명, 올해 추정은 ${fmt(D.births, "man")}명입니다.` };
+    const rank = years.filter((y) => D.ann[y] > mine).length + 1;
+    const ratio = mine / D.births;
+    const tiles = [
+      { k: `${b}년 출생아`, v: `${fmt(mine, "man")}명`, n: `${years[0]}~${D.LA}년 ${years.length}개 해 중 ${rank}번째로 많음` },
+      { k: `올해(${D.year}) 추정과 비교`, v: `${ratio.toFixed(2)}배`, n: `올해 ${fmt(D.births, "man")}명` },
+    ];
+    if (D.tfr[b] != null) tiles.push({ k: `${b}년 합계출산율`, v: `${D.tfr[b].toFixed(2)}명`, n: `올해 추정 ${D.tfrNow}명` });
+    if (D.mar[b - 1] != null) tiles.push({ k: `전년(${b - 1}) 혼인`, v: `${fmt(D.mar[b - 1], "man")}건`, n: "출생은 전년 혼인을 따라갑니다" });
+    const lead =
+      ratio > 1.05
+        ? `${b}년에는 아이가 <strong>${fmt(mine, "man")}명</strong> 태어났습니다. 올해 태어나는 아이의 ${ratio.toFixed(1)}배입니다. 내 동갑 ${ratio.toFixed(1)}명이 있던 자리를 올해는 1명이 채우는 셈입니다.`
+        : ratio < 0.95
+          ? `${b}년에는 아이가 <strong>${fmt(mine, "man")}명</strong> 태어났습니다. 올해 추정(${fmt(D.births, "man")}명)보다 적은 해입니다.`
+          : `${b}년에는 아이가 <strong>${fmt(mine, "man")}명</strong> 태어나 올해 추정과 비슷합니다.`;
+    return { lead, tiles, foot: "연간 출생아·합계출산율 그림의 보라색 선이 내가 태어난 해입니다." };
+  });
+</script>
