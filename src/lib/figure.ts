@@ -32,6 +32,9 @@ function specRows(fig: HTMLElement): Row[] | null {
   if (s.type === "scatter") return [["이름", s.xLabel, s.yLabel, ...(s.rLabel ? [s.rLabel] : [])], ...s.points.map((p: any) => [p.label, p.x, p.y, ...(s.rLabel ? [p.r ?? null] : [])])];
   if (s.type === "race") return [["구분", ...s.names], ...s.frames.map((f: any) => [f.label, ...f.values])];
   if (s.type === "waffle") return [["구분", ...s.groups.map((g: any) => `${g.name}(%)`)], ...s.frames.map((f: any) => [f.label, ...f.values])];
+  if (s.type === "birthflow") {
+    return [["출생연도", "출생아", "입학 연도", "입학자(실측)·입학 수요(추계)", "지금 입학 규모"], ...s.born.map((b: number, i: number) => [b, s.births[i], b + s.lag, s.landing[i], s.cap])];
+  }
   if (s.type === "cohort") {
     const rows: Row[] = [];
     s.years.forEach((y: number, i: number) => s.m[i].forEach((v: number, a: number) => rows.push([y, a === s.m[i].length - 1 ? "100세 이상" : a, v, s.f[i][a]])));

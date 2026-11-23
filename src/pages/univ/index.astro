@@ -9,6 +9,7 @@ import BarList from "../../components/BarList.astro";
 import KoreaMap from "../../components/KoreaMap.astro";
 import PageMeta from "../../components/PageMeta.astro";
 import data from "../../data/univ.json";
+import birthsData from "../../data/births.json";
 import { pts, val } from "../../lib/series";
 import { int, compact, pct } from "../../lib/format";
 
@@ -106,8 +107,19 @@ const capShock = (() => {
   return c.reduce((a: number, s: any) => a + s.change, 0) / c.length;
 })();
 const bt = d.backtest.regional as any[];
+// 출생 → 입학 흐름: Y년 입학생 = Y−1년 말 18세 = Y−19년생
+const LAG = 19;
+const B = birthsData as any;
+const bornYears = Array.from({ length: B.meta.year + 1 - 1996 + 1 }, (_, i) => 1996 + i); // 1996년생 ~ 내년생(나우캐스트 예측)
+const birthOf = (y: number) => (B.annual.births[y] ?? (y === B.meta.year ? B.headline.births : y === B.meta.year + 1 ? B.headline.next : null)) as number;
+const landOf = (Y: number) => (Y <= L ? n.entrantsTotal[Y] : val(n.demand.mid, Y)) as number;
+const flow = {
+  type: "birthflow" as const, lag: LAG, cap: h.cap, actualTo: L, estFrom: B.meta.lastAnnual + 1, marks: [2007, 2017],
+  born: bornYears, births: bornYears.map(birthOf), landing: bornYears.map((b) => landOf(b + LAG)), speed: 650, height: 340,
+};
 // 그림 출처 (KOSIS 표 ID · 작성기관)
 const SRC = {
+  births: "통계청 인구동향조사 출생아 수(KOSIS DT_1B8000G) · 올해·내년은 숫자 너머 출생아 나우캐스트",
   ent: "교육부·한국교육개발원 교육기본통계 대학·교육대·산업대·전문대 개황 입학자수(KOSIS DT_1963003_013, _012, _016, _011)",
   grad: "교육기본통계 고등학교 개황 졸업자수(KOSIS DT_1963003_004)",
   pop: "행정안전부 주민등록인구 1세별(KOSIS DT_1B04006) + 숫자 너머 인구 추계",
@@ -136,6 +148,12 @@ const ratioNote = `입학 수요 = 18세 인구(전년 말) × 18세 1명당 입
       <Stat label="2040년 빈 자리" value={compact(h.empty2040)} unit="개" note={`범위 ${compact(h.empty2040Range[0])}~${compact(h.empty2040Range[1])}`} tone="down" />
       <Stat label="채움률 90% 아래" value={`${h.first90}년`} note={`70% 아래 ${h.first70 ?? "–"}년 · 가장 적은 해 ${h.minYear}년`} />
     </div>
+
+    <section class="section" id="flow">
+      <h2>태어난 아이가 {LAG}년 뒤 대학 문 앞에 선다</h2>
+      <p class="section-desc">▶를 누르면 해마다 태어난 아이 수가 {LAG}년 오른쪽으로 옮겨 가 대학 입학 연도에 도착합니다. {L}년 신입생은 {L - LAG}년생입니다. {2017}년부터 출생아가 40만 명 아래로 떨어진 세대가 {2017 + LAG}년부터 입학하면서, 지금 입학 규모 선 아래로 빈 자리(점선)가 벌어집니다.</p>
+      <Chart spec={flow} title={`출생아 ${bornYears[0]}~${bornYears.at(-1)}년생 → 대학 입학 ${bornYears[0] + LAG}~${bornYears.at(-1)! + LAG}년`} sub={`막대 높이는 출생아에서 입학자로 바뀝니다. ${L}년까지는 실제 입학자, 이후는 입학 수요(기준 시나리오)`} note={`입학 수요 = 18세 인구 × 18세 1명당 입학자 ${ratio.toFixed(2)}. 입학자에는 재수생·성인 학습자·유학생이 섞여 있어 출생아보다 많을 수 있습니다. ${B.meta.year}·${B.meta.year + 1}년 출생아(옅은 막대)는 추정치입니다.`} source={[SRC.births, SRC.ent, SRC.pop]} />
+    </section>
 
     <section class="section">
       <h2>자리는 그대로, 사람은 반으로</h2>

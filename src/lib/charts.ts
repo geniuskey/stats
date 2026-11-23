@@ -4,6 +4,7 @@ import { fmt, tick, type Fmt } from "./format";
 import { onVisible, reduced, tween } from "./anim";
 import { makePlayer } from "./player";
 import { renderCohort, type CohortSpec } from "./cohort";
+import { renderBirthFlow, type BirthFlowSpec } from "./birthflow";
 import { renderArea, renderScatter, renderStack, renderRace, renderWaffle, type AreaSpec, type ScatterSpec, type StackSpec, type RaceSpec, type WaffleSpec } from "./charts-extra";
 
 export type Pt = [number, number | null];
@@ -70,8 +71,8 @@ export interface ColumnSpec {
   highlight?: number[];
   animate?: boolean;
 }
-export type ChartSpec = LineSpec | PyramidSpec | ColumnSpec | AreaSpec | ScatterSpec | StackSpec | RaceSpec | WaffleSpec | CohortSpec;
-export type { CohortSpec, AreaSpec, ScatterSpec, StackSpec, RaceSpec, WaffleSpec };
+export type ChartSpec = LineSpec | PyramidSpec | ColumnSpec | AreaSpec | ScatterSpec | StackSpec | RaceSpec | WaffleSpec | CohortSpec | BirthFlowSpec;
+export type { CohortSpec, BirthFlowSpec, AreaSpec, ScatterSpec, StackSpec, RaceSpec, WaffleSpec };
 
 const NS = "http://www.w3.org/2000/svg";
 let clipSeq = 0;
@@ -638,6 +639,7 @@ export function render(host: HTMLElement, spec: ChartSpec) {
   else if (spec.type === "race") renderRace(host, spec);
   else if (spec.type === "waffle") renderWaffle(host, spec);
   else if (spec.type === "cohort") renderCohort(host, spec);
+  else if (spec.type === "birthflow") renderBirthFlow(host, spec);
   else renderColumn(host, spec);
 }
 
