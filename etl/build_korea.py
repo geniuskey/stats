@@ -211,8 +211,8 @@ def build(popr):
             } for y in (2015, 2025, 2035, 2050)
         },
         "pyramid": {"labels": labels, "male2025": m25, "female2025": w25, "male2050": m50, "female2050": w50},
-        # 연도별 피라미드 프레임 (재생 버튼 애니메이션)
-        "pyramidFrames": {s: P.pyramid_frames(total, female, popr["proj"]["00"][s], "00", YEARS) for s in ("low", "mid", "high")},
+        # 1세 단위 프레임(중위): 같은 해 태어난 사람들이 해마다 한 칸씩 올라가는 세대 이동 그림
+        "cohortFrames": P.pyramid_frames(total, female, popr["proj"]["00"]["mid"], "00", YEARS, groups=P.GROUPS1),
         # 브라우저 시뮬레이터 입력
         "sim": {**P.sim_params(total, female), "tfrBase": tfr.get(P.BASE_YEAR) or tfr.get(ly), "fertMid": {y: round(v, 4) for y, v in popr["fert"]["index"]["mid"].items()}},
         "births": births,

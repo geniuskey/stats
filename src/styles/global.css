@@ -1149,6 +1149,8 @@ pre.formula {
   opacity: 0.16;
   letter-spacing: -0.03em;
 }
+.chart text.coh-gen-name { font-size: 12px; font-weight: 600; fill: var(--text-primary); }
+.chart text.coh-gen-age { font-size: 11.5px; fill: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .pyr-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

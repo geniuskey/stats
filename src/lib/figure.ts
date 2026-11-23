@@ -32,6 +32,11 @@ function specRows(fig: HTMLElement): Row[] | null {
   if (s.type === "scatter") return [["이름", s.xLabel, s.yLabel, ...(s.rLabel ? [s.rLabel] : [])], ...s.points.map((p: any) => [p.label, p.x, p.y, ...(s.rLabel ? [p.r ?? null] : [])])];
   if (s.type === "race") return [["구분", ...s.names], ...s.frames.map((f: any) => [f.label, ...f.values])];
   if (s.type === "waffle") return [["구분", ...s.groups.map((g: any) => `${g.name}(%)`)], ...s.frames.map((f: any) => [f.label, ...f.values])];
+  if (s.type === "cohort") {
+    const rows: Row[] = [];
+    s.years.forEach((y: number, i: number) => s.m[i].forEach((v: number, a: number) => rows.push([y, a === s.m[i].length - 1 ? "100세 이상" : a, v, s.f[i][a]])));
+    return [["연도", "나이", "남자", "여자"], ...rows];
+  }
   if (s.type === "pyramid") {
     if (s.frames) {
       const head: Row = ["연도", "연령", s.leftName, s.rightName];

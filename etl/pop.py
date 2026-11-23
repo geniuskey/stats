@@ -244,8 +244,8 @@ if __name__ == "__main__":
 GROUPS5 = [(a, a + 4) for a in range(0, 100, 5)] + [(100, 100)]
 
 
-def pyramid_frames(total, female, proj_series, k, years, base_year=BASE_YEAR):
-    """연도별 5세 단위 남/여 인구 프레임 (애니메이션 피라미드용).
+def pyramid_frames(total, female, proj_series, k, years, base_year=BASE_YEAR, groups=None):
+    """연도별 5세 단위(groups로 바꿀 수 있음) 남/여 인구 프레임 (애니메이션 피라미드용).
 
     실측 연도는 주민등록 남녀, 추계 연도는 기준연도의 같은 출생 코호트 여성 비율을 적용한다.
     반환: {"years": [...], "m": [[21]...], "f": [[21]...], "proj": 첫 추계 연도}
@@ -263,7 +263,7 @@ def pyramid_frames(total, female, proj_series, k, years, base_year=BASE_YEAR):
             s = y - base_year
             f = [t[a] * (fshare[a - s] if a >= s else fshare[a]) for a in range(NAGE)]
         mm, ff = [], []
-        for lo, hi in GROUPS5:
+        for lo, hi in groups or GROUPS5:
             w = sum(f[lo:hi + 1])
             ff.append(round(w))
             mm.append(round(sum(t[lo:hi + 1]) - w))
@@ -271,6 +271,9 @@ def pyramid_frames(total, female, proj_series, k, years, base_year=BASE_YEAR):
         out["m"].append(mm)
         out["f"].append(ff)
     return out
+
+
+GROUPS1 = [(a, a) for a in range(NAGE)]
 
 
 def sim_params(total, female, transitions=TRANSITIONS, base_year=BASE_YEAR):

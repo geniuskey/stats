@@ -106,11 +106,15 @@ const ageStack = {
     { name: "65세 이상", color: "var(--series-2)", values: yrs.filter((y) => y % 5 === 0).map((y) => nat.mid[y].old) },
   ],
 };
-const PF = d.pyramidFrames;
-const pyrFrames = (s: string) => ({
-  type: "pyramid" as const, groups: P.labels, left: [], right: [], leftName: "남자", rightName: "여자", height: 440,
-  frames: PF[s], refYear: by, start: 2050, speed: 260,
-});
+// 세대 이동 피라미드 (1세 단위, 중위): 이름 붙은 세대가 해마다 한 줄씩 올라간다
+const cohort = {
+  type: "cohort" as const, ...d.cohortFrames, refYear: by, start: 2015, speed: 520, height: 420,
+  generations: [
+    { name: "1차 베이비붐", short: "1차 붐", from: 1955, to: 1963 },
+    { name: "2차 베이비붐", short: "2차 붐", from: 1968, to: 1974 },
+    { name: "에코붐", short: "에코붐", from: 1991, to: 1996 },
+  ],
+};
 const waffleYears = yrs.filter((y) => y % 5 === 0);
 const waffle = {
   type: "waffle" as const, caption: "명", start: waffleYears.indexOf(by), speed: 900,
@@ -147,10 +151,10 @@ const simJson = JSON.stringify({ p: d.sim, base: Object.fromEntries(yrs.filter((
         <div class="eyebrow">{svcName("korea")} · 출생 × 사망 × 이동 × 연령별 인구</div>
         <h1>2050년, 고령자 1명을 일하는 나이 {h.workPerOld2050}명이 받칩니다</h1>
         <p class="lede">지금은 {h.workPerOld2025}명입니다. 주민등록 인구 5,100만 명을 1세 단위로 한 해씩 나이 들게 하고, 지역별 이동과 출생을 더해 2050년까지 굴려 봤습니다. 공식 추계가 나온 뒤의 실제 출생 흐름까지 반영했습니다.</p>
-        <p class="small muted">오른쪽 피라미드는 ▶를 누르면 2015년부터 해마다 한 프레임씩 재생합니다. 검은 선은 {by}년 모습입니다. <a href="#sim">출산율을 직접 바꿔 보기 →</a></p>
+        <p class="small muted">오른쪽 피라미드에서 ▶를 누르면 같은 해 태어난 사람들이 해마다 한 줄씩 올라갑니다. 베이비붐 세대가 위로 올라가는 동안 아래로는 적게 태어난 세대가 들어옵니다. 검은 선은 {by}년 모습입니다. <a href="#sim">출산율을 직접 바꿔 보기 →</a></p>
         <PageMeta basis={`${by}년 말 주민등록 실측 · ${by + 1}~${end}년 자체 추계(저위·중위·고위)`} orgs={["행정안전부", "통계청"]} />
       </div>
-      <Chart spec={{ ...pyrFrames("mid"), start: 2015, autoplay: true, height: 400 }} table={pyrTable} h={2} title="인구 피라미드 2015 → 2050" sub={`5세 단위, 남(왼쪽)·여(오른쪽). ${by + 1}년부터 자체 추계 중위`} note={projNote} source={[SRC.reg, SRC.vital, SRC.official]} />
+      <Chart spec={cohort} table={pyrTable} h={2} title="인구 피라미드 2015 → 2050" sub={`1세 단위, 남(왼쪽)·여(오른쪽). 진한 줄은 이름 붙은 세대. ${by + 1}년부터 자체 추계 중위`} note={projNote} source={[SRC.reg, SRC.vital, SRC.official]} />
     </section>
     <div class="grid grid-4">
       <Stat label={`인구 ${by} → 2050 (중위)`} value={`${compact(h.pop2025)} → ${compact(h.pop2050.mid)}`} note={`${pct(h.pop2050.mid / h.pop2025 - 1, 0, true)} · 내국인 주민등록 기준`} tone="down" />

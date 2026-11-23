@@ -1,4 +1,5 @@
 // 연도 재생기: ▶ 버튼 + 슬라이더 + 현재 연도. 피라미드·지도·와플 등 프레임 시각화가 공용으로 쓴다.
+import { reduced } from "./anim";
 
 
 export interface PlayerOpts {
@@ -8,6 +9,9 @@ export interface PlayerOpts {
   autoplay?: boolean;
   projFrom?: number; // 이 인덱스부터 '추계' 표시
   label?: (i: number) => string;
+  /** 있으면 ▶ 재생이 프레임 사이도 같은 속력으로 끊김 없이 이어 그린다: t는 소수 프레임(2.4 = 2와 3 사이 40%).
+   *  가감속 없이 speed ms마다 한 프레임씩 나아간다. 슬라이더를 끌면 기존처럼 onFrame(i)으로 간다. */
+  smooth?: (t: number) => void;
 }
 export interface Player {
   el: HTMLElement;
@@ -76,9 +80,11 @@ export function makePlayer(host: HTMLElement, labels: (string | number)[], onFra
 
   let idx = Math.max(0, Math.min(n - 1, opts.start ?? 0));
   let timer = 0;
-  const paint = () => {
+  let raf = 0;
+  const smooth = opts.smooth && !reduced() ? opts.smooth : undefined;
+  const paint = (t = idx) => {
     range.value = String(idx);
-    range.style.setProperty("--p", `${(idx / Math.max(1, n - 1)) * 100}%`);
+    range.style.setProperty("--p", `${(t / Math.max(1, n - 1)) * 100}%`);
     out.textContent = lab(idx);
     out.classList.toggle("is-proj", opts.projFrom != null && idx >= opts.projFrom);
     range.setAttribute("aria-valuetext", lab(idx));
@@ -90,6 +96,7 @@ export function makePlayer(host: HTMLElement, labels: (string | number)[], onFra
   };
   const pause = () => {
     clearInterval(timer);
+    cancelAnimationFrame(raf);
     timer = 0;
     btn.innerHTML = idx >= n - 1 ? REPLAY : PLAY;
     btn.setAttribute("aria-label", idx >= n - 1 ? "처음부터 재생" : "재생");
@@ -101,6 +108,22 @@ export function makePlayer(host: HTMLElement, labels: (string | number)[], onFra
     btn.innerHTML = PAUSE;
     btn.setAttribute("aria-label", "일시정지");
     wrap.classList.add("playing");
+    if (smooth) {
+      timer = -1; // 재생 중 표시
+      let t = idx;
+      let last = performance.now();
+      const step = (now: number) => {
+        t = Math.min(n - 1, t + Math.max(0, now - last) / speed);
+        last = now;
+        idx = Math.floor(t);
+        paint(t);
+        smooth(t);
+        if (t >= n - 1) return pause();
+        raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+      return;
+    }
     timer = window.setInterval(() => {
       if (idx >= n - 1) return pause();
       set(idx + 1, true);
